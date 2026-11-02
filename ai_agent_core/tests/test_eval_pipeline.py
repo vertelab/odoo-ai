@@ -724,10 +724,13 @@ class TestOutcomeVerification(EvalTestBase):
         self._make_run(coworker, 0.5, applied + timedelta(hours=2))
         finding._verify_outcome()
         self.assertEqual(finding.verification, 'worse')
+        # Domänen måste vara en lista av tupler — en naken `('a','=',b)`
+        # utanför listan tolkas som en sekvens av leaves och Odoo kastar
+        # `ValueError: too many values to unpack`.
         regression = self.env['ai.kaizen.finding'].search([
             ('report_id', '=', report.id),
             ('severity', '=', 'high'),
-            ('finding', 'like', '%s%', finding.id),
+            ('finding', 'like', '%%%s%%' % finding.id),
         ])
         self.assertEqual(len(regression), 1)
         self.assertIn(str(finding.id), regression.evidence)

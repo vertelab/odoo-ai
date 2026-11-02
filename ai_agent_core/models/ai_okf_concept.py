@@ -2334,11 +2334,18 @@ class AIOkfConcept(models.Model):
         automatiskt."""
         self.ensure_one()
         # redan nudgead?
+        #
+        # Sökningen måste matcha den aktivitetstyp som faktiskt skapas
+        # nedan (`mail.mail_activity_data_todo`), inte en påhittad
+        # 'AI Nudge'. Med fel namn hittades aldrig den befintliga
+        # aktiviteten, och varje anrop skapade en ny — "en gång" var i
+        # praktiken "varje gång" (mätt: mail.activity(60) vs (61)).
         existing = self.env['mail.activity'].search([
             ('res_model', '=', 'ai.okf.concept'),
             ('res_id', '=', self.id),
-            ('activity_type_id.name', '=', 'AI Nudge'),
-            ('active', '=', True),
+            ('activity_type_id', '=',
+             self.env.ref('mail.mail_activity_data_todo').id),
+            ('summary', '=', 'AI: organisera i PARA (projekt/area)?'),
         ], limit=1)
         if existing:
             return existing

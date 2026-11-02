@@ -139,7 +139,12 @@ class TestDailyBudget(TransactionCase):
              patch.object(type(cw), 'budget_exhausted',
                           new_callable=lambda: property(lambda s: False)), \
              patch.object(type(cw), 'check_daily_cap') as daily, \
-             patch.object(type(cw), '_unlock_budget_activities'):
+             patch.object(type(cw), '_unlock_budget_activities'), \
+             patch.object(type(cw), '_resolve_provider_or_raise'):
+            # Förkontrollen (agent-model-resolution D2) kräver en provider.
+            # En färsk testdatabas har ingen, och testet prövar
+            # dagsbudget-grinden — inte provideruppslagningen. Mocka den så
+            # att testet når det det mäter.
             result = cw.run('testprompt')
             self.assertTrue(
                 daily.called,
