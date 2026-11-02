@@ -15,6 +15,7 @@ Dessa tester bevisar:
   5. två tool-poster med olika tool_call_id → olika poster
 """
 
+from unittest.mock import patch
 from odoo.tests.common import TransactionCase, tagged
 
 
@@ -203,13 +204,20 @@ class TestPiMessageDedup(TransactionCase):
         self.assertEqual(session.pi_message_count, 1)
 
         calls = []
+        # `patch.object` på KLASSEN, inte `type(...).search_read = _spy`:
+        # Odoo:s testramverk kontrollerar efter varje test att modellklassen
+        # inte har fått nya attribut ("Found unexpected attributes on
+        # ai.coworker.session.line: search_read") och fäller testet även om
+        # det återställts i finally. patch.object städar via sin egen
+        # kontext och lämnar inga spår.
         original = type(self.Line).search_read
 
         def _spy(records, domain, fields=None, **kwargs):
             calls.append(domain)
             return original(records, domain, fields, **kwargs)
 
-        type(self.Line).search_read = _spy
+        patcher = patch.object(type(self.Line), 'search_read', _spy)
+        patcher.start()
         try:
             # Giltig kursor: 1 persisterad, Pi skickar 2 poster.
             self._persist(session, [
@@ -226,4 +234,4 @@ class TestPiMessageDedup(TransactionCase):
             self.assertTrue(
                 calls, 'ogiltig kursor ska slå upp hashar')
         finally:
-            type(self.Line).search_read = original
+            patcher.stop()

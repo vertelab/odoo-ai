@@ -8,9 +8,21 @@ Körs med: `odoo -d <db> -u ai_agent_core --test-enable --test-tags=odoo_model_t
 """
 
 import json
+import unittest
 
 from odoo.tests.common import TransactionCase, tagged
 
+
+def _require_model(env, model):
+    """Hoppa över testet om modellen inte är installerad.
+
+    `sale.order` finns bara när `sale` är installerad. En färsk testdatabas
+    för ai_agent_core har den inte, och då faller testet på
+    `KeyError: 'sale.order'` i stället för att pröva det det ska pröva.
+    """
+    if model not in env:
+        raise unittest.SkipTest(
+            '%s är inte installerad i den här databasen' % model)
 
 @tagged('odoo_model_tools', 'post_install', '-at_install')
 class TestSaleOrderScenario(TransactionCase):
@@ -19,6 +31,7 @@ class TestSaleOrderScenario(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        _require_model(cls.env, 'sale.order')
         cls.partner = cls.env['res.partner'].create({'name': 'ACME AB'})
         cls.product = cls.env['product.product'].create({
             'name': 'Konsulttimme',
@@ -80,6 +93,11 @@ class TestSaleOrderScenario(TransactionCase):
 @tagged('odoo_model_tools', 'post_install', '-at_install')
 class TestPowerboxScoping(TransactionCase):
     """6.3: från en sale.order-post når powerboxen bara model_ids-modeller."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _require_model(cls.env, 'sale.order')
 
     def test_scoped_env_only_reaches_listed_models(self):
         from odoo.addons.ai_agent_core.core.tools import _tool_odoo_search

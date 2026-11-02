@@ -454,12 +454,25 @@ class TestDiscussLearning(common.TransactionCase):
                     return _FakeResult()
                 return _coro()
 
+        # `cron_extract_from_discuss` gick från en AgentLoop till en enda
+        # `provider.chat()` (structural-discipline-gates 3.2). Att mocka
+        # AgentLoop räcker därför inte — anropet går via providern, och
+        # utan en mockad `chat` kastar den på `object()` och prompten fångas
+        # aldrig (mätt: captured['prompt'] var tom).
+        class _FakeProvider:
+            def chat(self, model=None, messages=None, max_tokens=None):
+                captured['prompt'] = messages[0].content
+
+                async def _coro():
+                    return _FakeResult()
+                return _coro()
+
+            async def aclose(self):
+                return None
+
         with patch(
                 'odoo.addons.ai_agent_core.core.provider.get_default_provider',
-                return_value=(object(), None)), \
-             patch(
-                'odoo.addons.ai_agent_core.core.loop.AgentLoop',
-                _FakeLoop):
+                return_value=(_FakeProvider(), None)):
             self.Memory.cron_extract_from_discuss()
 
         # Prompten ska bara innehålla de icke-redan-extraherade meddelandena.
