@@ -28,6 +28,13 @@ class AIOkfConcept(models.Model):
     _description = 'OKF Concept'
     _order = 'scope, concept_key'
     _rec_name = 'title'
+    # Retention-varningen (D3) är en `mail.activity` på konceptet — den
+    # hamnar i ägarens aktivitetslista i stället för i en egen inkorg som
+    # ingen öppnar. Mixinen ger `activity_schedule()`; utan den kastade
+    # `_schedule_retention_warning()` AttributeError, som fångades och
+    # gjorde varningen till en tyst loggrad: fristen verkställdes, men
+    # ingen fick veta i förväg.
+    _inherit = ['mail.thread', 'mail.activity.mixin']
 
     def _auto_init(self):
         """Skapa OKF SQL-hjälpfunktioner idempotent vid varje modulinladdning.
@@ -374,7 +381,9 @@ class AIOkfConcept(models.Model):
                      'owner_user_id', 'owner_coworker_id',
                      'artifact_type_id'}
         forbidden = set(vals) & immutable
-        if forbidden:
+        # Undantaget för `_recompute_retention()` (typbyte) — se dess
+        # docstring. Nyckeln sätts bara där, aldrig av en anropare utifrån.
+        if forbidden and not self.env.context.get('_okf_allow_identity_write'):
             raise ValidationError(
                 _('ai.okf.concept identity fields are immutable. '
                   'Cannot write fields: %s') % ', '.join(sorted(forbidden)))
@@ -449,9 +458,12 @@ class AIOkfConcept(models.Model):
                 continue
             rec.sudo().write({'retention_end': end})
             updated += 1
+        # Formaterad sträng, inte parametrar: loggraden är cronens enda
+        # kvitto på att den gjorde något, och den ska gå att läsa i en
+        # testlogg (assertLogs ser den oformaterade mallen annars).
         _logger.info(
             'OKF retention-backfill: %d av %d koncept utan frist fick en '
-            '(ingen arkiverades)', updated, len(candidates))
+            '(ingen arkiverades)' % (updated, len(candidates)))
         return updated
 
     @api.model
@@ -483,8 +495,8 @@ class AIOkfConcept(models.Model):
             rec.sudo().write({'retention_warned_at': now})
             warned += 1
         _logger.info(
-            'OKF retention: %d varningar skapade (%d koncept inom %d dagar)',
-            warned, len(concepts), self.RETENTION_WARN_DAYS)
+            'OKF retention: %d varningar skapade (%d koncept inom %d dagar)'
+            % (warned, len(concepts), self.RETENTION_WARN_DAYS))
         return warned
 
     def _retention_recipient(self):
@@ -603,6 +615,12 @@ class AIOkfConcept(models.Model):
         den här: byt typ OCH räkna om fristen i samma andetag, så de två
         aldrig kan glida isär.
 
+        Låset kringgås med kontextnyckeln `_okf_allow_identity_write` —
+        samma mönster som Odoo använder för `active_test`. En spärr som
+        bara kan kringgås genom att skriva förbi `write()` (rå SQL) är
+        ingen spärr; en namngiven nyckel som bara den här metoden sätter
+        är ett spårbart undantag.
+
         Fristen räknas om ur `create_date` med den nya typens
         `retention_days` (design D5). Ligger det nya värdet FÖRE det gamla
         — eller tas fristen bort — loggas ändringen med båda värdena: att
@@ -618,7 +636,7 @@ class AIOkfConcept(models.Model):
                 _('Cannot recompute retention without an artifact type.'))
         old_end = self.retention_end
         new_end = self._retention_end_for_type(artifact_type)
-        self.sudo().write({
+        self.sudo().with_context(_okf_allow_identity_write=True).write({
             'artifact_type_id': artifact_type.id,
             'retention_end': new_end,
         })
@@ -627,9 +645,9 @@ class AIOkfConcept(models.Model):
         if not new_end or (old_end and new_end < old_end):
             _logger.info(
                 'OKF retention: koncept %s (%s) bytte typ till %s — '
-                'retention_end %s → %s',
-                self.id, self.concept_key, artifact_type.name,
-                old_end or '(ingen)', new_end or '(ingen)')
+                'retention_end %s → %s'
+                % (self.id, self.concept_key, artifact_type.name,
+                   old_end or '(ingen)', new_end or '(ingen)'))
         return True
 
 
