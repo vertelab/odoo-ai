@@ -194,6 +194,85 @@ class StructuralGateLoopConstruction(TransactionCase):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Grind 3 — de tysta felen (structural-discipline-gates §4)
+# ──────────────────────────────────────────────────────────────────────
+
+#: Kataloger som grinden bevakar. ``core/``, ``models/`` och
+#: ``controllers/`` är de tre ställen där tysta ``except`` har kostat
+#: mest felsökningstid (docs/failures.md §10).
+SILENT_EXCEPT_SCOPE = ('core', 'models', 'controllers')
+
+#: Etiketter som godkänns i kroppen på ett ``except``.
+#: ``best-effort:`` = vi vet att det kan falla och väljer att fortsätta.
+#: ``fallback:``    = vi faller tillbaka på ett annat värde med flit.
+SILENT_EXCEPT_LABELS = ('best-effort:', 'fallback:')
+
+
+def _is_silent(handler):
+    """Ett ``except`` är tyst om kroppen bara är ``pass`` eller ``continue``."""
+    body = [n for n in handler.body if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))]
+    if len(body) != 1:
+        return False
+    return isinstance(body[0], (ast.Pass, ast.Continue))
+
+
+def _has_label(handler, source_lines):
+    """Sant om etiketten står i ``except``-raden eller i kroppens första rad."""
+    candidates = [source_lines[handler.lineno - 1]]
+    if handler.body:
+        first = handler.body[0]
+        candidates.append(source_lines[first.lineno - 1])
+    return any(label in line for line in candidates for label in SILENT_EXCEPT_LABELS)
+
+
+def _find_unlabelled_silent_excepts(root):
+    """Returnerar ``[(relpath, lineno, typ)]`` för tysta ``except`` utan etikett."""
+    hits = []
+    for scope in SILENT_EXCEPT_SCOPE:
+        base = root / scope
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob('*.py')):
+            if 'tests' in path.parts or '__pycache__' in path.parts:
+                continue
+            try:
+                source = path.read_text(encoding='utf-8')
+                tree = ast.parse(source)
+            except (SyntaxError, UnicodeDecodeError):
+                continue
+            lines = source.split('\n')
+            rel = path.relative_to(root).as_posix()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ExceptHandler) and _is_silent(node):
+                    if not _has_label(node, lines):
+                        hits.append((rel, node.lineno, ast.unparse(node.type) if node.type else 'bare'))
+    return sorted(hits)
+
+
+class StructuralGateSilentExcept(TransactionCase):
+    """Grind: ett tyst ``except`` ska bära etiketten ``best-effort:`` eller ``fallback:``.
+
+    Regeln finns för att skilja *avsiktlig* tystning från *okunskap*. Ett
+    ``except: pass`` utan skäl är en gissning som ser ut som ett beslut —
+    och den har kostat mer felsökningstid än någon annan kodkonstruktion i
+    den här modulen (docs/failures.md §10).
+    """
+
+    def test_silent_excepts_are_labelled(self):
+        violations = [
+            f'{rel}:{lineno} — except {typ}'
+            for rel, lineno, typ in _find_unlabelled_silent_excepts(MODULE_ROOT)
+        ]
+        self.assertFalse(
+            violations,
+            'Tysta except utan etikett. Skriv `# best-effort: <skäl>` när vi '
+            'vet att det kan falla och väljer att fortsätta, eller '
+            '`# fallback: <skäl>` när vi med flit faller tillbaka:\n  '
+            + '\n  '.join(violations),
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Grind 2 — klass-wiringen (wire-orphaned-core-mechanisms 1.1)
 # ──────────────────────────────────────────────────────────────────────
 

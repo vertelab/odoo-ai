@@ -1615,7 +1615,7 @@ class AICoworkerSession(models.Model):
             try:
                 session._sync_pi_message_count()
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             already = int(session.pi_message_count or 0)
             # Kursor-antagandet (pi-message-persist-dedup D2): `messages[]`
             # växer monotont. Pi KOMPAKTERAR historiken — då är den nya
@@ -1652,7 +1652,7 @@ class AICoworkerSession(models.Model):
                     if ai_model:
                         sys_mult = ai_model.sys_multiplier
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             # Index för sista nya user-/assistant-raden (token-bokföring).
             def _norm_role(m):
@@ -1793,7 +1793,7 @@ class AICoworkerSession(models.Model):
             try:
                 session._sync_pi_message_count()
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             return created_count
         except Exception as e:
             _logger.warning('pi message persist failed: %s', e)
@@ -2783,7 +2783,7 @@ class AICoworkerSession(models.Model):
                     session.write(
                         {'watch_pending': False, 'status': 'error'})
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
                 continue
             try:
                 with self.env.cr.savepoint():
@@ -2814,7 +2814,7 @@ class AICoworkerSession(models.Model):
                     session.write(
                         {'watch_pending': False, 'status': 'error'})
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
         return processed
 
     # ── Mail-trigger-flöden ──────────────────────────────────────────────
@@ -2932,7 +2932,7 @@ class AICoworkerSession(models.Model):
             try:
                 partner.write({'email': email})
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         return partner
 
     def _attachment_text(self, msg_dict, max_chars=12000):

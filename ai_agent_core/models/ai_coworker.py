@@ -704,7 +704,7 @@ class AICoworker(models.Model):
                 if ext:
                     ref = f"env.ref('{ext}')"
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             ref = ref or f"env['ai.coworker'].browse({eid})"
             code = (
                 '# Exempel 1 — enkel körning (session skapas automatiskt)\n'
@@ -1367,7 +1367,7 @@ class AICoworker(models.Model):
                 with open('/var/lib/odoo/bifrost_signal_spool.jsonl', 'a') as f:
                     f.write(_json.dumps({'signal_type': signal_type, 'payload': payload}) + '\n')
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             # Retry spooled signals (best-effort)
             self._flush_signal_spool(_send)
             return False
@@ -1389,7 +1389,7 @@ class AICoworker(models.Model):
             with open(spool, 'w') as f:
                 f.writelines(remaining)
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     def _provisioned_bifrost_usage(self):
         """Read the Bifrost usage provisioned back to this minion (via Salt)."""
@@ -2211,7 +2211,7 @@ class AICoworker(models.Model):
                     if text and len(text) < 10000:
                         att_texts.append(f'--- {att.name} ---\n{text[:2000]}')
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
             if att_texts:
                 att_context = '\n\n## Attachments\n' + '\n'.join(att_texts)
 
@@ -2263,7 +2263,7 @@ class AICoworker(models.Model):
                 if len(recs) > 1:
                     return (recs._name, tuple(sorted(recs.ids)))
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         # 2. Frontend-kontexten (env.context).
         try:
             model = (self.env.context.get('_ai_context_ids_model')
@@ -2286,7 +2286,7 @@ class AICoworker(models.Model):
                 if rec:
                     return (rec._name, rec.id)
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         # 3. Session/kanal/meddelande-vägarna.
         try:
             rec = self._detect_record({'channel': channel,
@@ -2294,7 +2294,7 @@ class AICoworker(models.Model):
             if rec:
                 return (rec._name, rec.id)
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         return None
 
     def chat(self, message, channel=None, bot_user=None):
@@ -2345,7 +2345,7 @@ class AICoworker(models.Model):
                     msg_text = re.sub(
                         r'@' + re.escape(token), '', msg_text, flags=re.I)
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         # Rensa rester av @mention-HTML/Odoo-länkar ([1] /odoo/res.partner/N)
         msg_text = re.sub(r'\[\d\]\s*/odoo/[^\s]+', '', msg_text)
         msg_text = msg_text.strip()
@@ -2408,7 +2408,7 @@ class AICoworker(models.Model):
                     from markupsafe import Markup
                     body_html = Markup(body_html)
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
                 channel.message_post(
                     body=body_html, author_id=author_id,
                     message_type='comment', subtype_xmlid='mail.mt_comment')
@@ -2503,13 +2503,13 @@ class AICoworker(models.Model):
                         body_html = markdown.markdown(
                             body_html, extensions=['extra'])
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
                     # Markup (inte str) → Odoo renderar som HTML, inte escaped
                     try:
                         from markupsafe import Markup
                         body_html = Markup(body_html)
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
                     channel.message_post(
                         body=body_html,
                         author_id=author_id,
@@ -2518,7 +2518,7 @@ class AICoworker(models.Model):
             try:
                 self._maybe_learn_async(session.id)
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             return result
         except Exception as e:
             _logger.error('Chat failed for quest %s: %s', self.name, e)
@@ -2587,7 +2587,7 @@ class AICoworker(models.Model):
             try:
                 return self._buzz_llm_route(body, agent_rels)
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         # 4. Leader / fallback
         leader = agent_rels.filtered(lambda r: r.role == 'leader')
@@ -2698,7 +2698,7 @@ class AICoworker(models.Model):
             import markdown
             text = markdown.markdown(text, extensions=['extra'])
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         try:
             from markupsafe import Markup
             return Markup(text)
@@ -3787,7 +3787,7 @@ class AICoworker(models.Model):
                 if emp and emp.job_id:
                     user_parts.append(f"- Befattning: {emp.job_id.name}")
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             user_name = partner.name if partner else user.login
             parts.append(
                 "## Aktuell användare\n"
@@ -3986,7 +3986,7 @@ class AICoworker(models.Model):
             from pytz import timezone
             now = datetime.now(timezone(tz_name))
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         weekday_sv = ['måndag', 'tisdag', 'onsdag', 'torsdag',
                       'fredag', 'lördag', 'söndag'][now.weekday()]
         iso_week = now.isocalendar()[1]
@@ -4173,7 +4173,7 @@ class AICoworker(models.Model):
                 if r.exists():
                     return r
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         # 4. Channel context — den INKOMMANDE kanalen (D1b), inte
         #    self.channel_id.
         #
@@ -4190,7 +4190,7 @@ class AICoworker(models.Model):
                 if recs:
                     return recs[0]
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             try:
                 ch_sess = self._get_session_for_channel(ch)
                 if ch_sess and ch_sess.ai_record_model \
@@ -4200,7 +4200,7 @@ class AICoworker(models.Model):
                     if r.exists():
                         return r
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         # 5. Message model/res_id
         msg = kwargs.get('message')
         if msg:
@@ -4215,7 +4215,7 @@ class AICoworker(models.Model):
                         if r.exists():
                             return r
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
         # 6. Session objects
         if ch:
             sess = getattr(ch, 'ai_coworker_session_id', None)
@@ -4252,7 +4252,7 @@ class AICoworker(models.Model):
                 if len(recs) > 1:
                     return recs
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         # 2. env.context (server actions, webb-UI).
         model = (self.env.context.get('_ai_context_ids_model')
@@ -4342,7 +4342,7 @@ class AICoworker(models.Model):
                 r = self.env[m].browse(int(rid))
                 return r if r.exists() else None
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         return None
 
     def _get_session_context_record(self):
@@ -4412,7 +4412,7 @@ class AICoworker(models.Model):
             if model:
                 return model
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         return self.env['ai.model'].browse()
 
     def _activity_check_model_assignment(self, model):
@@ -5065,7 +5065,7 @@ class AICoworker(models.Model):
                 source='coworker', coworker_id=self.id, session_id=session.id,
             )
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     def _record_learning_proposal(self, session, scope, summary):
         """Trust-gate 'föreslå' → approval-kön."""
@@ -5079,7 +5079,7 @@ class AICoworker(models.Model):
                 coworker_id=self.id, session_id=session.id,
             )
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     def _check_quest_error(self):
         """Check quest configuration before running.
@@ -6174,7 +6174,7 @@ class AICoworker(models.Model):
                 if agent_inj:
                     agent_system = (agent_system + '\n\n' + agent_inj).strip()
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             specialists.append(SpecialistAgent(
                 name=agent.name,
                 description=agent.get_agent_name(),
@@ -6560,7 +6560,7 @@ class AICoworker(models.Model):
                 _logger.info('Watch %s skippad: budget slut', self.name)
                 return
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         for record in filtered[:3]:
             try:
                 self.env['ai.coworker.session'].create({
@@ -7207,7 +7207,7 @@ class AICoworker(models.Model):
             try:
                 data = _json.loads(raw) if isinstance(raw, str) else raw
             except (ValueError, TypeError):
-                continue
+                continue  # best-effort: tyst fallback — se etiketteringsregeln
             if not isinstance(data, dict):
                 continue
             # Modellen anropet gällde — behövs för modellspecifika avtal
@@ -7265,7 +7265,7 @@ class AICoworker(models.Model):
                                 e.message for e in result.all_errors)[:1000],
                         })
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
         return outcomes
 
     # Antal korrigeringsförsök innan eskalering (4.3).
@@ -7324,7 +7324,7 @@ class AICoworker(models.Model):
                     'message': 'åtgärdbart verktygsfel: %s' % error_text[:1000],
                 })
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         return True
 
     def _correction_target(self, contract, data):
@@ -7926,7 +7926,7 @@ class AICoworker(models.Model):
                         tool_cost = tool_rec.sys_token_cost
                         tool_rec_id = tool_rec.id
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
                 # Specialist-delegation (supervisor): om verktyget är
                 # call_specialist_<agent>, knyt raden till rätt ai.agent +
                 # specialistens modell, så specialistsvaret kan spåras och
@@ -8081,7 +8081,7 @@ class AICoworker(models.Model):
                         })
                         seq += 1
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             # Supervisor && delegations-analys (b): narreringen (den text som
             # visade vilka skills/agenter supervisorn undersökte/valde innan
@@ -8101,7 +8101,7 @@ class AICoworker(models.Model):
                         'sequence': self._next_session_sequence(session),
                     })
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             # Update session and quest totals
             session.write({
@@ -9443,7 +9443,7 @@ class AICoworker(models.Model):
                     if session.ai_task_id:
                         session.ai_task_id.action_release()
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
         return processed
 
     @api.model

@@ -221,7 +221,7 @@ def extract_pdf(data: bytes, max_length: int = 5000) -> str:
             try:
                 parts.append(page.get_text('text'))
             except Exception:
-                continue
+                continue  # best-effort: tyst fallback — se etiketteringsregeln
             # Sluta tidigt när vi har mer än nog — stora PDF:er ska inte
             # läsas klart i onödan.
             if sum(len(p) for p in parts) > max_length * 2:
@@ -231,7 +231,7 @@ def extract_pdf(data: bytes, max_length: int = 5000) -> str:
         try:
             doc.close()
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
     text = _tidy(text)
     return text[:max_length] if len(text) > max_length else text
 

@@ -396,7 +396,7 @@ class AgentLoop:
                                 )
                                 break
                 except Exception:
-                    pass  # Best-effort — never fail a turn over context injection
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             # Släpp transaktionen innan provider-anropet (kan ta tiotals
             # sekunder) — annars hålls ACCESS SHARE på allt turen läst och en

@@ -718,7 +718,7 @@ class AIOkfConcept(models.Model):
                 user=user,
             )
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     def _okf_upsert(self, artifact_type, concept_key, summary, title=None,
                     attribution=None, source_ref=None, sources=None,

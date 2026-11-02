@@ -56,9 +56,9 @@ class BaseModel(models.AbstractModel):
             try:
                 field_value = self[field_name]
             except AccessError:
-                continue
+                continue  # best-effort: tyst fallback — se etiketteringsregeln
             except Exception:
-                continue
+                continue  # best-effort: tyst fallback — se etiketteringsregeln
 
             # Truncate specific char fields
             if field_type == 'char' and field_name in self._ai_field_names_to_truncate():
@@ -99,7 +99,7 @@ class BaseModel(models.AbstractModel):
                 else:
                     result[field_name] = field_value
             except Exception:
-                continue
+                continue  # best-effort: tyst fallback — se etiketteringsregeln
 
             count += 1
 

@@ -206,7 +206,7 @@ class ConferenceLoop:
             if 0.0 <= conf <= 1.0:
                 return conf
         except (ValueError, TypeError, json.JSONDecodeError):
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         # Fallback: antal output-tokens som proxy (som tidigare)
         return (resp.output_tokens or 0) / 1000.0
 
@@ -218,5 +218,5 @@ class ConferenceLoop:
             if isinstance(data, dict) and data.get('answer'):
                 return data['answer']
         except (ValueError, json.JSONDecodeError):
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         return text

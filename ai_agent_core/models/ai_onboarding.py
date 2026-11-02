@@ -121,7 +121,7 @@ class AIOnboarding(models.Model):
                         'description': description,
                     }
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         return detected
 
     @api.model
@@ -170,7 +170,7 @@ class AIOnboarding(models.Model):
                     best_score = score
                     best = template
             except Exception:
-                continue
+                continue  # best-effort: tyst fallback — se etiketteringsregeln
         return best
 
     # ════════════════════════════════════════════

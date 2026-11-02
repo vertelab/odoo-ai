@@ -61,7 +61,7 @@ class AISkill(models.Model):
                         with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                             skill.image_128 = base64.b64encode(resp.read())
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     # Trigger
     trigger_keywords = fields.Char('Trigger Keywords',

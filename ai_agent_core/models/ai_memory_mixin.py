@@ -484,7 +484,7 @@ class AIMemoryMixin(models.AbstractModel):
                     mem_id = row['id']
                     boosts[mem_id] = min(boosts.get(mem_id, 0) + 0.25, 0.5)
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         return boosts
 
     # ════════════════════════════════════════════

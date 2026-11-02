@@ -534,7 +534,7 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
                 for i, r in enumerate(results)
             )
     except ImportError:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     except Exception as exc:
         # Tyst sväljning dolde att DDGS kastade — logga så nästa felsökning
         # inte börjar om från noll.
@@ -2513,13 +2513,13 @@ def _tool_describe_model(env, model=''):
             has_okf = env['ai.artifact.type'].search_count(
                 [('model_id.model', '=', model)]) > 0
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     try:
         if 'graph.node.definition' in env:
             has_graph = env['graph.node.definition'].search_count(
                 [('model_id.model', '=', model)]) > 0
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     try:
         for field_obj in Model._fields.values():
             ctype = getattr(field_obj, 'column_type', (None,))[0]
@@ -2527,7 +2527,7 @@ def _tool_describe_model(env, model=''):
                 has_embedding = True
                 break
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     return json.dumps({
         'model': model,
@@ -3281,7 +3281,7 @@ def _tool_inventory_architecture(env, **kwargs):
                     with open(md_path, "r") as f:
                         result["modules"][entry] = f.read()[:4000]
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     return json.dumps(result, indent=2, default=str)
 

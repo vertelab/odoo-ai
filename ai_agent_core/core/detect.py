@@ -218,7 +218,7 @@ class EnvironmentDetector:
                         description=desc,
                     ))
             except Exception:
-                pass  # Model or field not available
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         return issues
 
@@ -294,7 +294,7 @@ class EnvironmentDetector:
                                         todos.append(f"{filepath}:{i}: {clean[:120]}")
                                         break
                     except (OSError, UnicodeDecodeError):
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
                 if len(todos) > 200:  # Limit
                     return todos[:200]

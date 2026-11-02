@@ -606,7 +606,7 @@ class AICompanyMemory(models.Model):
                         content = doc._index() if hasattr(doc, '_index') \
                             else doc.raw.decode('utf-8', errors='ignore')
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
                     if not content or len(content) < 20:
                         continue
                     source_ref = f"ir.attachment,{doc.id}"

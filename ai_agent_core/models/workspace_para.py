@@ -273,7 +273,7 @@ class WorkspaceParaRef(models.Model):
                 if hasattr(model, 'display_name') or 'name' in model._fields:
                     models.append((model_name, model_name))
         except Exception:
-            pass  # non-fatal; fall back to defaults
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         return models
 
     # -- Lazy revalidation (R3): drop dead refs on view open --
