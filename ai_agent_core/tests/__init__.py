@@ -197,4 +197,3 @@ from . import test_skill_md_parsing
 # result), befordran session → fall (HITL), eval-cronen och kaizen-fyndet
 # när accuracy sjunker. Utan dessa tester är core/eval.py åter oanvänd.
 from . import test_eval_pipeline
-from .test_zzprobe import *
