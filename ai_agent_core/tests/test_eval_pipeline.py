@@ -539,3 +539,68 @@ class TestEvalCasesWithoutExpectation(EvalTestBase):
         self.assertTrue(
             any('2 fall utan' in line for line in logs.output),
             'loggraden ska nämna antalet fall utan förväntan')
+
+
+@tagged('post_install', '-at_install')
+class TestPromotionCandidates(EvalTestBase):
+    """2.1–2.3: kandidatlistan är en källa, inte en signal."""
+
+    def test_failed_session_is_a_candidate(self):
+        """2.1: fel-utfall och underkända sessioner är kandidater."""
+        coworker = self._coworker('Kandidater')
+        failed = self._session(coworker, finish_reason='max_rounds')
+        rated_down = self._session(coworker, finish_reason='stop')
+        rated_down.user_rating = 'down'
+        self._session(coworker, finish_reason='stop')
+        candidates = coworker._get_promotion_candidates()
+        self.assertIn(failed, candidates)
+        self.assertIn(rated_down, candidates,
+                      'en underkänd session är den billigaste källan')
+        self.assertEqual(len(candidates), 2)
+
+    def test_promoted_session_leaves_the_list(self):
+        """2.1: en befordrad session försvinner ur listan."""
+        coworker = self._coworker('Kandidater befordran')
+        session = self._session(coworker, finish_reason='error')
+        self.assertIn(session, coworker._get_promotion_candidates())
+        session.action_promote_to_eval_case()
+        self.assertNotIn(session, coworker._get_promotion_candidates())
+
+    def test_candidates_are_scoped_to_the_coworker(self):
+        """2.1: listan gäller medarbetarens sessioner, inte allas."""
+        coworker = self._coworker('Kandidater en')
+        other = self._coworker('Kandidater två')
+        self._session(other, finish_reason='error')
+        self.assertEqual(len(coworker._get_promotion_candidates()), 0)
+
+    def test_action_opens_empty_list_when_all_promoted(self):
+        """2.2: åtgärden öppnar sessioner; tom när allt befordrats."""
+        coworker = self._coworker('Kandidater åtgärd')
+        session = self._session(coworker, finish_reason='error')
+        action = coworker.action_open_promotion_candidates()
+        self.assertEqual(action['res_model'], 'ai.coworker.session')
+        self.assertEqual(action['domain'], [('id', 'in', session.ids)])
+        session.action_promote_to_eval_case()
+        action = coworker.action_open_promotion_candidates()
+        self.assertEqual(action['domain'], [('id', 'in', [])])
+
+    def test_rating_down_creates_no_finding(self):
+        """2.3: `user_rating='down'` blir inget kaizen-fynd."""
+        coworker = self._coworker('Kandidater rating')
+        session = self._session(coworker, finish_reason='stop')
+        session.user_rating = 'down'
+        report = self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+        data = {
+            'session_count': 1, 'error_count': 0, 'cost_trend': 0.0,
+            'feedback_count': 0, 'total_sys_tokens': 0,
+        }
+        findings = report._analyze_findings(coworker, report, data)
+        self.assertFalse(
+            [f for f in findings if 'rating' in str(f).lower()],
+            'ratingen är en kandidatkälla — den ska inte bli ett fynd')
+        self.assertFalse(self.env['ai.kaizen.finding'].search(
+            [('report_id', '=', report.id)]))

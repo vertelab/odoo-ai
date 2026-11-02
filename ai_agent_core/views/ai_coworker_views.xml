@@ -187,6 +187,18 @@
                                 help="Antal distinkta konceptnycklar som ägs av medarbetaren (arkiverade koncept räknas inte).">
                             <field name="okf_concept_count" widget="statinfo" string="Odoo Mind"/>
                         </button>
+                        <!-- Kandidater för befordran till eval-fall
+                             (kaizen-eval-learning-loop 2.2): sessioner som
+                             slutade dåligt eller underkändes av användaren
+                             och som saknar ett testfall. Ingen räknare —
+                             listan är en beräkning, inte ett lagrat fält. -->
+                        <button name="action_open_promotion_candidates" class="oe_stat_button" type="object" icon="fa-clipboard-check"
+                                help="Sessioner som är värda att befordras till eval-fall: fel-utfall eller underkända av användaren, och som ännu saknar ett testfall.">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">Eval</span>
+                                <span class="o_stat_text">kandidater</span>
+                            </div>
+                        </button>
                     </div>
 
                     <div class="oe_title d-flex align-items-start">

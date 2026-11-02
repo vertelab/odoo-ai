@@ -9573,6 +9573,62 @@ class AICoworker(models.Model):
         return {'sessions': len(sessions), 'by_init_type': by_init,
                 'stale_released': released, 'stale_tasks': stale_tasks}
 
+    def _get_promotion_candidates(self):
+        """Sessioner som är värda att befordras till eval-fall (2.1).
+
+        Två källor, av olika skäl:
+
+        * `finish_reason` i fel-typen — maskinen vet att det gick fel.
+        * `user_rating = 'down'` — människan vet att det gick fel. Detta är
+          den billigaste källan som finns: en session som tekniskt lyckades
+          (`finish_reason='stop'`) men underkändes av användaren är exakt
+          den buggklass maskinen inte kan se.
+
+        Ett fall som redan befordrats filtreras bort via `ai.eval.case`
+        (`source_session_id` är UNIQUE), så listan krymper när en människa
+        gör sitt jobb och aldrig annars.
+
+        `user_rating='down'` skapar INGET `ai.kaizen.finding` (2.3). Det är
+        en kandidatkälla, inte en signal: varje missnöjd användare ska inte
+        bli en felrapport.
+
+        Returns:
+            ai.coworker.session recordset, nyast först.
+        """
+        self.ensure_one()
+        sessions = self.env['ai.coworker.session'].search([
+            ('coworker_id', '=', self.id),
+            '|',
+            ('finish_reason', 'in',
+             self.env['ai.coworker.session'].PROMOTABLE_FINISH_REASONS),
+            ('user_rating', '=', 'down'),
+        ])
+        promoted = self.env['ai.eval.case'].search([
+            ('source_session_id', 'in', sessions.ids),
+        ]).source_session_id
+        return sessions - promoted
+
+    def action_open_promotion_candidates(self):
+        """Öppna kandidatlistan för denna medarbetare (2.2).
+
+        Åtgärden returnerar ett act_window med ett explicit id-filter:
+        kandidaterna är en beräkning, inte ett lagrat fält, och ett domän-
+        uttryck kan inte uttrycka "saknar ett ai.eval.case". Ett tomt id-
+        filter (`[('id', 'in', [])]`) ger en tom lista — vilket är rätt
+        svar när allt redan befordrats.
+        """
+        self.ensure_one()
+        candidates = self._get_promotion_candidates()
+        return {
+            'name': _('Promotion Candidates: %(name)s', name=self.name),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session',
+            'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'domain': [('id', 'in', candidates.ids)],
+            'context': {'create': False},
+        }
+
     @api.model
     def _cron_run_evals(self):
         """cron.task entry point: kör veckans eval-fall per medarbetare.
