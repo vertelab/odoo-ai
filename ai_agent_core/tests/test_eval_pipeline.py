@@ -727,10 +727,13 @@ class TestOutcomeVerification(EvalTestBase):
         # Domänen måste vara en lista av tupler — en naken `('a','=',b)`
         # utanför listan tolkas som en sekvens av leaves och Odoo kastar
         # `ValueError: too many values to unpack`.
+        #
+        # Fyndet namnger originalfyndet i `evidence` som
+        # `original_finding=<id>: ...` — inte i `finding`. Sök där.
         regression = self.env['ai.kaizen.finding'].search([
             ('report_id', '=', report.id),
             ('severity', '=', 'high'),
-            ('finding', 'like', '%%%s%%' % finding.id),
+            ('evidence', 'like', 'original_finding=%d:' % finding.id),
         ])
         self.assertEqual(len(regression), 1)
         self.assertIn(str(finding.id), regression.evidence)
