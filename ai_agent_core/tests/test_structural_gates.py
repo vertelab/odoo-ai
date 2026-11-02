@@ -55,11 +55,29 @@ LOOP_CONSTRUCTION_ALLOWLIST = [
         '_build_loop, som bygger medarbetarens loop.',
     ),
     (
-        'models/ai_coworker.py',
-        '_build_supervisor_loop',
-        'Bygger supervisorns loop kring de redan byggda specialisterna. '
-        'Konstruktionen sker efter _build_specialists och bär deras '
-        'verktyg; att routa den via _build_loop hade tappat specialisterna.',
+        'controllers/stream.py',
+        'stream',
+        'SSE-vägen bygger StreamingAgentLoop — en annan klass än '
+        'medarbetarens AgentLoop — via en inre _make_loop-hjälpare, med egen '
+        'checkpoint-callback mot requestens cursor. _build_loop bygger '
+        'AgentLoop, inte StreamingAgentLoop; vägen kan inte gå dit utan att '
+        'byta klass.',
+    ),
+    (
+        'controllers/openai_api.py',
+        '_handle_stream',
+        'OpenAI-kompatibel strömväg bygger StreamingAgentLoop direkt i '
+        'generatorn (samma skäl som controllers/stream.py). Flytten hit '
+        'vore en egen ändring: generatorn äger sin egen cursor och sitt '
+        'eget checkpoint-kontrakt.',
+    ),
+    (
+        'core/linear.py',
+        'run',
+        'LinearLoop bygger en AgentLoop per steg i sin pipeline. Steget '
+        'bär pipelinesvarets callbacks (outcome/checkpoint/interrupt) — '
+        'att gå via ai.coworker._build_loop hade kopplat modellagret till '
+        'core/ i fel riktning (core/ får inte importera models/).',
     ),
 ]
 

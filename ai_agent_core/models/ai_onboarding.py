@@ -319,11 +319,8 @@ class AIOnboarding(models.Model):
             # till en tyst nolla.
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import (
-                _run_provider, get_default_provider,
+                Message, _run_provider, get_default_provider,
                 get_default_model_name)
-            from odoo.addons.ai_agent_core.core.loop import (
-                AgentLoop, AgentConfig)
-            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
 
             modules_text = ', '.join(
                 d.get('description', m) for m, d in
@@ -342,14 +339,16 @@ class AIOnboarding(models.Model):
                     'Identitetsförslag: ingen provider tillgänglig — '
                     'använder avsiktlig standardtext')
                 return mission, values
-            loop = AgentLoop(
-                provider=provider, tools=ToolRegistry(),
-                config=AgentConfig(
+            # En enda provider-chat, ingen loop: förslaget är ett anrop
+            # utan verktyg (structural-discipline-gates 3.3).
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            raw = _run_provider(
+                provider.chat(
                     model=(model_rec and model_rec._get_api_name())
                     or get_default_model_name(),
-                    max_rounds=1, max_tokens=1500))
-            # B7: stäng providern — annars lämnas httpx-tasken pending.
-            raw = _run_provider(loop.run(prompt), provider)
+                    messages=[Message(role='user', content=prompt)],
+                    max_tokens=1500),
+                provider)
             response = (raw.text or '').strip()
             # Modellen kan linda JSON i ```-block trots instruktionen.
             if response.startswith('```'):

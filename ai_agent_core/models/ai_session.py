@@ -1405,11 +1405,8 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, _run_provider,
+                Message, ProviderFactory, _run_provider,
                 get_default_provider, get_default_model_name)
-            from odoo.addons.ai_agent_core.core.loop import (
-                AgentLoop, AgentConfig)
-            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
             quest = self.coworker_id
             provider, model_rec = (
                 ProviderFactory.from_coworker(quest) if quest else (None, None))
@@ -1426,18 +1423,23 @@ class AICoworkerSession(models.Model):
                 return None
             model_name = (model_rec and model_rec._get_api_name()) \
                 or get_default_model_name()
-            loop = AgentLoop(
-                provider=provider, tools=ToolRegistry(),
-                config=AgentConfig(
-                    # 64 räckte inte: en reasoning-modell bränner hela budgeten
-                    # på sitt tänkande och lämnar inget till svaret —
-                    # AgentLoop returnerade då '(no response)' och namnet
-                    # uteblev. Eftermälet använder 2048; en mening behöver
-                    # inte mer än så.
-                    model=model_name, max_rounds=1, max_tokens=512))
+            # En enda provider-chat, ingen loop: uppgiften är ett anrop utan
+            # verktyg. En AgentLoop med max_rounds=1 var en loop som aldrig
+            # kunde loopa — den byggde en ToolRegistry som aldrig användes och
+            # gick genom samma konstruktionsplats som de riktiga körvägarna
+            # (structural-discipline-gates 3.1).
+            #
+            # 64 räckte inte: en reasoning-modell bränner hela budgeten på
+            # sitt tänkande och lämnar inget till svaret. Eftermälet använder
+            # 2048; en mening behöver inte mer än så.
             # B7: stäng providern — annars lämnas httpx-tasken pending.
             result = _run_provider(
-                loop.run(self._title_prompt(transcript)), provider)
+                provider.chat(
+                    model=model_name,
+                    messages=[Message(role='user',
+                                      content=self._title_prompt(transcript))],
+                    max_tokens=512),
+                provider)
             text = (result.text or '').strip()
             # AgentLoop svarar med platshållare när modellen inte gav något
             # ("(no response)", "(max rounds…)", "error: …"). Att sätta ett
@@ -2198,11 +2200,8 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, _run_provider,
+                Message, ProviderFactory, _run_provider,
                 get_default_provider, get_default_model_name)
-            from odoo.addons.ai_agent_core.core.loop import (
-                AgentLoop, AgentConfig)
-            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
             quest = self.coworker_id
             provider, model_rec = (
                 ProviderFactory.from_coworker(quest) if quest else (None, None))
@@ -2221,11 +2220,15 @@ class AICoworkerSession(models.Model):
                 return None
             model_name = (model_rec and model_rec._get_api_name()) \
                 or get_default_model_name()
-            loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
-                model=model_name, max_rounds=1, max_tokens=2048))
+            # En enda provider-chat, ingen loop — se _run_title_llm ovan.
             # B7: stäng providern — annars lämnas httpx-tasken pending.
             result = _run_provider(
-                loop.run(self._final_summary_prompt(transcript)), provider)
+                provider.chat(
+                    model=model_name,
+                    messages=[Message(role='user',
+                                      content=self._final_summary_prompt(transcript))],
+                    max_tokens=2048),
+                provider)
             return (result.text or '').strip()[:4000] or None
         except Exception as e:
             _logger.warning(

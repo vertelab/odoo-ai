@@ -4977,17 +4977,14 @@ class AICoworker(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider, get_default_model_name)
-            from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+                Message, ProviderFactory, get_default_provider,
+                get_default_model_name)
 
             provider, provider_model = ProviderFactory.from_coworker(self)
             if not provider:
                 provider, provider_model = get_default_provider()
             model_name = (provider_model and provider_model._get_api_name()) \
                 or get_default_model_name()
-            loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
-                model=model_name, max_rounds=1, max_tokens=1500))
             prompt = (
                 "Granska konversationen och extrahera 1-3 BESTÅENDE fakta "
                 "värda att minnas (inte småprat). Svara med JSON-lista:\n"
@@ -5017,9 +5014,14 @@ class AICoworker(models.Model):
                 "version eller bli ett nytt koncept — slarva inte med den.\n\n"
                 f"Konversation:\n{conversation}"
             )
+            # En enda provider-chat, ingen loop: reflektionen är ett anrop
+            # utan verktyg (structural-discipline-gates 3.3).
             async def _run_and_close():
                 try:
-                    return await loop.run(prompt)
+                    return await provider.chat(
+                        model=model_name,
+                        messages=[Message(role='user', content=prompt)],
+                        max_tokens=1500)
                 finally:
                     # Stäng providerns httpx-klient innan asyncio.run()
                     # stänger event-loopen — annars lämnas en pending
