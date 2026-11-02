@@ -175,3 +175,85 @@ class TestToolsRunRouteUsesGate(TransactionCase):
         self.assertLess(
             eval_pos, exec_pos,
             'evaluate() måste anropas FÖRE tool.execute()')
+
+
+@tagged('ai_core', 'post_install', '-at_install')
+class TestPiApprovalBridge(TransactionCase):
+    """Godkännande givet i Pi:s UI får passera /tools/run — men bara rätt saker.
+
+    Bakgrund: /tools/run har ingen godkännandekanal. PermissionEngine säger
+    needs_user för skrivande verktyg, grinden nekar fail-closed, och Pi får
+    ett fel den inte kan göra något åt. Pi-extensionen fångar nekandet,
+    frågar användaren i sin egen dialog ("bara denna gång" / "hela
+    sessionen") och skickar om anropet med `approved_by_user: true`.
+
+    Det som bevakas:
+      1. Ett skrivande verktyg med godkännande passerar grinden.
+      2. Utan godkännande nekas det fortfarande (fail-closed är kvar).
+      3. HÅRDA STOPP nekas ÄVEN med godkännande — Pi:s dialog visar bara en
+         sammanfattning och får inte bli en genväg runt dem.
+    """
+
+    def _gate(self, tool_name, approved, mode=PermissionMode.INTERACTIVE):
+        """Samma beslut som rutten fattar efter ändringen (stream.py)."""
+        from odoo.addons.ai_agent_core.core.permission import (
+            _ODOO_EXEC_TOOLS, _ODOO_EXTERNAL_TOOLS)
+        engine = PermissionEngine(mode=mode)
+        decision = engine.evaluate(tool_name, {})
+        is_hard_stop = (
+            tool_name in _ODOO_EXEC_TOOLS or tool_name in _ODOO_EXTERNAL_TOOLS)
+        needs_user_unmet = (
+            decision.needs_user and not (approved and not is_hard_stop))
+        return not decision.allowed or needs_user_unmet
+
+    def test_write_passes_with_approval(self):
+        """1: odoo_write med godkännande från Pi ska släppas igenom."""
+        self.assertFalse(
+            self._gate('odoo_write', approved=True),
+            'Ett godkänt odoo_write ska passera grinden')
+
+    def test_write_denied_without_approval(self):
+        """2: utan godkännande är grinden fortfarande fail-closed."""
+        self.assertTrue(
+            self._gate('odoo_write', approved=False),
+            'odoo_write utan godkännande måste nekas')
+
+    def test_create_passes_with_approval(self):
+        self.assertFalse(self._gate('odoo_create', approved=True))
+
+    def test_hard_stop_call_method_denied_even_with_approval(self):
+        """3: odoo_call_method är ett hårt stopp — godkännande räcker inte."""
+        self.assertTrue(
+            self._gate('odoo_call_method', approved=True),
+            'odoo_call_method får ALDRIG köras på /tools/run, ens godkänd — '
+            'Pi-dialogen visar bara en sammanfattning av anropet')
+
+    def test_hard_stop_unlink_denied_even_with_approval(self):
+        self.assertTrue(
+            self._gate('odoo_unlink', approved=True),
+            'odoo_unlink får ALDRIG köras på /tools/run, ens godkänd')
+
+    def test_read_tool_unaffected(self):
+        """Läsande verktyg ska varken kräva eller bry sig om godkännande."""
+        self.assertFalse(self._gate('odoo_search', approved=False))
+        self.assertFalse(self._gate('odoo_search', approved=True))
+
+    def test_route_reads_approved_by_user(self):
+        """Strukturellt: rutten måste läsa flaggan ur bodyn.
+
+        Utan den här kontrollen kan flaggan tas bort tyst och Pi:s
+        godkännandedialog blir verkningslös — den skulle fråga, få ja, och
+        ändå nekas av Odoo.
+        """
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIOpenAIAPI.tools_run))
+        self.assertIn(
+            'approved_by_user', src,
+            '/tools/run måste läsa approved_by_user ur bodyn')
+        self.assertIn(
+            '_is_hard_stop', src,
+            'Hårda stopp måste undantas från godkännande-vägen')
