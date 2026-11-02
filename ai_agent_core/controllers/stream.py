@@ -360,7 +360,7 @@ class AIStreamController(http.Controller):
                             model = agent.model_id._get_api_name()
                             break
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         # session-history-relevance 3.1: cacha skill-katalogen per request.
         # get_available_skills() är dyr och anropades tidigare tre gånger i
@@ -623,7 +623,7 @@ class AIStreamController(http.Controller):
                         except Exception:
                             _logger.warning('Failed to mirror web UI message to channel', exc_info=True)
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         # -- Hoist recordset reads for the SSE generator --
         # Werkzeug iterates the generator AFTER Odoo has torn down the
@@ -1006,7 +1006,7 @@ class AIStreamController(http.Controller):
                                         try:
                                             await agen.aclose()
                                         except Exception:
-                                            pass
+                                            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
                                 _agen = _stream(gen_env)
                                 loop.run_until_complete(_run(_agen))
@@ -1134,7 +1134,7 @@ class AIStreamController(http.Controller):
                         if loop is not None:
                             _drain_tasks_with_timeout(loop, timeout=5.0)
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
                     try:
                         if loop is not None and gen_provider is not None:
                             loop.run_until_complete(gen_provider.aclose())
@@ -1436,7 +1436,7 @@ class AIStreamController(http.Controller):
             try:
                 domain.append(('coworker_id', '=', int(cw_id)))
             except (ValueError, TypeError):
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         sessions = request.env['ai.coworker.session'].sudo().search(
             domain, order='write_date desc', limit=50)
         return Response(json.dumps({
@@ -1478,7 +1478,7 @@ class AIStreamController(http.Controller):
                 if cq.exists():
                     name = cq.name[:50]
             except (ValueError, TypeError):
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         vals = {
             'name': name,
             'user_id': user.id if user.id else None,
@@ -1723,7 +1723,7 @@ class AIStreamController(http.Controller):
                     try:
                         quest._maybe_learn_async(session.id)
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
                 # Proactive company mission evolution (Hole 9)
                 try:
@@ -1744,7 +1744,7 @@ class AIStreamController(http.Controller):
                                     daemon=True,
                                 ).start()
                 except Exception:
-                    pass  # Never fail the response over mission detection
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             _logger.info(
                 "Saved response to session %s: booked %d in/%d out "
@@ -2281,7 +2281,7 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
             items = [f"- {m.content}" for m in memories]
             parts.append("## Lärt om denna quest\n" + "\n".join(items))
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     try:
         # 2. Agent-artefakter — via KOPPLINGEN, inte via ai.memory.agent_id
@@ -2308,7 +2308,7 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
                         parts.append(
                             "## Agent Knowledge\n" + '\n---\n'.join(chunks[:3]))
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     try:
         # 3. Session-level memories (uploaded documents)
@@ -2326,7 +2326,7 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
                 if chunks:
                     parts.append("## Uploaded Documents\n" + '\n---\n'.join(chunks[:3]))
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
     return "\n\n".join(parts) if parts else ""
 
@@ -2350,7 +2350,7 @@ async def _collect(agen):
         try:
             await agen.aclose()
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
     return result
 
 
@@ -2447,7 +2447,7 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
             if tool_rec:
                 tool_cost = tool_rec.sys_token_cost
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         env['ai.coworker.session.line'].sudo().create({
             'session_id': session.id,
             'role': 'tool',
@@ -2555,7 +2555,7 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
                 line_vals['cost_input_1k'] = ai_model.cost_input_1k or 0.0
                 line_vals['cost_output_1k'] = ai_model.cost_output_1k or 0.0
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         env['ai.coworker.session.line'].sudo().create(line_vals)
         # Avslutsorsak i sessionsmetadata (2.3): skilj "avslutad utan
         # sammanfattning" från normal avslutning, och fyll feldetalj när
@@ -2706,7 +2706,7 @@ def _persist_session_with_retry(cr, env, sess, response_text, input_t,
             try:
                 cr.rollback()
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             if attempt >= max_attempts - 1:
                 _logger.warning(
                     'session %s: persist misslyckades även efter retries '
@@ -2756,7 +2756,7 @@ def _drain_tasks_with_timeout(loop, timeout=5.0):
             try:
                 t.cancel()
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         return False
     except Exception as e:
         _logger.warning('efter-strömmens uppstädning misslyckades: %s', e)
@@ -3019,7 +3019,7 @@ def _detect_and_suggest_mission(session_id, last_response, company_id, threshold
                     'importance': 'medium',
                 })
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
 
 # ---------------------------------------------------------------------------
@@ -3053,7 +3053,7 @@ def _get_callback_secret():
         if param:
             return param
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     import os
     return os.environ.get('AI_AGENT_API_SECRET') or None
 
@@ -3314,7 +3314,7 @@ class AIOpenAIAPI(http.Controller):
                 request.update_env(user=user_id)
                 return request.env.user
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         return None
 
@@ -4164,7 +4164,7 @@ class AIOpenAIAPI(http.Controller):
                 try:
                     role_enum = Role(role)
                 except ValueError:
-                    continue
+                    continue  # best-effort: tyst fallback — se etiketteringsregeln
                 content = _content_to_text(m.get('content'))
                 tool_call_id = m.get('tool_call_id')
                 name = m.get('name')
@@ -4566,7 +4566,7 @@ class AIOpenAIAPI(http.Controller):
                     _env_cr.postcommit.add(
                         lambda: _start_title_thread(_title_sess))
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
 
                 return Response(json.dumps({
                     'id': response_id,
@@ -4853,7 +4853,7 @@ class AIOpenAIAPI(http.Controller):
                                     try:
                                         await agen.aclose()
                                     except Exception:
-                                        pass
+                                        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
                             _agen = _stream()
                             aloop.run_until_complete(_run(_agen))
@@ -4868,7 +4868,7 @@ class AIOpenAIAPI(http.Controller):
                                         asyncio.gather(*_dbg_tasks,
                                                        return_exceptions=True))
                             except Exception:
-                                pass
+                                pass  # best-effort: tyst fallback — se etiketteringsregeln
                             try:
                                 if _gen_provider is not None:
                                     aloop.run_until_complete(
@@ -4935,7 +4935,7 @@ class AIOpenAIAPI(http.Controller):
                     try:
                         _gen_cr.close()
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
                     _logger.error('OpenAI SSE error: %s', e, exc_info=True)
                     yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
                     yield 'data: [DONE]\n\n'
@@ -5237,7 +5237,7 @@ class AIOpenAIAPI(http.Controller):
                         aloop.run_until_complete(
                             asyncio.gather(*_ttasks, return_exceptions=True))
                 except Exception:
-                    pass
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
                 aloop.close()
 
             return Response(json.dumps({
@@ -5287,7 +5287,7 @@ class AIOpenAIAPI(http.Controller):
                 if q.exists() and q.status == 'active' and q.active:
                     return q
             except ValueError:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         # 2. Exact channel_alias match
         q = coworker.search([

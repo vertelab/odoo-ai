@@ -275,11 +275,8 @@ class ResCompany(models.Model):
             # och gjorde knappen till en tyst no-op.
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import (
-                _run_provider, get_default_provider,
+                Message, _run_provider, get_default_provider,
                 get_default_model_name)
-            from odoo.addons.ai_agent_core.core.loop import (
-                AgentLoop, AgentConfig)
-            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
 
             provider, model_rec = get_default_provider(self.env)
             if not provider:
@@ -287,14 +284,16 @@ class ResCompany(models.Model):
                     'Identitetsförslag: ingen provider tillgänglig')
                 return
 
-            loop = AgentLoop(
-                provider=provider, tools=ToolRegistry(),
-                config=AgentConfig(
+            # En enda provider-chat, ingen loop: förslaget är ett anrop
+            # utan verktyg (structural-discipline-gates 3.3).
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            raw = _run_provider(
+                provider.chat(
                     model=(model_rec and model_rec._get_api_name())
                     or get_default_model_name(),
-                    max_rounds=1, max_tokens=2000))
-            # B7: stäng providern — annars lämnas httpx-tasken pending.
-            raw = _run_provider(loop.run(prompt), provider)
+                    messages=[Message(role='user', content=prompt)],
+                    max_tokens=2000),
+                provider)
             response_text = (raw.text or '').strip()
 
             # Parse response

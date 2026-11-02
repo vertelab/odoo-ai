@@ -517,7 +517,7 @@ class AITool(models.Model):
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         else:
             # Vi är i en async-kontext — anropa async-varianten direkt.
             raise UserError(

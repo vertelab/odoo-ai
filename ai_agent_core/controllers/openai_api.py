@@ -30,7 +30,7 @@ def _start_title_thread(session):
     try:
         session._maybe_update_title_async()
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
 
 async def _collect_async(agen):
@@ -46,7 +46,7 @@ async def _collect_async(agen):
         try:
             await agen.aclose()
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
     return result
 
 
@@ -437,7 +437,7 @@ class AIOpenAPIController(http.Controller):
             try:
                 coworker._maybe_learn_async(_session.id)
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             # Sessionsnamn (session-title steg B): startas EFTER commit —
             # tråden öppnar en egen cursor och skriver samma rad. Före commit
@@ -448,7 +448,7 @@ class AIOpenAPIController(http.Controller):
                 _session.env.cr.postcommit.add(
                     lambda: _start_title_thread(_title_sess))
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             response_text = result.text if hasattr(result, 'text') else str(result or '')
             input_t = getattr(result, 'input_tokens', estimated_tokens)
@@ -651,7 +651,7 @@ class AIOpenAPIController(http.Controller):
                         _session.env.cr.postcommit.add(
                             lambda: _start_title_thread(_title_sess))
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
                     from odoo import api as _api, registry as _registry
                     with _registry(gen_dbname).cursor() as gen_cr:
@@ -669,7 +669,7 @@ class AIOpenAPIController(http.Controller):
                             loop.run_until_complete(
                                 _dbg2.gather(*_dt, return_exceptions=True))
                     except Exception:
-                        pass
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
                     loop.close()
             except Exception as e:
                 _logger.error('OpenAI API stream error: %s', e, exc_info=True)

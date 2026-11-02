@@ -120,11 +120,11 @@ def write_api_key_file(api_key):
         try:
             os.close(fd)
         except OSError:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         try:
             os.unlink(path)
         except OSError:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         raise
     return path
 
@@ -173,7 +173,7 @@ class ExternalAgentHandle:
             try:
                 os.unlink(self.key_file)
             except OSError:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             self.key_file = None
 
 
@@ -205,7 +205,7 @@ def pid_alive(pid):
         if state == 'Z':
             return False
     except (OSError, ValueError, IndexError):
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     return True
 
 
@@ -310,7 +310,7 @@ def spawn(env, coworker_id, api_key, base_url, name=None, skills=None,
         try:
             os.unlink(key_file)
         except OSError:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         raise
 
     spawn_timeout = get_float(env, PARAM_SPAWN_TIMEOUT, DEFAULT_SPAWN_TIMEOUT)
@@ -320,7 +320,7 @@ def spawn(env, coworker_id, api_key, base_url, name=None, skills=None,
         try:
             os.unlink(key_file)
         except OSError:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         raise RuntimeError(
             'runtime: pi-agent lyssnade inte på port %d inom %.1f s '
             '(rc=%s).' % (port, spawn_timeout, rc))
@@ -346,7 +346,7 @@ def _terminate(proc, grace):
     try:
         proc.terminate()   # SIGTERM
     except OSError:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     deadline = time.time() + grace
     while time.time() < deadline:
         if proc.poll() is not None:
@@ -355,11 +355,11 @@ def _terminate(proc, grace):
     try:
         proc.kill()        # SIGKILL
     except OSError:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     try:
         proc.wait(timeout=5)
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     return proc.poll() is not None
 
 
@@ -403,7 +403,7 @@ def kill_pid(pid, grace=None):
     try:
         os.kill(int(pid), signal.SIGKILL)
     except OSError:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     time.sleep(0.1)
     _reap_if_child(pid)
     return not pid_alive(pid)
@@ -419,7 +419,7 @@ def _reap_if_child(pid):
     try:
         os.waitpid(int(pid), os.WNOHANG)
     except (OSError, ChildProcessError, ValueError):
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
 
 
 # ── Livs-heartbeat (D6: Odoo POLLAR) ────────────────────────────────

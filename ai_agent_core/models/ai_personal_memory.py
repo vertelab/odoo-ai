@@ -995,11 +995,8 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
         # coworkern (→ agent → ai.model → ai.provider), annars default.
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, _run_provider,
+                Message, ProviderFactory, _run_provider,
                 get_default_provider, get_default_model_name)
-            from odoo.addons.ai_agent_core.core.loop import (
-                AgentLoop, AgentConfig)
-            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
 
             provider, model_rec = (
                 ProviderFactory.from_coworker(coworker)
@@ -1013,12 +1010,15 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
 
             model_name = (model_rec and model_rec._get_api_name()) \
                 or get_default_model_name()
-            loop = AgentLoop(
-                provider=provider, tools=ToolRegistry(),
-                config=AgentConfig(model=model_name, max_rounds=1,
-                                   max_tokens=1500))
+            # En enda provider-chat, ingen loop: extraktionen är ett anrop
+            # utan verktyg (structural-discipline-gates 3.2).
             # B7: stäng providern — annars lämnas httpx-tasken pending.
-            result = _run_provider(loop.run(prompt), provider)
+            result = _run_provider(
+                provider.chat(
+                    model=model_name,
+                    messages=[Message(role='user', content=prompt)],
+                    max_tokens=1500),
+                provider)
             response = (result.text or '').strip()
 
             # Modellen kan linda JSON i ```-block trots instruktionen.
@@ -1142,24 +1142,23 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                 # av except) och 'gpt-4o-mini' finns inte i installationen.
                 # Använd samma provider-kedja som resten av systemet.
                 from odoo.addons.ai_agent_core.core.provider import (
-                    ProviderFactory, _run_provider,
+                    Message, ProviderFactory, _run_provider,
                     get_default_provider, get_default_model_name)
-                from odoo.addons.ai_agent_core.core.loop import (
-                    AgentLoop, AgentConfig)
-                from odoo.addons.ai_agent_core.core.tools import ToolRegistry
                 provider, model_rec = get_default_provider(self.env)
                 if not provider:
                     _logger.warning(
                         'Discuss-extraction: ingen provider tillgänglig')
                     return total
-                loop = AgentLoop(
-                    provider=provider, tools=ToolRegistry(),
-                    config=AgentConfig(
+                # En enda provider-chat, ingen loop (samma skäl som
+                # _llm_extract_facts ovan).
+                # B7: stäng providern — annars lämnas httpx-tasken pending.
+                raw = _run_provider(
+                    provider.chat(
                         model=(model_rec and model_rec._get_api_name())
                         or get_default_model_name(),
-                        max_rounds=1, max_tokens=1500))
-                # B7: stäng providern — annars lämnas httpx-tasken pending.
-                raw = _run_provider(loop.run(prompt), provider)
+                        messages=[Message(role='user', content=prompt)],
+                        max_tokens=1500),
+                    provider)
                 response = (raw.text or '').strip()
                 # Modellen kan linda JSON i ```-block trots instruktionen
                 # (samma hantering som _llm_extract_facts).

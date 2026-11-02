@@ -187,7 +187,7 @@ class JevClient:
             except urllib.error.HTTPError:
                 return True   # server answered — it is up
             except Exception:
-                continue
+                continue  # best-effort: tyst fallback — se etiketteringsregeln
         return False
 
     def choose(self, state: str, instructions: str,
@@ -545,7 +545,7 @@ class ToolSelector:
             if val not in (None, ""):
                 return str(val)
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         return default
 
     @classmethod

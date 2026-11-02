@@ -146,7 +146,7 @@ class DiscussChannel(models.Model):
                 try:
                     out.append(int(i))
                 except (TypeError, ValueError):
-                    continue
+                    continue  # best-effort: tyst fallback — se etiketteringsregeln
             return out
 
         def _apply(ctx, source):
@@ -196,7 +196,7 @@ class DiscussChannel(models.Model):
                     return result
                 _apply(getattr(req, 'params', {}) or {}, 'http-params')
         except Exception:
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         return result
 

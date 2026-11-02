@@ -151,7 +151,7 @@ class AiCostPeriodLine(models.Model):
                 )
             except Exception:
                 # Ingen kurs tillgänglig → lämna 0 men behåll cost_usd.
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
         return list(buckets.values())
 
     @api.model

@@ -53,7 +53,7 @@ def _coerce(value):
     try:
         return json.loads(v)
     except (ValueError, TypeError):
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     low = v.lower()
     if low == 'true':
         return True

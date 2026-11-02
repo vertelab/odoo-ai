@@ -69,12 +69,12 @@ def _safe_json_loads(text, default=None):
     try:
         return json.loads(s)
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     try:
         import ast
         return ast.literal_eval(s)
     except Exception:
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     # Sista utväg: om det är ett platt "key: value"-mönster, wrap:a
     if default is not None:
         return default
@@ -386,7 +386,7 @@ class AIProvider:
             try:
                 await self._client.aclose()
             except Exception:
-                pass
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             self._client = None
 
     async def chat(
@@ -615,7 +615,7 @@ class AIProvider:
                     try:
                         yield json.loads(data_str)
                     except json.JSONDecodeError:
-                        continue
+                        continue  # best-effort: tyst fallback — se etiketteringsregeln
         finally:
             await response.aclose()
 
@@ -849,7 +849,7 @@ class AIProvider:
                 try:
                     event = json.loads(line[6:])
                 except json.JSONDecodeError:
-                    continue
+                    continue  # best-effort: tyst fallback — se etiketteringsregeln
 
                 ev_type = event.get("type", "")
                 if ev_type == "message_start":
@@ -1120,12 +1120,12 @@ def _close_provider_sync(provider):
         if transport is not None and hasattr(transport, 'close'):
             transport.close()
     except Exception:  # noqa: BLE001 — städning får aldrig kasta
-        pass
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
     finally:
         try:
             provider._client = None
         except Exception:  # noqa: BLE001
-            pass
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
 
 
 def _run_provider(coro, provider=None):
