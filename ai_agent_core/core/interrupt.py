@@ -14,6 +14,7 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Optional
 
 _logger = logging.getLogger(__name__)
@@ -37,6 +38,45 @@ def needs_approval(risk_level: str, threshold: int = APPROVAL_THRESHOLD_DEFAULT)
     """Check if a tool at this risk level requires human approval."""
     level = RISK_LEVELS.get(risk_level, 1)
     return level >= threshold
+
+
+# ---------------------------------------------------------------------------
+# ApprovalRequest — en fråga som väntar på svar (tools-run-approval-channel)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ApprovalRequest:
+    """En godkännandebegäran som väntar på en människa.
+
+    Används av `/ai/v1/tools/run` när grinden säger `needs_user`: i stället
+    för att neka blint registreras en begäran som klienten kan läsa via
+    `/ai/interrupt/poll` och svara på via `/ai/interrupt/respond`.
+
+    `arg_keys` innehåller **nycklar**, aldrig värden. En begäran ska visa
+    VILKA fält anropet rör, inte vad de innehåller — annars läcker
+    verktygsargument (kunduppgifter, belopp, personnummer) ut i en kanal
+    som pollas av klienten.
+    """
+
+    request_id: str
+    tool_name: str
+    arg_keys: list = field(default_factory=list)
+    risk_class: str = ''
+    reason: str = ''
+    created: float = field(default_factory=time.time)
+
+    def to_dict(self) -> dict:
+        """Formen som `/ai/interrupt/poll` skickar till klienten."""
+        return {
+            'type': 'needs_approval',
+            'request_id': self.request_id,
+            'tool_name': self.tool_name,
+            'arg_keys': list(self.arg_keys),
+            'risk_class': self.risk_class,
+            'reason': self.reason,
+            'created': self.created,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +313,19 @@ class WebUIInterruptHandler(InterruptHandler):
         self._response: dict | None = None
         self._steer_buffer: list[str] = []
 
+        # Väntande godkännanden (tools-run-approval-channel 2.1). Nyckeln är
+        # `request_id`, värdet är en `ApprovalRequest`. `/ai/v1/tools/run`
+        # registrerar en begäran här när grinden säger `needs_user`, och
+        # `/ai/interrupt/poll` levererar den till klienten.
+        #
+        # Skilt från `_pending`: `get_pending()` TÖMMER `_pending` (den är
+        # en engångshändelse för SSE), medan en godkännandebegäran måste
+        # kunna läsas om — klienten kan poll:a flera gånger innan
+        # användaren har svarat.
+        self.pending_approvals: dict = {}
+        # Svar per request_id: {'approved': bool, 'reason': str}
+        self._approval_responses: dict = {}
+
     def emit_sse(self, event_type: str, data: dict) -> None:
         """Store pending interrupt for SSE polling."""
         key = f"ai_interrupt_{self.session_uuid}"
@@ -288,6 +341,41 @@ class WebUIInterruptHandler(InterruptHandler):
         pending = self._pending
         self._pending = {}
         return pending if pending.get("type") else None
+
+    # ── Väntande godkännanden (tools-run-approval-channel) ──
+
+    def register_approval(self, request):
+        """Registrera en väntande godkännandebegäran.
+
+        Begäran ligger kvar tills den besvaras eller tidsgränsen går ut —
+        till skillnad från `_pending`, som töms vid första läsningen.
+        """
+        self.pending_approvals[request.request_id] = request
+        return request
+
+    def get_approvals(self) -> list:
+        """Alla väntande begäranden, i skapelseordning."""
+        return sorted(
+            self.pending_approvals.values(), key=lambda r: r.created)
+
+    def answer_approval(self, request_id, approved, reason=''):
+        """Registrera ett svar på en begäran.
+
+        Returns:
+            bool: True om begäran fanns och svaret togs emot.
+        """
+        if request_id not in self.pending_approvals:
+            return False
+        self._approval_responses[request_id] = {
+            'approved': bool(approved),
+            'reason': reason or '',
+        }
+        self.pending_approvals.pop(request_id, None)
+        return True
+
+    def take_approval_response(self, request_id):
+        """Hämta och ta bort ett svar. None = inget svar ännu."""
+        return self._approval_responses.pop(request_id, None)
 
     def set_response(self, response: str) -> None:
         """Receive human response from POST endpoint."""

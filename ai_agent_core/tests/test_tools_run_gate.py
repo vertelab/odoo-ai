@@ -257,3 +257,137 @@ class TestPiApprovalBridge(TransactionCase):
         self.assertIn(
             '_is_hard_stop', src,
             'Hårda stopp måste undantas från godkännande-vägen')
+
+
+@tagged('ai_core', 'post_install', '-at_install')
+class TestApprovalChannel(TransactionCase):
+    """tools-run-approval-channel 2.1–3.5, 4.2–4.3.
+
+    Kanalen: när grinden säger `needs_user` registreras en begäran på
+    sessionens handler i stället för att neka blint. Klienten pollar
+    `/ai/interrupt/poll` och svarar på `/ai/interrupt/respond`.
+    """
+
+    def _handler(self):
+        from odoo.addons.ai_agent_core.core.interrupt import (
+            WebUIInterruptHandler)
+        return WebUIInterruptHandler('test-approval', env=self.env)
+
+    def _request(self, **kw):
+        from odoo.addons.ai_agent_core.core.interrupt import ApprovalRequest
+        args = dict(
+            request_id='req-1',
+            tool_name='odoo_write',
+            arg_keys=['partner_id', 'name'],
+            risk_class='write',
+            reason='write tool — requires user approval',
+        )
+        args.update(kw)
+        return ApprovalRequest(**args)
+
+    # ── 2.1/2.2: registrering och form ──
+
+    def test_request_can_be_registered_and_read(self):
+        handler = self._handler()
+        req = self._request()
+        handler.register_approval(req)
+        self.assertEqual(len(handler.get_approvals()), 1)
+        self.assertIs(handler.get_approvals()[0], req)
+
+    def test_request_carries_keys_not_values(self):
+        """2.2: `arg_keys` är nycklar — argumentvärden får inte läcka."""
+        req = self._request()
+        payload = req.to_dict()
+        self.assertEqual(payload['arg_keys'], ['partner_id', 'name'])
+        # Inget värde får finnas i payloaden.
+        self.assertNotIn('Acme', json.dumps(payload))
+        self.assertEqual(
+            set(payload),
+            {'type', 'request_id', 'tool_name', 'arg_keys',
+             'risk_class', 'reason', 'created'})
+
+    def test_approval_survives_repeated_reads(self):
+        """Till skillnad från `_pending` töms inte en begäran vid läsning."""
+        handler = self._handler()
+        handler.register_approval(self._request())
+        self.assertEqual(len(handler.get_approvals()), 1)
+        self.assertEqual(len(handler.get_approvals()), 1)
+
+    # ── 3.x: svarskanalen ──
+
+    def test_answer_is_taken_once(self):
+        handler = self._handler()
+        handler.register_approval(self._request())
+        self.assertTrue(handler.answer_approval('req-1', True))
+        self.assertEqual(
+            handler.take_approval_response('req-1'),
+            {'approved': True, 'reason': ''})
+        self.assertIsNone(
+            handler.take_approval_response('req-1'),
+            'svaret ska bara kunna tas en gång')
+
+    def test_answer_removes_the_pending_request(self):
+        handler = self._handler()
+        handler.register_approval(self._request())
+        handler.answer_approval('req-1', False, 'nej')
+        self.assertEqual(handler.get_approvals(), [])
+
+    def test_answer_for_unknown_request_is_refused(self):
+        handler = self._handler()
+        self.assertFalse(handler.answer_approval('finns-inte', True))
+
+    def test_response_shape_is_distinct_from_ask(self):
+        """Ett godkännandesvar får inte förväxlas med `ask`-svaret."""
+        handler = self._handler()
+        handler.register_approval(self._request())
+        handler.answer_approval('req-1', True)
+        answer = handler.take_approval_response('req-1')
+        self.assertIsInstance(answer, dict)
+        self.assertIn('approved', answer)
+        self.assertNotIn('action', answer)
+
+    # ── 4.2/4.3: loggning utan argumentvärden ──
+
+    def test_approval_log_has_no_argument_values(self):
+        """4.2: loggraden namnger nycklarna, aldrig värdena."""
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(inspect.getsource(stream_mod._log_approval))
+        self.assertIn('arg_keys', src)
+        self.assertNotIn('args.items()', src,
+                         'loggen får inte skriva ut argumentvärden')
+        self.assertNotIn('args)', src.split('sorted(')[-1][:40])
+
+    def test_denial_log_exists(self):
+        import inspect
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        self.assertTrue(callable(stream_mod._log_denial))
+        self.assertIn('NEKAT', inspect.getsource(stream_mod._log_denial))
+
+    # ── 5.2: en needs_user-gren måste försöka registrera ──
+
+    def test_needs_user_tries_the_channel_first(self):
+        """5.2: grenen får inte neka utan att först försöka fråga."""
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIOpenAIAPI.tools_run))
+        self.assertIn('_approval_handler_for', src,
+                      'needs_user-grenen måste slå upp en handler')
+        self.assertIn('_register_approval', src,
+                      'needs_user-grenen måste registrera en begäran')
+        self.assertIn('_wait_for_approval', src,
+                      'needs_user-grenen måste vänta på svaret')
+
+    def test_hard_stop_never_reaches_the_channel(self):
+        """Hårda stopp ska nekas utan att fråga — även med kanal."""
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIOpenAIAPI.tools_run))
+        self.assertIn(
+            'not _is_hard_stop', src,
+            'kanal-grenen måste undanta hårda stopp')

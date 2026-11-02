@@ -1409,6 +1409,15 @@ class AIStreamController(http.Controller):
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
+            # Väntande godkännanden (tools-run-approval-channel): en begäran
+            # som `/ai/v1/tools/run` registrerat levereras FÖRE eventuella
+            # SSE-händelser. Den ligger kvar tills den besvaras — att poll:a
+            # om ska inte tappa frågan.
+            approvals = handler.get_approvals()
+            if approvals:
+                yield f"data: {json.dumps(approvals[0].to_dict())}\n\n"
+                return
+
             # A6: loopen hade ingen tidsgräns. `while True: ... sleep(0.5)` i
             # en WSGI-tråd blockerar EN worker tills ett interrupt dyker upp
             # — eller för alltid om inget kommer. Med ett fåtal samtidiga
@@ -1446,10 +1455,24 @@ class AIStreamController(http.Controller):
             return {"error": "Missing session_uuid or response"}
 
         handler = _get_webui_handler(session_uuid)
-        if handler:
-            handler.set_response(response)
-            return {"status": "ok"}
-        return {"error": "No pending interrupt for this session"}
+        if not handler:
+            return {"error": "No pending interrupt for this session"}
+
+        # Godkännandesvar (tools-run-approval-channel 3.x): klienten svarar
+        # på en begäran med `request_id` + `approved`. Formen skiljs från
+        # det vanliga `ask`-svaret (en sträng) så att de två kanalerna inte
+        # blandas ihop.
+        if isinstance(response, dict) and response.get('request_id'):
+            request_id = str(response['request_id'])
+            approved = response.get('approved') is True
+            reason = str(response.get('reason') or '')
+            if not handler.answer_approval(request_id, approved, reason):
+                return {"error": "No pending approval with that request_id"}
+            return {"status": "ok", "request_id": request_id,
+                    "approved": approved}
+
+        handler.set_response(response)
+        return {"status": "ok"}
 
     # === Thread API (web-chat-threads-memory change) ===
 
@@ -2304,6 +2327,89 @@ def _start_title_thread(session):
         _logger.warning(
             'Titel-uppdatering misslyckades för session %s: %s',
             getattr(session, 'id', '?'), _title_err)
+
+
+# ── Godkännandekanal för /ai/v1/tools/run (tools-run-approval-channel) ──
+#
+# `/tools/run` har ingen SSE-ström, så det finns ingen `session_uuid` att
+# slå upp en handler på. Vi registrerar därför en handler per Odoo-session
+# i samma in-process-dict som stream-vägen använder, med en deterministisk
+# nyckel. Klienten får nyckeln i svaret och poll:ar `/ai/interrupt/poll`
+# med den.
+#
+# KÄNT: samma begränsning som A7 ovan — dicten är in-process. Med flera
+# workers måste poll och respond träffa samma process. Det är samma
+# villkor som stream-vägen redan lever under.
+
+APPROVAL_TIMEOUT = 60.0
+"""Tid ett /tools/run-anrop väntar på ett mänskligt svar (sekunder)."""
+
+
+def _approval_key(sess):
+    """Deterministisk handler-nyckel för en Odoo-session."""
+    return 'tools-run-%s' % (getattr(sess, 'id', 0) or 0)
+
+
+def _approval_handler_for(sess):
+    """Handler för sessionen — skapas vid behov.
+
+    Returns:
+        WebUIInterruptHandler eller None om sessionen inte finns.
+    """
+    if not sess or not sess.exists():
+        return None
+    from odoo.addons.ai_agent_core.core.interrupt import WebUIInterruptHandler
+    key = _approval_key(sess)
+    handler = _get_webui_handler(key)
+    if handler is None:
+        handler = WebUIInterruptHandler(key, env=sess.env)
+        _register_webui_handler(key, handler)
+    return handler
+
+
+def _register_approval(handler, tool_name, args, decision, tool=None):
+    """Registrera en väntande begäran. Returnerar ApprovalRequest."""
+    import uuid as _uuid
+    from odoo.addons.ai_agent_core.core.interrupt import ApprovalRequest
+    req = ApprovalRequest(
+        request_id=str(_uuid.uuid4()),
+        tool_name=tool_name,
+        # ENDAST nycklar — aldrig värden (2.2).
+        arg_keys=sorted(args.keys()) if isinstance(args, dict) else [],
+        # `Decision` bär ingen riskklass — härled den ur verktyget.
+        risk_class=str(getattr(tool, 'risk_level', '') or ''),
+        reason=str(getattr(decision, 'reason', '') or ''),
+    )
+    handler.register_approval(req)
+    return req
+
+
+async def _wait_for_approval(handler, request_id, timeout=None):
+    """Vänta på svar. None = ingen svar inom tidsgränsen."""
+    timeout = APPROVAL_TIMEOUT if timeout is None else timeout
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        answer = handler.take_approval_response(request_id)
+        if answer is not None:
+            return answer
+        await asyncio.sleep(0.2)
+    return None
+
+
+def _log_approval(sess, tool_name, request_id, args):
+    """Logga ett godkännande — utan argumentvärden (4.2)."""
+    _logger.info(
+        'tools/run GODKÄNT: tool=%s session=%s request=%s user=%s arg_keys=%s',
+        tool_name, getattr(sess, 'id', 0), request_id,
+        getattr(request.env.user, 'id', 0) if request else '-',
+        sorted(args.keys()) if isinstance(args, dict) else [])
+
+
+def _log_denial(sess, tool_name, request_id, reason):
+    """Logga ett nekande (4.3)."""
+    _logger.warning(
+        'tools/run NEKAT: tool=%s session=%s request=%s reason=%s',
+        tool_name, getattr(sess, 'id', 0), request_id or '-', reason)
 
 
 def _get_webui_handler(session_uuid: str):
@@ -5279,13 +5385,53 @@ class AIOpenAIAPI(http.Controller):
                     _decision.needs_user
                     and not (approved_by_user and not _is_hard_stop))
                 if not _decision.allowed or _needs_user_unmet:
-                    _logger.warning(
-                        'tools/run nekade %s (session %s): %s',
-                        name, sess.id if sess.exists() else 0,
-                        _decision.reason)
-                    return {'name': name,
-                            'result': f'Permission denied: {_decision.reason}',
-                            'is_error': True}
+                    # Svarskanal (tools-run-approval-channel 3.1): finns en
+                    # handler registrerad för sessionen kan vi FRÅGA i
+                    # stället för att neka blint. Pi pollar
+                    # `/ai/interrupt/poll`, visar frågan och svarar på
+                    # `/ai/interrupt/respond`.
+                    #
+                    # Hårda stopp går aldrig hit: de nekas alltid på den här
+                    # ytan (Pi:s dialog visar bara en sammanfattning).
+                    _handler = _approval_handler_for(sess)
+                    if (_needs_user_unmet and not _is_hard_stop
+                            and _handler is not None):
+                        _req = _register_approval(
+                            _handler, name, args, _decision, tool)
+                        _answer = await _wait_for_approval(
+                            _handler, _req.request_id)
+                        if _answer is None:
+                            _log_denial(sess, name, _req.request_id,
+                                        'approval timed out')
+                            return {'name': name,
+                                    'result': ('Permission denied: '
+                                               'approval timed out'),
+                                    'is_error': True,
+                                    'request_id': _req.request_id}
+                        if not _answer.get('approved'):
+                            _log_denial(sess, name, _req.request_id,
+                                        _answer.get('reason') or 'rejected')
+                            return {'name': name,
+                                    'result': ('Permission denied: '
+                                               + (_answer.get('reason')
+                                                  or 'rejected by user')),
+                                    'is_error': True,
+                                    'request_id': _req.request_id}
+                        # Godkänt: exekvera. Grinden anropas INTE igen
+                        # (3.5) — beslutet fattades ovan.
+                        _log_approval(sess, name, _req.request_id, args)
+
+                    else:
+                        _logger.warning(
+                            'tools/run nekade %s (session %s): %s',
+                            name, sess.id if sess.exists() else 0,
+                            _decision.reason)
+                        _log_denial(
+                            sess, name, '', 'no approval channel connected')
+                        return {'name': name,
+                                'result': ('Permission denied: '
+                                           + _decision.reason),
+                                'is_error': True}
 
                 try:
                     result = await tool.execute(**args)
