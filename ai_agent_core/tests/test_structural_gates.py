@@ -426,6 +426,13 @@ class StructuralGateToolExecution(TransactionCase):
 #: §7–§9 (EvalRunner, IntelligentRouter, ExternalAgentHandle, JevClient,
 #: LexicalSelector). `BudgetTracker`/`BudgetEnforcingProvider` fanns aldrig
 #: här — de togs bort ur core/budget.py i §2.
+#:
+#: `ChannelRegistry`/`ChannelAdapter`/`ItemProcessor` stod här när
+#: `channel-adapter-wiring` började. De togs bort i §6.3: `hooks.py`
+#: registrerar mail-kanalen vid moduluppstart och `models/ai_coworker.py`
+#: använder `MailChannelAdapter` — kontraktet har produktionsanropare.
+#: `NormalizedItem` och `process_item` har aldrig räknats som mekanismer
+#: (dataklass respektive modulnivåfunktion).
 CORE_WIRING_ALLOWLIST = [
     (
         'AIProvider',
