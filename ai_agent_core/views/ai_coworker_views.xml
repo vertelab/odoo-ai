@@ -396,9 +396,6 @@
                                 <field name="session_graph_enabled"
                                        invisible="not graph_enrichment"/>
                             </group>
-                            <group string="Hermes Injection Level">
-                                <field name="injection_level" widget="radio"/>
-                            </group>
                             <group string="Företagsminne" invisible="'Företagets minne' in memory_scopes" >
                                 <field name="inject_company_memory"/>
                                 <field name="company_memory_artifact_types" widget="many2many_tags"/>

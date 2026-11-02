@@ -181,16 +181,6 @@ class AICoworker(models.Model):
              'ai-orchestration-tidy-up 7.3). Kan överridas per-anrop via '
              'context-nyckeln conference_mechanism.')
 
-    # ── Workspace Hermes injection level (D6) ──
-    injection_level = fields.Selection([
-        ('summary_only', 'Summary only (L3)'),
-        ('summary_and_key', 'Summary + Key concepts (L3+L1)'),
-        ('full', 'Full (L3+L1+L0)'),
-    ], string='Hermes Injection Level', default='summary_and_key',
-        help='How much of the OKF memory (L0-L3) is injected into the '
-             'system prompt for this coworker. summary_only is cheapest and '
-             'least noisy; full gives complete context at higher token cost.')
-
     # ── Minne (agent-memory-governance: runtime-saning) ──
     memory_scopes = fields.Many2many(
         'ai.memory.scope', 'ai_coworker_memory_scope_rel',
@@ -3511,6 +3501,11 @@ class AICoworker(models.Model):
                 query, scope=scope, owner_id=owner_id,
                 limit=params['limit'],
                 hybrid=kw.get('hybrid', True),
+                # Injiceringsvägen skickar `semantic=False` (D7): anropet
+                # är synkront och körs i request-tråden. Utan forwarding
+                # här blev grafberikningen en andra blockerande
+                # embedding-väg i samma injektion.
+                semantic=kw.get('semantic', True),
                 semantic_weight=params['semantic_weight'],
                 # VÄG 2 (§17.4): trösklarna är per signal och skickas med
                 # som de är. `_okf_search` applicerar dem som
@@ -3896,6 +3891,13 @@ class AICoworker(models.Model):
             if self.hybrid_semantic_weight:
                 s_params['semantic_weight'] = min(
                     1.0, max(0.0, self.hybrid_semantic_weight))
+            # Semantisk injektion är opt-in (D7). Embedding-anropet är
+            # synkront (20 s × 3 försök) och körs i request-tråden — tre
+            # scope-loopar per tur ger upp till 180 s blockerad worker.
+            # BM25 svarar på millisekunder och räcker för injektionens
+            # syfte. Slås på via `ai_agent_core.injection_semantic`.
+            injection_semantic = self.env['ir.config_parameter'].sudo() \
+                .get_param('ai_agent_core.injection_semantic', 'False') == 'True'
             for scope in ('company', 'personal', 'coworker'):
                 if scope not in scope_codes:
                     continue
@@ -3922,7 +3924,8 @@ class AICoworker(models.Model):
                             'L1': 'summary_and_key',
                             'L2': 'summary_and_key',
                             'L3': 'full',
-                        }.get(level, 'summary_and_key'))
+                        }.get(level, 'summary_and_key'),
+                        semantic=injection_semantic)
                     if block:
                         parts.append(block)
                         budget -= len(block)
@@ -3944,7 +3947,8 @@ class AICoworker(models.Model):
                         prompt or self.description or '', scope=scope,
                         owner_id=owner_id, user=user,
                         sources=self.search_sources.filtered(
-                            lambda s: s.backend == 'okf_concept'))
+                            lambda s: s.backend == 'okf_concept'),
+                        semantic=injection_semantic)
                     if hits:
                         graph_text = self._graph_enrich(hits)
                         if graph_text:

@@ -2841,7 +2841,7 @@ class AIOkfConcept(models.Model):
                                        user=None, include_level1=True,
                                        injection_level='summary_and_key',
                                        semantic_weight=None, limit=None,
-                                       hybrid=True):
+                                       hybrid=True, semantic=None):
         """Bygg Hermes-kompatibel system prompt-block från ai.okf.concept.
 
         Nivåordning (task 7.4):
@@ -2870,6 +2870,11 @@ class AIOkfConcept(models.Model):
                 medarbetarens sökstrategi (fas 13.10).
             limit (int, optional): Max antal L1-koncept. None → 10.
             hybrid (bool): Slå samman vektor- och textsignalen (fas 12).
+            semantic (bool, optional): Skickas vidare till `_okf_search`.
+                None → läs `ai_agent_core.injection_semantic` (default False).
+                Injektionen går i request-tråden, och ett synkront
+                embedding-anrop (20 s × 3 försök) kan blockera workern i upp
+                till 60 s per scope. BM25 räcker för injektionens syfte.
 
         Returns:
             str: Formatterad block eller tom sträng
@@ -2955,11 +2960,16 @@ class AIOkfConcept(models.Model):
         # Level 1 — Indexerad data via _okf_search
         want_l1 = injection_level in ('summary_and_key', 'full')
         if want_l1 and include_level1 and query:
+            if semantic is None:
+                # Injektionens semantik är opt-in (D7): anropet är synkront
+                # och körs i request-tråden. Default av — se docstring.
+                semantic = self.env['ir.config_parameter'].sudo().get_param(
+                    'ai_agent_core.injection_semantic', 'False') == 'True'
             search_results = self._okf_search(
                 query, scope=scope, owner_id=owner_id,
                 artifact_type_ids=artifact_type_ids,
                 limit=limit or 10, user=user, hybrid=hybrid,
-                semantic_weight=semantic_weight)
+                semantic_weight=semantic_weight, semantic=semantic)
             if search_results:
                 # D6: koncept som redan lyfts till L2 ska inte injiceras en
                 # andra gång i L1 — samma budget, dubbel kostnad.
