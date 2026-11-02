@@ -6692,7 +6692,48 @@ class AICoworker(models.Model):
             cmd = cmd.strip()
             if cmd:
                 permissions.session_allow_commands.add(cmd)
+
+        # Godkända automationer (unattended-standing-rules 2.1): regler som
+        # en människa redan godkänt via `ai.coworker.hitl.standing_rule`.
+        # De skrevs tidigare men lästes aldrig — se `_load_standing_rules`.
+        for action_type in self._load_standing_rules():
+            permissions.standing_rules.setdefault(action_type, set()).add(
+                'granted')
         return permissions
+
+    def _load_standing_rules(self):
+        """Handlingar som en människa godkänt via HITL (2.1).
+
+        Läser `ai.coworker.hitl`-poster med `standing_rule` satt för DEN
+        här coworkerns användare. `_create_standing_rule()` skriver raden
+        när ett `auto_proposal` godkänns; utan den här läsningen var
+        "godkänn tre gånger → automatisera" en rad som ingen konsumerade.
+
+        Returns:
+            set[str] av `action_type` — tom mängd om inget är godkänt.
+        """
+        if 'ai.coworker.hitl' not in self.env:
+            return set()
+        try:
+            hitls = self.env['ai.coworker.hitl'].sudo().search([
+                ('standing_rule', '!=', False),
+                ('user_id', '=', self.env.uid),
+            ])
+        except Exception:
+            _logger.warning(
+                'Kunde inte läsa standing_rule-poster för %s', self.name,
+                exc_info=True)
+            return set()
+        actions = set()
+        for hitl in hitls:
+            try:
+                rule = json.loads(hitl.standing_rule or '{}')
+            except (json.JSONDecodeError, TypeError):
+                continue
+            action = rule.get('action_type')
+            if action:
+                actions.add(action)
+        return actions
 
     def action_run_scheduled(self):
         """Run this quest as a scheduled automation.

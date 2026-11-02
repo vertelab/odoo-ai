@@ -236,6 +236,18 @@ class PermissionEngine:
     # CUSTOM mode: tools that are auto-allowed
     auto_allow_tools: set[str] = field(default_factory=set)
 
+    # Godkända automationer (unattended-standing-rules 2.1): verktyg →
+    # mängd åtgärder som en människa redan godkänt tre gånger.
+    # `ai.coworker.hitl.standing_rule` skrevs tidigare när ett
+    # auto_proposal godkändes, men grinden läste den aldrig — kedjan
+    # "godkänn tre gånger → automatisera" var inte inkopplad.
+    #
+    # Nycklarna är `action_type` ur regeln (t.ex. 'odoo_create'), inte
+    # verktygsnamn: en regel beskriver en AFFÄRSHANDLING, och flera
+    # verktyg kan utföra samma handling. Den som fyller fältet ansvarar
+    # för att mappa handlingen till verktyg.
+    standing_rules: dict = field(default_factory=dict)
+
     # Access-grupper (ai-tool-access-capabilities): Odoo group ids för den
     # användare vars vägnar loopen körs. Verktyg vars group_ids inte korsar
     # dessa nekas (defense-in-depth-lager; primärfiltrering sker vid
@@ -426,10 +438,30 @@ class PermissionEngine:
         _logger.info("Task rule: allow '%s' for target '%s'", tool_name, target)
 
     def _check_standing_rule(self, tool_name: str, arguments: dict) -> str:
-        """Check if a task-scoped standing rule matches.
+        """Check if a standing rule matches.
+
+        Två källor, i den här ordningen:
+
+        1. ``task_rules`` — satta av coworkerns ``auto_allowed_tools``
+           (``"verktyg mål"``). Målet måste matcha ett argument.
+        2. ``standing_rules`` — godkända automationer ur
+           ``ai.coworker.hitl.standing_rule`` (unattended-standing-rules
+           2.1). Nyckeln är ``action_type``; ett verktyg vars namn eller
+           ``action_type``-metadata finns där släpps igenom.
+
+        Hårda stopp prövas FÖRE den här metoden i ``evaluate()``, så en
+        stående regel kan aldrig automatisera ``action_post``.
 
         Returns the rule string if matched, empty string otherwise.
         """
+        if self.standing_rules:
+            action = ''
+            if arguments and isinstance(arguments, dict):
+                action = str(arguments.get('action_type') or '')
+            for key in (tool_name, action):
+                if key and key in self.standing_rules:
+                    return f"standing rule: {key}"
+
         if tool_name not in self.task_rules:
             return ""
 

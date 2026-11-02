@@ -129,3 +129,65 @@ class TestUnattendedPathsReadRules(StandingRuleBase):
         self.assertNotIn(
             'odoo_unlink', names,
             'registret ska inte innehålla ett verktyg coworkern inte har')
+
+
+@tagged('ai_agent_core', 'post_install', '-at_install')
+class TestApprovedAutomationIsRead(StandingRuleBase):
+    """2.1–2.3 — godkänd automation blir en regel grinden läser."""
+
+    def _hitl_with_rule(self, cw, action_type):
+        """En HITL-post med standing_rule, som `_create_standing_rule` skriver den."""
+        session = self.env['ai.coworker.session'].create({
+            'coworker_id': cw.id, 'status': 'active', 'init_type': 'cron',
+        })
+        return self.env['ai.coworker.hitl'].sudo().create({
+            'coworker_id': cw.id,
+            'session_id': session.id,
+            'user_id': self.env.uid,
+            'action_type': action_type,
+            'request_summary': 'Test: godkänd automation',
+            'state': 'approved',
+            'standing_rule': json.dumps({
+                'user_id': self.env.uid,
+                'action_type': action_type,
+                'created_at': '2026-01-01T00:00:00',
+            }),
+        })
+
+    def test_standing_rule_is_loaded(self):
+        """En godkänd automation hamnar i grindens standing_rules."""
+        cw = self._coworker('Automation laddad')
+        self._hitl_with_rule(cw, 'odoo_create')
+        self.assertIn('odoo_create', cw._load_standing_rules())
+
+    def test_standing_rule_lets_the_call_through(self):
+        """Regeln gör att anropet passerar utan godkännande."""
+        cw = self._coworker('Automation passerar')
+        self._hitl_with_rule(cw, 'odoo_create')
+        perms = cw._apply_standing_rules(
+            PermissionEngine(mode=PermissionMode.INTERACTIVE))
+        decision = perms.evaluate('odoo_create', {})
+        self.assertTrue(decision.allowed)
+        self.assertFalse(decision.needs_user)
+        self.assertIn('standing rule', decision.reason)
+
+    def test_hard_stop_wins_over_standing_rule(self):
+        """2.3: `action_post` kräver människa även med en stående regel."""
+        cw = self._coworker('Automation hårt stopp')
+        self._hitl_with_rule(cw, 'odoo_call_method')
+        perms = cw._apply_standing_rules(
+            PermissionEngine(mode=PermissionMode.AUTO))
+        decision = perms.evaluate('odoo_call_method', {})
+        self.assertFalse(
+            decision.allowed,
+            'hårt stopp ska neka i AUTO även med stående regel')
+
+    def test_rule_does_not_widen_tool_ids(self):
+        """2.2: regeln ger inte åtkomst till ett verktyg utanför registret."""
+        cw = self._coworker('Automation vidgar inte', tools=['odoo_create'])
+        self._hitl_with_rule(cw, 'odoo_unlink')
+        tools, _groups = cw._session_tools()
+        names = {tool.name for tool in tools.list()}
+        self.assertNotIn(
+            'odoo_unlink', names,
+            'registret ska inte innehålla ett verktyg coworkern inte har')
