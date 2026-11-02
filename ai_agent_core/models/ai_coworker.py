@@ -6623,6 +6623,77 @@ class AICoworker(models.Model):
             except Exception as e:
                 _logger.warning('Watch-kö misslyckades: %s', e)
 
+    def _standing_rule_lists(self):
+        """Läs coworkerns stående regler (``auto_allowed_tools``/``_commands``).
+
+        Returnerar ``(allowed_tools, allowed_commands)`` — två listor av
+        strängar. Ogiltig JSON ger en tom lista och en varning, aldrig ett
+        kast: en trasig regel ska göra körningen mindre tillåten, inte
+        stoppa den.
+
+        VARFÖR DEN HÄR METODEN FINNS (unattended-standing-rules 1.1):
+        parsningen låg tidigare inbäddad i ``action_run_scheduled()``, så
+        bara cron läste regeln. Mail-, watch- och heartbeat-vägen byggde en
+        ``PermissionEngine(mode=AUTO)`` utan regler och föll tillbaka på
+        ``hitl_threshold`` — vilket för en obevakad väg betyder "fråga en
+        människa som inte är där". En regel som bara en av fyra vägar ser är
+        inte en regel.
+        """
+        allowed_tools = []
+        if self.auto_allowed_tools:
+            try:
+                allowed_tools = json.loads(self.auto_allowed_tools)
+                if not isinstance(allowed_tools, list):
+                    allowed_tools = []
+            except (json.JSONDecodeError, TypeError):
+                _logger.warning(
+                    'Invalid auto_allowed_tools JSON for quest %s', self.name)
+                allowed_tools = []
+
+        allowed_commands = []
+        if self.auto_allowed_commands:
+            try:
+                allowed_commands = json.loads(self.auto_allowed_commands)
+                if not isinstance(allowed_commands, list):
+                    allowed_commands = []
+            except (json.JSONDecodeError, TypeError):
+                _logger.warning(
+                    'Invalid auto_allowed_commands JSON for quest %s',
+                    self.name)
+                allowed_commands = []
+
+        return allowed_tools, allowed_commands
+
+    def _apply_standing_rules(self, permissions):
+        """Applicera coworkerns stående regler på en ``PermissionEngine``.
+
+        Reglerna är ADD-only: de kan bara vidga det som redan är
+        auktoriserat för coworkern (``_session_tool_ids()``). De kan aldrig
+        ge åtkomst till ett verktyg som registret inte släpper igenom, och
+        de kan aldrig kringgå ett hårt stopp — hårda stopp prövas före
+        stående regler i ``PermissionEngine.evaluate()``.
+
+        Varje obevakad körväg (cron, mail, watch, heartbeat) ska anropa
+        denna metod på sin ``PermissionEngine``. Grinden i
+        ``tests/test_structural_gates.py`` fallerar om en väg bygger en
+        ``PermissionEngine`` utan att göra det.
+        """
+        allowed_tools, allowed_commands = self._standing_rule_lists()
+        for entry in allowed_tools:
+            entry = entry.strip()
+            if not entry:
+                continue
+            if ' ' in entry:
+                tool_name, target = entry.split(' ', 1)
+                permissions.add_task_rule(tool_name.strip(), target.strip())
+            else:
+                permissions.auto_allow_tools.add(entry)
+        for cmd in allowed_commands:
+            cmd = cmd.strip()
+            if cmd:
+                permissions.session_allow_commands.add(cmd)
+        return permissions
+
     def action_run_scheduled(self):
         """Run this quest as a scheduled automation.
 
@@ -6637,26 +6708,9 @@ class AICoworker(models.Model):
         _logger.info('Scheduled run starting for quest: %s (run #%d)',
                      self.name, self.run_count + 1)
 
-        # Parse standing rules
-        allowed_tools = []
-        if self.auto_allowed_tools:
-            try:
-                allowed_tools = json.loads(self.auto_allowed_tools)
-                if not isinstance(allowed_tools, list):
-                    allowed_tools = []
-            except (json.JSONDecodeError, TypeError):
-                _logger.warning('Invalid auto_allowed_tools JSON for quest %s', self.name)
-                allowed_tools = []
-
-        allowed_commands = []
-        if self.auto_allowed_commands:
-            try:
-                allowed_commands = json.loads(self.auto_allowed_commands)
-                if not isinstance(allowed_commands, list):
-                    allowed_commands = []
-            except (json.JSONDecodeError, TypeError):
-                _logger.warning('Invalid auto_allowed_commands JSON for quest %s', self.name)
-                allowed_commands = []
+        # Stående regler läses av `_apply_standing_rules()` när
+        # PermissionEngine byggs nedan — samma delade läsning som mail-,
+        # watch- och heartbeat-vägen använder (unattended-standing-rules 1.1).
 
         # Build system prompt
         system_prompt = self.description or ''
@@ -6728,16 +6782,8 @@ class AICoworker(models.Model):
                 tools.register(pt)
 
             # Set up permission engine with AUTO mode + standing rules
-            permissions = PermissionEngine(mode=PermissionMode.AUTO)
-            for entry in allowed_tools:
-                entry = entry.strip()
-                if ' ' in entry:
-                    tool_name, target = entry.split(' ', 1)
-                    permissions.add_task_rule(tool_name.strip(), target.strip())
-                else:
-                    permissions.auto_allow_tools.add(entry)
-            for cmd in allowed_commands:
-                permissions.session_allow_commands.add(cmd.strip())
+            permissions = self._apply_standing_rules(
+                PermissionEngine(mode=PermissionMode.AUTO))
 
             # HITL-routing (B6, ai-agent-core-fault-remediation): välj
             # mekanism UTFRÅN INIT-TYPEN via den enda beslutsplatsen
@@ -7836,8 +7882,13 @@ class AICoworker(models.Model):
                 if self._auto_approve_is_signed(session):
                     from odoo.addons.ai_agent_core.core.permission import (
                         PermissionEngine, PermissionMode)
-                    loop_obj.permissions = PermissionEngine(
-                        mode=PermissionMode.AUTO)
+                    # Stående regler gäller även här (unattended-standing-rules
+                    # 1.2): mail/watch/heartbeat är obevakade precis som cron,
+                    # och en AUTO-grind utan regler faller tillbaka på
+                    # hitl_threshold — dvs. "fråga en människa som inte är
+                    # där". Reglerna vidgar aldrig _session_tool_ids().
+                    loop_obj.permissions = self._apply_standing_rules(
+                        PermissionEngine(mode=PermissionMode.AUTO))
                     loop_obj.permissions.user_group_ids = set(tool_access_groups)
                 elif self.env.context.get('_ai_auto_approve'):
                     _logger.warning(

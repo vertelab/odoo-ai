@@ -197,3 +197,7 @@ from . import test_skill_md_parsing
 # result), befordran session → fall (HITL), eval-cronen och kaizen-fyndet
 # när accuracy sjunker. Utan dessa tester är core/eval.py åter oanvänd.
 from . import test_eval_pipeline
+# unattended-standing-rules: stående regler läses av ALLA obevakade vägar,
+# inte bara cron. Utan testerna är buggen osynlig — en regel som bara en av
+# fyra vägar ser ser ut att fungera.
+from . import test_standing_rules

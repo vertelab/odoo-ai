@@ -282,6 +282,88 @@ class StructuralGateSilentExcept(TransactionCase):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Grind 4 — stående regler i obevakade vägar (unattended-standing-rules 1.4)
+# ──────────────────────────────────────────────────────────────────────
+
+#: Filer som bygger en ``PermissionEngine`` i en OBEVAKAD körväg och därför
+#: måste applicera coworkerns stående regler. Nyckeln är filnamnet, värdet
+#: är antalet tillåtna konstruktioner som INTE går genom
+#: ``_apply_standing_rules()`` — med skrivet skäl.
+STANDING_RULE_EXEMPT = {
+    # controllers/stream.py: /ai/v1/tools/run är INTERACTIVE, inte AUTO —
+    # ytan har ingen godkännandekanal och ingen coworker-kontext att läsa
+    # regler från. Den ska neka hårda stopp, inte ärva en automation.
+    'controllers/stream.py': 1,
+    # core/loop.py: AgentLoop.__init__ skapar en DEFAULT-grind när ingen
+    # skickas in. Den har ingen coworker och ingen session — reglerna
+    # appliceras av anroparen (run()/action_run_scheduled()), inte här.
+    'core/loop.py': 1,
+}
+
+
+def _permission_engine_constructions(root):
+    """Returnerar ``[(relpath, lineno, funcname, har_standing_rules)]``."""
+    hits = []
+    for path in _module_files(root):
+        tree = _parse(path)
+        if tree is None:
+            continue
+        rel = path.relative_to(root).as_posix()
+        source = path.read_text(encoding='utf-8')
+        lines = source.split('\n')
+        owners = _enclosing_functions(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _call_name(node) != 'PermissionEngine':
+                continue
+            funcname, lineno = owners.get(id(node), (None, node.lineno))
+            # Leta efter `_apply_standing_rules` i samma funktion.
+            window = '\n'.join(lines[max(0, lineno - 12):lineno + 3])
+            hits.append((rel, lineno, funcname,
+                         '_apply_standing_rules' in window))
+    return sorted(hits)
+
+
+class StructuralGateStandingRules(TransactionCase):
+    """Grind: en obevakad väg som bygger AUTO måste läsa stående regler.
+
+    Utan den här grinden kan en ny obevakad körväg byggas utan
+    ``_apply_standing_rules()`` — och då faller den tillbaka på
+    ``hitl_threshold``, vilket för en väg utan människa betyder att
+    körningen aldrig kan slutföras. Det var exakt buggen: cron läste
+    regeln, mail/watch/heartbeat gjorde det inte.
+    """
+
+    def test_auto_paths_apply_standing_rules(self):
+        offenders = []
+        for rel, lineno, funcname, has_rules in _permission_engine_constructions(
+                MODULE_ROOT):
+            if has_rules:
+                continue
+            exempt = STANDING_RULE_EXEMPT.get(rel, 0)
+            if exempt > 0:
+                STANDING_RULE_EXEMPT[rel] = exempt - 1
+                continue
+            offenders.append(f'{rel}:{lineno} i {funcname or "<modulnivå>"}')
+        self.assertFalse(
+            offenders,
+            'PermissionEngine byggs utan att coworkerns stående regler '
+            'appliceras. Anropa `self._apply_standing_rules(...)` — eller '
+            'lägg till ett motiverat undantag i STANDING_RULE_EXEMPT om '
+            'vägen inte är obevakad:\n  ' + '\n  '.join(offenders),
+        )
+
+    def test_exemptions_are_used(self):
+        """Ett undantag som inte längre behövs ska bort."""
+        unused = {k: v for k, v in STANDING_RULE_EXEMPT.items() if v > 0}
+        self.assertFalse(
+            unused,
+            'Undantag som inte matchade någon konstruktion — ta bort dem: %s'
+            % unused)
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Grind 2 — klass-wiringen (wire-orphaned-core-mechanisms 1.1)
 # ──────────────────────────────────────────────────────────────────────
 
