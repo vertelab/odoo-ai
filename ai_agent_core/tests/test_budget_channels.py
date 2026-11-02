@@ -26,10 +26,43 @@ class TestBudgetBlockMessage(TransactionCase):
     def setUp(self):
         super().setUp()
         self.Coworker = self.env['ai.coworker']
+        self.Session = self.env['ai.coworker.session']
+        self.Line = self.env['ai.coworker.session.line']
         self.coworker = self.Coworker.create({
             'name': 'Budget Test',
             'orchestration_mode': 'single',
         })
+
+    def _spend(self, tokens, days_ago=0):
+        """Lägg `tokens` systemtokens på medarbetarens förbrukning.
+
+        Budgetstatusen är deterministisk sedan budget-hard-cap D1: den
+        härleds ur sessionens rader, inte ur ett skrivbart fält.
+        `daily_budget_used_mtokens` och `started_mtokens` är icke-lagrade
+        computes, så att skriva dem har ingen effekt — testet måste skapa
+        den data de summerar.
+        """
+        session = self.Session.create({
+            'coworker_id': self.coworker.id,
+            'status': 'active',
+            'user_id': self.env.user.id,
+            'name': 'budget',
+        })
+        line = self.Line.create({
+            'session_id': session.id,
+            'role': 'assistant',
+            'content': 'x',
+            'sequence': self.coworker._next_session_sequence(session),
+            'token_input': tokens,
+            'sys_multiplier': 1.0,
+        })
+        if days_ago:
+            self.env.cr.execute(
+                "UPDATE ai_coworker_session_line "
+                "SET create_date = create_date - interval '%s days' "
+                "WHERE id = %s", (days_ago, line.id))
+        self.coworker.invalidate_recordset()
+        return line
 
     def test_no_block_when_under_cap(self):
         """Inget tak nått -> (None, None), inte en tom sträng."""
@@ -41,11 +74,10 @@ class TestBudgetBlockMessage(TransactionCase):
         """Dagstak vinner över månadstak — det öppnar sig själv vid midnatt."""
         self.coworker.write({
             'daily_cap_mtokens': 1.0,
-            'daily_budget_used_mtokens': 7.55,
             'monthly_cap_mtokens': 10.0,
-            'started_mtokens': 99.0,
         })
-        self.coworker.invalidate_recordset()
+        # 7.55M idag: över dagstaket (1M) men under månadstaket (10M).
+        self._spend(7_550_000)
         code, msg = self.coworker.budget_block_message()
         self.assertEqual(code, 'daily_budget_exhausted')
         self.assertIn('Dagsbudget slut', msg)
@@ -57,12 +89,11 @@ class TestBudgetBlockMessage(TransactionCase):
         """Bara månadstaket nått -> månadskoden, inte dagskoden."""
         self.coworker.write({
             'daily_cap_mtokens': 100.0,
-            'daily_budget_used_mtokens': 1.0,
             'monthly_cap_mtokens': 10.0,
-            'started_mtokens': 99.0,
             'monthly_budget_soft': False,
         })
-        self.coworker.invalidate_recordset()
+        # 11M idag: över månadstaket (10M), under dagstaket (100M).
+        self._spend(11_000_000)
         code, msg = self.coworker.budget_block_message()
         self.assertEqual(code, 'budget_exhausted')
         self.assertIn('månadstaket', msg)
@@ -71,12 +102,10 @@ class TestBudgetBlockMessage(TransactionCase):
         """Mjukt månadstak ska varna men köra vidare — inte blockera."""
         self.coworker.write({
             'daily_cap_mtokens': 100.0,
-            'daily_budget_used_mtokens': 1.0,
             'monthly_cap_mtokens': 10.0,
-            'started_mtokens': 99.0,
             'monthly_budget_soft': True,
         })
-        self.coworker.invalidate_recordset()
+        self._spend(11_000_000)
         code, _msg = self.coworker.budget_block_message()
         self.assertIsNone(code)
 
@@ -84,9 +113,8 @@ class TestBudgetBlockMessage(TransactionCase):
         """Användaren ska se VILKEN medarbetare som är stoppad."""
         self.coworker.write({
             'daily_cap_mtokens': 1.0,
-            'daily_budget_used_mtokens': 2.0,
         })
-        self.coworker.invalidate_recordset()
+        self._spend(2_000_000)
         _code, msg = self.coworker.budget_block_message()
         self.assertIn('Budget Test', msg)
 

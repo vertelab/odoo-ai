@@ -61,11 +61,19 @@ class TestTokenTotals(TransactionCase):
 
     def _line(self, token_sys, days_ago=0, informative=False,
               session=None):
-        """Skapa en rad med exakt `token_sys` och flytta create_date bakåt."""
+        """Skapa en rad med exakt `token_sys` och flytta create_date bakåt.
+
+        Sekvensen måste sättas explicit: `sequence` defaultar till 10 och
+        `(session_id, sequence)` är unik (B2), så två rader i samma session
+        kolliderar annars. Samma strategi som produktionen — högsta befintliga
+        sekvens + 1 (`ai.coworker._next_session_sequence`).
+        """
+        target = session or self.session
         line = self.Line.create({
-            'session_id': (session or self.session).id,
+            'session_id': target.id,
             'role': 'assistant',
             'content': 'x',
+            'sequence': target.coworker_id._next_session_sequence(target),
             'token_input': token_sys,
             'sys_multiplier': 1.0,
             'informative': informative,

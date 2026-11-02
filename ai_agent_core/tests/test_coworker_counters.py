@@ -154,9 +154,11 @@ class TestCoworkerCounters(TransactionCase):
         session = self._session()
         self.Line.create({
             'session_id': session.id, 'role': 'assistant', 'content': 'x',
+            'sequence': self.coworker._next_session_sequence(session),
             'token_input': 1_500, 'sys_multiplier': 1.0})
         self.Line.create({
             'session_id': session.id, 'role': 'assistant', 'content': 'x',
+            'sequence': self.coworker._next_session_sequence(session),
             'token_input': 9_999, 'sys_multiplier': 1.0,
             'informative': True})
         self.coworker.invalidate_recordset()
