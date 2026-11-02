@@ -36,6 +36,19 @@ class NormalizedItem:
     """Kanal-neutralt inkommande item.
 
     Attachments: lista av dicts {filename, content_type, ...}.
+
+    Kanal-specifika fält (tillagda i channel-adapter-wiring §3–§5):
+
+    - `raw` — det rå-objekt itemet normaliserades från (`mail.message`,
+      `mail.message` i en discuss-kanal). Adaptern behöver det för att
+      kunna skicka svaret tillbaka på samma tråd.
+    - `subject` — kanalens ämne (mail: `message.subject`; tomt i chat).
+    - `session` — `ai.coworker.session` som körningen tillhör. Sätts av
+      kanalen EFTER att sessionen skapats; HITL kräver den.
+    - `coworker` — `ai.coworker` som äger körningen. Adaptern behöver den
+      för avsändare/bolag när svaret ska ut.
+    - `reply_text` — svaret som ska ut. Sätts av kanalen efter `run()`;
+      processorns `dispose()` läser den.
     """
     channel: str
     external_id: str
@@ -43,6 +56,17 @@ class NormalizedItem:
     content: str = ''
     received_at: str = ''
     attachments: list = field(default_factory=list)
+    # Kanal-specifik kontext (se docstring) — aldrig serialiserad.
+    raw: Any = None
+    subject: str = ''
+    session: Any = None
+    coworker: Any = None
+    reply_text: str = ''
+
+    @property
+    def env(self):
+        """Odoo-env ur `coworker` (None när itemet inte är bundet)."""
+        return self.coworker.env if self.coworker is not None else None
 
 
 # ── Kanal-adaptrar ──────────────────────────────────────────────────

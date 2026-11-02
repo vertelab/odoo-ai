@@ -2178,19 +2178,26 @@ class AICoworker(models.Model):
     # ── Mail (init_type='mail') ──
 
     def mail(self, mail_message, session=None):
-        """Handle incoming mail → create session and run AgentLoop."""
+        """Handle incoming mail → create session and run AgentLoop.
+
+        Sedan channel-adapter-wiring (4.1–4.5) äger metoden INTE längre sin
+        egen loop: den normaliserar mailet med `MailChannelAdapter`, kör den
+        gemensamma `process_item()` och låter `MailItemProcessor.dispose()`
+        skicka svaret. Beteendet är oförändrat — det bevakas av
+        `tests/test_mail_channel_characterization.py`, som skrevs FÖRE
+        migreringen.
+        """
         self.ensure_one()
         if self._check_quest_error():
             _logger.warning('Mail quest %s has errors, skipping', self.name)
             return None
 
-        from odoo.tools.mail import html2plaintext
-        try:
-            body_text = html2plaintext(mail_message.body or '')
-        except Exception:
-            body_text = mail_message.body or ''
+        from odoo.addons.ai_agent_core.core.channels import (
+            MailChannelAdapter, attachments_prompt_section, attachment_texts,
+            last_assistant_content, process_mail_item)
 
-        if not body_text.strip():
+        item = MailChannelAdapter().normalize(mail_message)
+        if not item.content.strip():
             return None
 
         if session is None:
@@ -2201,29 +2208,19 @@ class AICoworker(models.Model):
                 'user_id': self.env.ref('base.user_root', raise_if_not_found=False).id or 1,
             })
 
-        # Handle mail attachments as context
-        att_context = ''
-        if mail_message.attachment_ids:
-            att_texts = []
-            for att in mail_message.attachment_ids:
-                try:
-                    text = _extract_text(att.name, base64.b64decode(att.datas))
-                    if text and len(text) < 10000:
-                        att_texts.append(f'--- {att.name} ---\n{text[:2000]}')
-                except Exception:
-                    pass  # best-effort: tyst fallback — se etiketteringsregeln
-            if att_texts:
-                att_context = '\n\n## Attachments\n' + '\n'.join(att_texts)
-
-        prompt = body_text[:4000] + att_context
+        # Bilagorna extraheras till prompten (samma format som före
+        # migreringen — extraktionen ligger nu i core/channels.py).
+        prompt = item.content[:4000] + attachments_prompt_section(
+            attachment_texts(mail_message.attachment_ids))
         try:
             result = self.run(prompt=prompt, session=session)
             if result and session:
-                last_line = session.session_line_ids.filtered(
-                    lambda l: l.role == 'assistant'
-                ).sorted('sequence', reverse=True)[:1]
-                if last_line and last_line.content:
-                    _send_mail_reply(mail_message, last_line.content[:4000], self)
+                # Svaret skickas av processorns dispose() — den behöver
+                # sessionen (HITL) och svaret (item.reply_text).
+                item.session = session
+                item.coworker = self
+                item.reply_text = last_assistant_content(session)
+                process_mail_item(item)
             return result
         except Exception as e:
             _logger.error('Mail failed for quest %s: %s', self.name, e)

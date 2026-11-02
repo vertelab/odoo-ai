@@ -862,6 +862,20 @@ def post_init_hook(env):
     # "Anslutningen till AI-servern bröts" (session 21772, 2026-09-22).
     post_init_hook_personal_memory(env)
 
+    # Kanal-registreringen (channel-adapter-wiring 4.5).
+    #
+    # `channel_registry` är en process-global singleton. Att registrera vid
+    # import hade räckt för en worker som importerar modulen, men hooken är
+    # den plats där modulen redan säkrar annat som ska finnas efter en
+    # (upp)installation — och registreringen är idempotent.
+    try:
+        from .core.channels import register_mail_channel
+        register_mail_channel()
+        _logger.info('channel_registry: mail-kanalen registrerad')
+    except Exception as e:
+        _logger.warning(
+            'channel_registry: kunde inte registrera mail-kanalen: %s', e)
+
     # Quest Builder
     if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):
         env['ai.coworker'].create({
