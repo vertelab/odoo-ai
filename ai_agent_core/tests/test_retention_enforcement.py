@@ -353,15 +353,25 @@ class TestRetentionEnforcement(RetentionBase):
             active_test=False).search([('id', '=', c.id)]))
 
     def test_archived_concept_excluded_from_search(self):
-        """5.2: arkiverat koncept syns inte i sökning eller injektion."""
+        """5.2: arkiverat koncept syns inte i sökning eller injektion.
+
+        `archived` är inte modellens active-fält (Odoo 18 tillåter bara
+        `active`/`x_active` som `_active_name`), så en rå `search` ser
+        fortfarande raden — det är avsiktligt, en arkiverad rad ska gå att
+        granska och ångra. Det som ska utesluta den är de domäner som
+        betyder "synlig": injektionen och sökningen.
+        """
         c = self._mk(self.atype_long, 'retention.search-hidden')
         self._set_end(c, days=-1)
         self.Concept._cron_enforce_retention()
-        self.assertNotIn(c.id, self.Concept.search([('id', '=', c.id)]).ids)
+        c.invalidate_recordset(['archived'])
+        self.assertTrue(c.archived, 'cronen ska ha arkiverat konceptet')
         self.assertNotIn(
-            c.id, self.Concept._injectable_concepts(limit=200).ids)
+            c.id, self.Concept._injectable_concepts(limit=200).ids,
+            'arkiverat koncept får inte injiceras')
         self.assertNotIn(
-            c.id, self.Concept.search(self.Concept._fresh_domain()).ids)
+            c.id, self.Concept.search(self.Concept._fresh_domain()).ids,
+            'arkiverat koncept får inte vara med i den friska domänen')
 
     def test_future_concept_untouched(self):
         """5.3: icke-utgånget koncept rörs inte."""

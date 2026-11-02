@@ -227,6 +227,13 @@ class AIOkfConcept(models.Model):
              'Sätts av retention-cronen när fristen passerats; raden finns '
              'kvar så att gallringen går att spåra och ångra.')
 
+    # `archived` är INTE modellens active-fält: Odoo 18 tillåter bara
+    # `active`/`x_active` som `_active_name` (assert i models._setup_base).
+    # Arkiverade koncept exkluderas därför explicit i de domäner som
+    # betyder "synlig" — `_fresh_domain()` för injektion, `_okf_search()`
+    # för sökning. `search([('id','=',...)]` ser dem fortfarande, vilket är
+    # avsiktligt: en arkiverad rad ska gå att granska och ångra.
+
     # ── Workspace inbox / PARA (D2) ──
     # ADD-only-konceptet skrivs aldrig — inbox-placering sker via
     # workspace.para.ref som pekar PÅ detta koncept (referens, ej kopia).
