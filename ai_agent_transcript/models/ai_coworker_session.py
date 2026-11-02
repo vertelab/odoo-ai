@@ -21,10 +21,14 @@
 
 """Powerbox transcript-session (ai_agent_transcript → ai_agent_core).
 
-Arv av ai.coworker.session: interface_key + transcript_context.
-Bygger den samlade kontexten för powerbox-flöden: rekordfält-JSON,
-chatter-historik, frontend-kontext och vald text — med core-hooks
-(_ai_serialize_fields_data / _ai_serialize_messages_data).
+Arv av ai.coworker.session: interface_key, text_selection och frontend_info
+— de tre värden som powerbox-ytan bär och som kärnan inte har.
+
+Kontexten till LLM:en byggs på ETT ställe: kärnans
+`_build_injection_prompt` / `_inject_session_record` (ai_coworker.py).
+Den här modulen bygger ingen egen kontext — en parallell beräkning som ser
+ut att användas men aldrig når modellen är en dubblett som driver isär
+(complete-powerbox-transcript 5.1).
 """
 
 import logging
@@ -46,7 +50,7 @@ INTERFACE_KEYS = [
 
 
 class AICoworkerSessionTranscript(models.Model):
-    """Powerbox transcript-session — full context injection."""
+    """Powerbox transcript-session — interface point and frontend context."""
 
     _inherit = 'ai.coworker.session'
 
@@ -63,84 +67,6 @@ class AICoworkerSessionTranscript(models.Model):
         string="Frontend Info",
         help="Frontend context (active model, view type, etc.) as JSON."
     )
-    transcript_context = fields.Text(
-        string="Transcript Context",
-        compute='_compute_transcript_context',
-        help="The full transcript context built for the AI: record fields, "
-             "chatter history, frontend info and selected text."
-    )
-
-    @api.depends('interface_key', 'text_selection', 'frontend_info')
-    def _compute_transcript_context(self):
-        """Build the full transcript context for the AI session."""
-        for session in self:
-            parts = []
-
-            # 1. Frontend info (active model, view type)
-            if session.frontend_info:
-                parts.append("## Frontend context\n%s" % session.frontend_info)
-
-            # 2. Record fields from context (if any)
-            record = session._get_transcript_context_record()
-            if record and record.exists():
-                try:
-                    json_data = record._ai_serialize_fields_data(
-                        max_fields=session.coworker_id.context_max_fields
-                        if session.coworker_id else 100)
-                    parts.append(
-                        "## Current Record: %s (ID: %s)\n```json\n%s\n```"
-                        % (record._name, record.id, json_data))
-                except Exception as e:
-                    _logger.warning('record serialize failed: %s', e)
-
-            # 3. Chatter history (if record has mail.thread)
-            if record and hasattr(record, '_ai_serialize_messages_data'):
-                try:
-                    chatter = record._ai_serialize_messages_data()
-                    if chatter:
-                        lines = chatter.split('\n')
-                        if len(lines) > 50:
-                            lines = lines[-50:]
-                            chatter = '\n'.join(lines) + \
-                                "\n(older messages omitted)"
-                        parts.append("## Chatter history\n%s" % chatter)
-                except Exception as e:
-                    _logger.warning('chatter serialize failed: %s', e)
-
-            # 4. Selected text (for rewrite operations)
-            if session.text_selection:
-                parts.append(
-                    "## Selected text\n%s" % session.text_selection)
-
-            session.transcript_context = "\n\n".join(parts)
-
-    def _get_transcript_context_record(self):
-        """Hämta kontext-rekordet för sessionen.
-
-        Källan är `env.context`-nycklarna `_ai_context_model`/`_ai_context_id`
-        (samma som core `ai.coworker._get_ai_context_record`), med fallback
-        till sessionens kopplade objekt (`session_object_ids`).
-
-        OBS: `ai.coworker.session` har medvetet INGA `context_*`-fält i core
-        (se ai_session.py) — därför läses kontexten här, inte ur fält.
-        """
-        self.ensure_one()
-        model = self.env.context.get('_ai_context_model')
-        res_id = self.env.context.get('_ai_context_id')
-        if model and res_id:
-            try:
-                rec = self.env[model].browse(int(res_id))
-                if rec.exists():
-                    return rec
-            except Exception:
-                pass
-        # Fallback: sessionens kopplade objekt (relationen är villkorlig —
-        # `session_object_ids` finns bara om en session-object-modell laddats).
-        if 'session_object_ids' in self._fields:
-            obj = self.session_object_ids[:1]
-            if obj and getattr(obj, 'object_id', False):
-                return obj.object_id
-        return None
 
     @api.model_create_multi
     def create(self, vals_list):

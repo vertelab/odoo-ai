@@ -2,10 +2,20 @@
 """Tester för ai_agent_transcript (powerbox/transcript → ai_agent_core).
 
 Körs med: odoo --test-enable -u ai_agent_transcript (eller checkmodule -t).
+
+Testerna bevakar det som ändringen complete-powerbox-transcript gör:
+
+1. `find_composer` gör vad docstringen säger — ingen modellmatchning ger
+   tomt, inte "vilken composer som helst" (2.1–2.2).
+2. En composer som pekar på en inaktiv coworker väljs inte (2.3–2.4).
+3. De två powerbox-composrarna finns som data (3.1–3.3).
+4. Sessionen bär interface_key/text_selection/frontend_info, men bygger
+   INGEN egen kontext — kärnans väg är den enda (5.1–5.4).
 """
 
-from odoo.tests import common, tagged
 from unittest.mock import patch
+
+from odoo.tests import common, tagged
 
 
 @tagged('post_install', '-at_install')
@@ -22,11 +32,12 @@ class TestAIComposer(common.TransactionCase):
         cls.task_model = cls.env['ir.model'].search(
             [('model', '=', 'project.task')], limit=1)
 
-    def _composer(self, focused_models=None):
+    def _composer(self, focused_models=None, interface_key='html_field_record',
+                  coworker=None):
         vals = {
             'name': 'Test Composer',
-            'interface_key': 'html_field_record',
-            'coworker_id': self.coworker.id,
+            'interface_key': interface_key,
+            'coworker_id': (coworker or self.coworker).id,
             'default_prompt': 'Skriv innehåll',
         }
         if focused_models:
@@ -41,18 +52,8 @@ class TestAIComposer(common.TransactionCase):
         self.assertEqual(found, comp)
 
     def test_find_generic_fallback(self):
-        """6.1b: composer med tom focused_models matchar alla modeller.
-
-        OBS: system-default `ai_composer_html_field` finns redan (tom
-        focused_models). Vi skapar en EGEN composer på en unik interface_key
-        så testet inte kolliderar med default-datan.
-        """
-        comp = self.env['ai.composer'].create({
-            'name': 'Test Generic',
-            'interface_key': 'powerbox_chat',
-            'coworker_id': self.coworker.id,
-            'default_prompt': 'Generisk',
-        })
+        """6.1b: composer med tom focused_models matchar alla modeller."""
+        comp = self._composer(interface_key='powerbox_chat')
         found = self.env['ai.composer'].find_composer(
             'powerbox_chat', 'res.partner')
         self.assertEqual(found, comp)
@@ -61,7 +62,57 @@ class TestAIComposer(common.TransactionCase):
         """6.1c: ingen composer för en oanvänd interface_key → tom."""
         found = self.env['ai.composer'].find_composer(
             'powerbox_channel', 'res.partner')
+        # powerbox_channel HAR composers (data) men ingen för res.partner
+        # och ingen generisk → tomt. Nyckeln är alltså inte "oanvänd".
         self.assertFalse(found)
+
+    def test_find_no_model_match_returns_empty(self):
+        """2.2: en nyckel MED composers men UTAN modellmatchning → tom.
+
+        Buggen (design §1.3): `return candidates[:1]` gav "vilken composer
+        som helst för nyckeln" när ingen modell matchade. En composer för
+        res.partner fångade då account.move, project.task, allt.
+        """
+        # Rensa nyckeln så bara vår specifika composer finns kvar.
+        self.env['ai.composer'].search([
+            ('interface_key', '=', 'chatter_ai_button'),
+        ])._force_unlink()
+        partner_model = self.env['ir.model'].search(
+            [('model', '=', 'res.partner')], limit=1)
+        comp = self._composer(interface_key='chatter_ai_button')
+        comp.focused_models = [(6, 0, [partner_model.id])]
+
+        # Matchar: res.partner
+        self.assertEqual(
+            self.env['ai.composer'].find_composer(
+                'chatter_ai_button', 'res.partner'),
+            comp)
+        # Matchar INTE: account.move — ingen generisk composer finns.
+        self.assertFalse(
+            self.env['ai.composer'].find_composer(
+                'chatter_ai_button', 'account.move'),
+            'En composer för res.partner får inte fånga andra modeller')
+
+    def test_find_skips_inactive_coworker(self):
+        """2.4: composer som pekar på inaktiv coworker väljs inte."""
+        self.env['ai.composer'].search([
+            ('interface_key', '=', 'systray_ai_button'),
+        ])._force_unlink()
+        inactive = self.env['ai.coworker'].create({
+            'name': 'Test Inactive',
+            'status': 'draft',
+        })
+        self._composer(interface_key='systray_ai_button', coworker=inactive)
+        self.assertFalse(
+            self.env['ai.composer'].find_composer(
+                'systray_ai_button', 'res.partner'),
+            'En composer med inaktiv coworker ska inte väljas')
+
+        # Aktiveras coworkern → composern blir valbar igen.
+        inactive.status = 'active'
+        self.assertTrue(
+            self.env['ai.composer'].find_composer(
+                'systray_ai_button', 'res.partner'))
 
     def test_find_specific_beats_generic(self):
         """6.1e: specifik modell-matchning vinner över generisk default."""
@@ -84,34 +135,72 @@ class TestAIComposer(common.TransactionCase):
 
 
 @tagged('post_install', '-at_install')
-class TestTranscriptContext(common.TransactionCase):
-    """6.2: transcript_context byggs."""
+class TestPowerboxComposersData(common.TransactionCase):
+    """3.3: de två powerbox-composrarna finns som data."""
 
-    def test_transcript_context_with_selection(self):
-        """6.2a: text_selection inkluderas."""
-        cw = self.env['ai.coworker'].create({
-            'name': 'Test Transcript',
+    def test_powerbox_composers_exist(self):
+        """Åtta composers, varav två med interface_key like 'powerbox'."""
+        composers = self.env['ai.composer'].search([])
+        self.assertEqual(len(composers), 8)
+        powerbox = composers.filtered(
+            lambda c: (c.interface_key or '').startswith('powerbox'))
+        self.assertEqual(
+            set(powerbox.mapped('interface_key')),
+            {'powerbox_chat', 'powerbox_channel'})
+
+    def test_powerbox_composers_point_at_active_coworker(self):
+        """Powerbox-composrarna ska vara valbara — inte fastna i uppslagningen."""
+        for key in ('powerbox_chat', 'powerbox_channel'):
+            composer = self.env['ai.composer'].find_composer(key)
+            self.assertTrue(composer, 'ingen composer för %s' % key)
+            self.assertEqual(composer.interface_key, key)
+            self.assertEqual(composer.coworker_id.status, 'active')
+
+
+@tagged('post_install', '-at_install')
+class TestTranscriptSessionFields(common.TransactionCase):
+    """5.3: sessionen bär interface_key/text_selection/frontend_info.
+
+    transcript_context är BORTTAGET (5.1): det var en andra beräkning av
+    samma kontext som kärnan bygger, och ingen LLM-väg läste det.
+    """
+
+    def _coworker(self, name):
+        return self.env['ai.coworker'].create({
+            'name': name,
             'status': 'active',
         })
+
+    def test_session_fields_are_stored(self):
+        """5.3a: fälten sätts på sessionen och läses tillbaka."""
+        cw = self._coworker('Test Transcript')
         sess = self.env['ai.coworker.session'].create({
             'coworker_id': cw.id,
             'status': 'active',
             'interface_key': 'html_field_text_select',
             'text_selection': 'Detta är vald text',
+            'frontend_info': '{"view_type": "form"}',
         })
-        self.assertIn('Detta är vald text', sess.transcript_context)
+        self.assertEqual(sess.interface_key, 'html_field_text_select')
+        self.assertEqual(sess.text_selection, 'Detta är vald text')
+        self.assertEqual(sess.frontend_info, '{"view_type": "form"}')
 
-    def test_transcript_context_empty(self):
-        """6.2b: utan kontext → tom (eller minimal)."""
-        cw = self.env['ai.coworker'].create({
-            'name': 'Test Transcript 2',
-            'status': 'active',
-        })
+    def test_no_transcript_context_field(self):
+        """5.3b: dubbletten finns inte kvar på modellen."""
+        self.assertNotIn(
+            'transcript_context', self.env['ai.coworker.session']._fields,
+            'transcript_context ska vara borttaget (5.1)')
+
+    def test_fields_empty_without_context(self):
+        """5.3c: utan context lämnas fälten tomma (no-op)."""
+        cw = self._coworker('Test Transcript 2')
         sess = self.env['ai.coworker.session'].create({
             'coworker_id': cw.id,
             'status': 'active',
         })
-        self.assertIsInstance(sess.transcript_context, str)
+        self.assertFalse(sess.interface_key)
+        self.assertFalse(sess.text_selection)
+        self.assertFalse(sess.frontend_info)
 
 
 class _FakeResponse:
@@ -143,6 +232,7 @@ class TestPowerboxTranscript(common.TransactionCase):
     """6.3: powerbox-körning med interface_key sätter session-fält.
 
     6.4: regression — core powerbox() utan transcript-modul påverkas inte.
+    5.4: rekordkontexten når prompten via kärnans väg.
     """
 
     def setUp(self):
@@ -236,17 +326,35 @@ class TestPowerboxTranscript(common.TransactionCase):
         for p in ('prompt', 'res_model', 'res_id', 'record'):
             self.assertIn(p, params)
 
-    def test_transcript_context_after_powerbox(self):
-        """6.3d: transcript_context byggs efter en powerbox-körning."""
+    def test_record_context_reaches_prompt_via_core(self):
+        """5.4: en powerbox-session får rekordkontext i prompten.
+
+        Verifieras via KÄRNANS väg (`_inject_session_record`), inte via ett
+        eget fält: sessionen bär rekordet i `ai_record_*` och kärnan bygger
+        promptblocket ur dem.
+        """
+        partner = self.env['res.partner'].create({'name': 'Transcript Partner'})
         Session = self.env['ai.coworker.session']
         before = Session.search([('coworker_id', '=', self.coworker.id)])
 
         self.coworker.with_context(
             _ai_interface_key='html_field_text_select',
             _ai_text_selection='Rad att skriva om',
-        ).powerbox(prompt='Skriv om')
+        ).powerbox(prompt='Skriv om', res_model='res.partner',
+                   res_id=partner.id)
 
-        after = Session.search([
+        sess = Session.search([
             ('coworker_id', '=', self.coworker.id),
         ]) - before
-        self.assertIn('Rad att skriva om', after.transcript_context)
+        self.assertTrue(sess)
+        # Sessionen bär rekordet (kärnans fält, inte ett transcript-fält).
+        self.assertEqual(sess.ai_record_model, 'res.partner')
+        self.assertEqual(sess.ai_record_id, partner.id)
+        self.assertIn('Transcript Partner', sess.ai_record_json or '')
+
+        # Kärnans kontextbyggnad plockar upp det — det är den enda vägen.
+        parts = []
+        self.coworker._inject_session_record(parts, sess)
+        prompt_block = '\n'.join(parts)
+        self.assertIn('## Current Record: res.partner', prompt_block)
+        self.assertIn('Transcript Partner', prompt_block)

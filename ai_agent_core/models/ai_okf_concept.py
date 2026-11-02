@@ -3199,13 +3199,22 @@ class AIOkfConcept(models.Model):
             ("archived", "=", False),
         ]
         count = self.search_count(domain)
+        # `search_default_not_archived` (okf-smart-buttons F4.4): sökvyns
+        # standardfilter är "Not Archived" i den globala åtgärden
+        # (`action_ai_okf_concept`), men en act_window som returneras härifrån
+        # ÄRVER inget context — utan flaggan öppnar knappen en lista där
+        # arkiverade koncept syns, dvs. fler rader än räknaren visar.
+        # Samma domän, samma filter: knappen och räknaren ska visa samma sak.
         return {
             "type": "ir.actions.act_window",
             "name": _("Odoo Mind: %s,%s") % (model, res_id),
             "res_model": "ai.okf.concept",
             "view_mode": "list,form",
             "domain": domain,
-            "context": {"create": False},
+            "context": {
+                "create": False,
+                "search_default_not_archived": 1,
+            },
             "target": "current",
             "help": _(
                 "<p>%s koncept ägs av den här posten.</p>"

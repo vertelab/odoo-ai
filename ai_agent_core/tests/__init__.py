@@ -21,6 +21,9 @@ from . import test_okf_fail_closed
 from . import test_okf_owner_scoping
 # Ägar-åtgärden bakom smartknapparna (okf-smart-buttons F2.2).
 from . import test_okf_owner_action
+# res.*-källorna når cronen (okf-smart-buttons F4.5). Hoppar sig själv när
+# base_ai inte är installerad — bryggan bor i odoo-base.
+from . import test_okf_base_ai_cron
 from . import test_okf_batched_embedding
 from . import test_okf_access_selection
 from . import test_core_domain_purity

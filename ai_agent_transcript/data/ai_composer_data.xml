@@ -135,5 +135,43 @@ Write an email recap</field>
             <field name="is_system_default" eval="True"/>
         </record>
 
+        <!-- Powerbox Chat: the `/` slash command in a text field.
+             No focused_models — the powerbox is available on every record
+             (the same reach as the unrestricted powerbox coworkers). -->
+        <record id="ai_composer_powerbox_chat" model="ai.composer">
+            <field name="name">Powerbox — Slash Command</field>
+            <field name="interface_key">powerbox_chat</field>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
+            <field name="default_prompt">
+You are invoked from the powerbox (the `/` slash command) inside an Odoo
+record. Your response is inserted into the field the user is editing. Use
+the provided record context and selected text. Answer directly with the
+result only — no narration. Use Markdown formatting.
+            </field>
+            <field name="available_prompts">Summarize this record
+Write a follow-up
+Rewrite the selected text
+Extract action items
+Suggest next steps</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
+        <!-- Powerbox Channel: the powerbox invoked from a discuss channel. -->
+        <record id="ai_composer_powerbox_channel" model="ai.composer">
+            <field name="name">Powerbox — Channel</field>
+            <field name="interface_key">powerbox_channel</field>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
+            <field name="default_prompt">
+You are invoked from the powerbox inside a discuss channel. Use the
+channel and record context provided to answer. Answer directly with the
+result only — no narration. Use Markdown formatting.
+            </field>
+            <field name="available_prompts">Summarize this conversation
+What was decided?
+List the open questions
+Draft a reply</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
     </data>
 </odoo>

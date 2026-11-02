@@ -119,7 +119,7 @@ class AIComposer(models.Model):
 
     def _force_unlink(self):
         """Medveten borttagning av system-defaults (för admin/migrationer)."""
-        return super(AIComposer, self.filtered('is_system_default')).unlink()
+        return super(AIComposer, self).unlink()
 
     def unlink(self):
         self._unlink_except_default_rules()
@@ -140,6 +140,10 @@ class AIComposer(models.Model):
         2. Composer with empty focused_models (applies to all)
         3. None
 
+        Composers whose coworker is not active are skipped: a composer that
+        points at an inactive coworker would only fail at run time, so it
+        must not win the lookup in the first place.
+
         Args:
             interface_key: The interface point identifier
             model_name: Optional model technical name (e.g., 'project.task')
@@ -150,6 +154,8 @@ class AIComposer(models.Model):
         domain = [
             ('interface_key', '=', interface_key),
             ('active', '=', True),
+            ('coworker_id.status', '=', 'active'),
+            ('coworker_id.active', '=', True),
         ]
         candidates = self.search(domain)
         if not candidates:
@@ -168,7 +174,7 @@ class AIComposer(models.Model):
         if generic:
             return generic[:1]
 
-        return candidates[:1]
+        return self.browse()
 
     def get_available_prompts_list(self):
         """Parse available_prompts (newline-separated) into a list."""

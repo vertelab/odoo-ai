@@ -228,6 +228,39 @@ def _require_session_owner(session_id):
         status=403, content_type='application/json')
 
 
+def _powerbox_composer_coworker(env, model):
+    """Resolve the powerbox action through `ai.composer`, if it is installed.
+
+    `ai.composer` (ai_agent_transcript) is the DECLARATIVE mapping from an
+    interface point to a coworker; the coworker fallback in
+    `powerbox_lookup` is DERIVED (any coworker with `init_type=powerbox`).
+    Intent goes before derivation, so the composer wins when one matches.
+
+    Args:
+        env: the request env (the model is looked up with sudo).
+        model: technical model name, or '' when the frontend does not know
+            the model of the field it is invoked from.
+
+    Returns:
+        ai.coworker recordset (possibly empty). Empty means "no composer
+        matched" — the caller then uses the coworker fallback.
+
+    The model is optional in core: an installation without
+    `ai_agent_transcript` must behave exactly as before, so a missing model
+    is a silent skip, not an error.
+    """
+    if 'ai.composer' not in env:
+        return env['ai.coworker'].browse()
+    composer = env['ai.composer'].sudo().find_composer(
+        'powerbox_chat', model or None)
+    if not composer:
+        return env['ai.coworker'].browse()
+    coworker = composer.coworker_id.sudo()
+    if not coworker or coworker.status != 'active' or not coworker.active:
+        return env['ai.coworker'].browse()
+    return coworker
+
+
 class AIStreamController(http.Controller):
     """Server-Sent Events endpoint for streaming AI responses."""
 
@@ -1807,8 +1840,40 @@ class AIStreamController(http.Controller):
         försvinner alla coworkers. Frontend kan anropa med model='' när
         det aktuella fältet inte har en känd modell; då visas de
         obegränsade (model_ids=False = tillgängliga överallt).
+
+        Composer först (complete-powerbox-transcript 4.1): när
+        `ai_agent_transcript` är installerad och en `ai.composer` matchar
+        interface-punkten returneras dess coworker som ENDA svar. Annars
+        används coworker-fallbacken nedan oförändrad — de befintliga
+        powerbox-coworkrarna svarar exakt som före ändringen.
         """
         model = (model or '').strip()
+
+        # Avsikt före härledning: en konfigurerad composer vinner.
+        composer_coworker = _powerbox_composer_coworker(request.env, model)
+        if composer_coworker:
+            quests = composer_coworker
+        else:
+            quests = self._powerbox_coworker_fallback(model)
+
+        return Response(json.dumps({
+            "quests": [{
+                "id": q.id,
+                "name": q.name,
+                "sub_description": q.sub_description or '',
+                "icon": q._POWERBOX_SVG if hasattr(q, '_POWERBOX_SVG') else '',
+                "color": q.color,
+            } for q in quests]
+        }), content_type='application/json')
+
+    @staticmethod
+    def _powerbox_coworker_fallback(model):
+        """Coworkers with `init_type=powerbox` matching the model.
+
+        This is the pre-composer behaviour, kept verbatim so the 11
+        existing powerbox coworkers answer unchanged when no composer
+        matches (4.2).
+        """
         domain = [
             ('status', '=', 'active'),
             ('active', '=', True),
@@ -1823,18 +1888,8 @@ class AIStreamController(http.Controller):
             # Ingen känd modell — visa de obegränsade (inga modellkrav).
             domain += [('model_ids', '=', False)]
 
-        quests = request.env['ai.coworker'].sudo().search(
+        return request.env['ai.coworker'].sudo().search(
             domain, order='sequence asc, name asc')
-
-        return Response(json.dumps({
-            "quests": [{
-                "id": q.id,
-                "name": q.name,
-                "sub_description": q.sub_description or '',
-                "icon": q._POWERBOX_SVG if hasattr(q, '_POWERBOX_SVG') else '',
-                "color": q.color,
-            } for q in quests]
-        }), content_type='application/json')
 
     @http.route('/ai/powerbox/run', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)

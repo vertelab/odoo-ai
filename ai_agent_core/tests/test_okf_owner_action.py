@@ -103,6 +103,46 @@ class TestOkfActionForOwner(common.TransactionCase):
         action = self.Concept._okf_action_for_owner('res.company', 1)
         self.assertIs(action['context']['create'], False)
 
+    def test_archived_filter_is_on(self):
+        """F4.4: listan öppnar med samma filter som räknaren summerar.
+
+        Domänen utesluter arkiverade koncept. Utan sökfiltret i kontexten
+        öppnar sökvyns standardläge ALLA rader — fler än räknaren visar.
+        """
+        action = self.Concept._okf_action_for_owner('ai.coworker', 1)
+        self.assertEqual(action['context']['search_default_not_archived'], 1)
+
+    def test_only_the_owners_concepts_are_in_the_domain(self):
+        """F4.4: inga andra scope läcker in i listan.
+
+        En annan ägares koncept — och ett koncept i ett annat scope —
+        får inte matcha domänen.
+        """
+        coworker = self.env['ai.coworker'].create({
+            'name': 'ZZ OKF Owner Action Scoped'})
+        other = self.env['ai.coworker'].create({
+            'name': 'ZZ OKF Owner Action Other'})
+        artifact = self.env['ai.artifact.type'].search([], limit=1)
+
+        def _concept(owner, key, scope='coworker'):
+            return self.Concept.create({
+                'scope': scope,
+                'owner_coworker_id': owner.id,
+                'artifact_type_id': artifact.id,
+                'concept_key': key,
+                'title': key,
+                'summary': 'x',
+            })
+
+        mine = _concept(coworker, 'scoped.mine')
+        _concept(other, 'scoped.theirs')
+
+        action = self.Concept._okf_action_for_owner(
+            'ai.coworker', coworker.id)
+        found = self.Concept.search(action['domain'])
+        self.assertIn(mine, found)
+        self.assertEqual(set(found.ids), {mine.id})
+
     # ── tomt är tomt ──
 
     def test_empty_owner_opens_empty_list(self):
