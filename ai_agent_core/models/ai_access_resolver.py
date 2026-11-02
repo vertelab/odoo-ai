@@ -8,6 +8,7 @@ registrerar bara delningsmönster som ir.access/ir.rule inte uttrycker
 
 import logging
 import re
+import weakref
 
 from odoo import models, fields, api, _
 from odoo.exceptions import ValidationError
@@ -21,10 +22,17 @@ _logger = logging.getLogger(__name__)
 # aggregat. Cachen nycklas på cursorn (transaktionen): en ny request är en
 # ny cursor, så ingen inaktuell behörighet kan överleva mellan anrop.
 #
-# Städas i `_register_hook`-motsvarande via `cr`-livscykeln: en cursor som
-# stängs lämnar ingen referens kvar eftersom vi rensar vid varje ny
-# transaktion (se `_classify_cache`).
-_CLASSIFY_CACHE = {}
+# D4 (ai-agent-core-memory-diagnosis): cachen håller INTE cursorn vid liv.
+# Med en vanlig dict blev varje cursor en permanent nyckel — den kunde aldrig
+# GC:as, och en `project.task`-post på 50 000 id:n låg kvar per request i
+# workern. `WeakKeyDictionary` nycklas fortfarande på cursorn men äger den
+# inte: när transaktionen tar slut försvinner posten automatiskt.
+#
+# Verifierat 2026-11-02: `odoo.sql_db.Cursor` är weak-referable (inget
+# `__slots__`, ingen `__eq__`/`__hash__`-override → identitetshash), så
+# `WeakKeyDictionary` fungerar. Fallback D4b (`_ai_request_id` i
+# `env.context`) behövdes inte.
+_CLASSIFY_CACHE = weakref.WeakKeyDictionary()
 
 
 class AIAccessResolver(models.Model):
@@ -131,14 +139,42 @@ class AIAccessResolver(models.Model):
         klassificera ett dussin modeller. Cachen lever bara i den aktuella
         requesten (`self.env.cr`), så ingen inaktuell behörighet läcker
         mellan anrop.
+
+        **D4 (5.4): bara `kind` cachas, inte id-listan.** För PARTIAL är
+        id-listan en lista med upp till 50 000 ints per modell och användare
+        — den skalade med antalet rader i modellen och låg kvar i workern så
+        länge cursorn levde. `kind` är en sträng; id-listan byggs vid behov
+        i `_partial_ids` och används direkt i SQL-villkoret.
         """
         cache = self._classify_cache()
         cache_key = (model_name, user.id if user else self.env.uid)
         if cache_key in cache:
-            return cache[cache_key]
-        result = self._classify_source_model_uncached(model_name, user)
-        cache[cache_key] = result
-        return result
+            kind = cache[cache_key]
+            ids = self._partial_ids(model_name, user) if kind == self.PARTIAL \
+                else None
+            return kind, ids
+        kind, ids = self._classify_source_model_uncached(model_name, user)
+        cache[cache_key] = kind
+        return kind, ids
+
+    def _partial_ids(self, model_name, user):
+        """Bygg id-listan för en PARTIAL-modell (D4, 5.4).
+
+        Anropas bara när klassningen redan sagt PARTIAL — aldrig i onödan.
+        Listan cachas inte: den är dyr att hålla kvar och billig att bygga
+        (en `search`, inga aggregat).
+        """
+        Model = self.env.get(model_name)
+        if Model is None:
+            return []
+        uid = user.id if user else self.env.uid
+        try:
+            return Model.with_user(uid).search([]).ids
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                'OKF access: kunde inte hämta synliga id:n för %s — '
+                'klassas CLOSED: %s', model_name, e)
+            return []
 
     def _classify_cache(self):
         """Request-scoped cache för modellklassningen.
@@ -147,13 +183,12 @@ class AIAccessResolver(models.Model):
         requests — en ny request är en ny cursor. Ingen inaktuell
         behörighet kan därmed överleva.
 
-        Cachen hålls liten: en cursor som stängts lämnar en död nyckel
-        kvar, så vi tömmer helt när den passerat en rimlig gräns. Att
-        tömma allt är billigare än att gissa vilka cursors som lever —
-        och en missad cache är bara en extra klassning, aldrig ett fel.
+        D4: `_CLASSIFY_CACHE` är en `WeakKeyDictionary`, så en cursor som
+        transaktionen släpper försvinner ur cachen av sig själv. Den gamla
+        `len > 32`-tömningen behölls inte: den var en gissning om vilka
+        cursors som levde, och nu vet vi det. En missad cache är bara en
+        extra klassning, aldrig ett fel.
         """
-        if len(_CLASSIFY_CACHE) > 32:
-            _CLASSIFY_CACHE.clear()
         cache = _CLASSIFY_CACHE.get(self.env.cr)
         if cache is None:
             cache = {}
