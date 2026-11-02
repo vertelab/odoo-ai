@@ -9698,6 +9698,16 @@ class AICoworker(models.Model):
             if run:
                 runs_created += 1
 
+        # 3.6 — utfallsverifiering EFTER att veckans run skrivits: den mäter
+        # mot det run som just skapades. Här, inte i
+        # `generate_weekly_report`: mätpunkten är körningen, inte rapporten.
+        # Ett fel i verifieringen får inte fälla eval-körningen — runnet är
+        # redan sparat och är det som betyder något.
+        try:
+            self.env['ai.kaizen.finding']._verify_applied_findings()
+        except Exception:
+            _logger.exception('Eval: utfallsverifieringen misslyckades')
+
         _logger.info(
             'Eval: %d run skapade, %d medarbetare överhoppade, %d fall utan '
             'förväntan överhoppade (tak %d fall)',

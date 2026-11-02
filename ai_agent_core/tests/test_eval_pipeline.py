@@ -14,6 +14,7 @@ beroende av en nyckel — och hade inte sagt något om det som faktiskt
 testas (att rätt poster skapas på rätt ställe).
 """
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from odoo.tests.common import TransactionCase, tagged
@@ -604,3 +605,166 @@ class TestPromotionCandidates(EvalTestBase):
             'ratingen är en kandidatkälla — den ska inte bli ett fynd')
         self.assertFalse(self.env['ai.kaizen.finding'].search(
             [('report_id', '=', report.id)]))
+
+
+@tagged('post_install', '-at_install')
+class TestOutcomeVerification(EvalTestBase):
+    """3.1–3.6: åtgärd → utfall.
+
+    En applicerad kaizen-fynd ska verifieras av den *nästa* eval-körningen
+    (inte rapportgenerering), och sätta verification och evidence.
+    """
+
+    def _make_run(self, coworker, accuracy, run_date):
+        """Skapa ett eval-run med given accuracy och datum."""
+        return self.Run.create({
+            'coworker_id': coworker.id,
+            'accuracy': accuracy,
+            'passed': int(accuracy * 10),
+            'failed': int((1 - accuracy) * 10),
+            'total_cases': 10,
+            'run_date': run_date,
+        })
+
+    def test_applied_at_is_set_on_action_apply(self):
+        """3.1: applied_at sätts när status blir 'applied'."""
+        coworker = self._coworker('Verifiering')
+        report = self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+        finding = self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'performance',
+            'finding': 'test',
+            'recommendation': 'test',
+            'evidence': 'test',
+        })
+        finding.action_apply()
+        self.assertTrue(finding.applied_at)
+        self.assertEqual(finding.status, 'applied')
+
+    def test_verification_is_set_from_eval_cron(self):
+        """3.6: verifieringen anropas från _cron_run_evals, inte från rapportgenerering."""
+        coworker = self._coworker('Verifiering cron')
+        report = self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+        finding = self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'performance',
+            'finding': 'test',
+            'recommendation': 'test',
+            'evidence': 'test',
+        })
+        finding.action_apply()
+        applied = finding.applied_at
+        # En körning före och en efter applied_at — samma dag, olika timme.
+        self._make_run(coworker, 0.6, applied - timedelta(hours=2))
+        self._make_run(coworker, 0.8, applied + timedelta(hours=2))
+        # Kör eval-cronen manuellt (den anropar _verify_applied_findings).
+        self.Coworker._cron_run_evals()
+        finding.invalidate_recordset()
+        self.assertEqual(finding.verification, 'improved')
+        self.assertIn('0.60 → 0.80', finding.verification_evidence)
+
+    def test_verification_is_empty_when_no_after_run(self):
+        """3.4: ingen verifiering när ingen körning skett efter applied_at."""
+        coworker = self._coworker('Verifiering ingen efter')
+        report = self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+        finding = self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'performance',
+            'finding': 'test',
+            'recommendation': 'test',
+            'evidence': 'test',
+        })
+        finding.action_apply()
+        finding._verify_outcome()
+        self.assertFalse(finding.verification)
+
+    def test_worse_creates_high_finding(self):
+        """3.5: verification='worse' skapar ett high-fynd."""
+        coworker = self._coworker('Verifiering värre')
+        report = self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+        finding = self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'performance',
+            'finding': 'test',
+            'recommendation': 'test',
+            'evidence': 'test',
+        })
+        finding.action_apply()
+        applied = finding.applied_at
+        self._make_run(coworker, 0.8, applied - timedelta(hours=2))
+        self._make_run(coworker, 0.5, applied + timedelta(hours=2))
+        finding._verify_outcome()
+        self.assertEqual(finding.verification, 'worse')
+        regression = self.env['ai.kaizen.finding'].search([
+            ('report_id', '=', report.id),
+            ('severity', '=', 'high'),
+            ('finding', 'like', '%s%', finding.id),
+        ])
+        self.assertEqual(len(regression), 1)
+        self.assertIn(str(finding.id), regression.evidence)
+
+    def test_unchanged_is_not_set_without_runs(self):
+        """3.4: tomt är bättre än oförändrat när ingen efter-run finns."""
+        coworker = self._coworker('Verifiering tomt')
+        report = self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+        finding = self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'performance',
+            'finding': 'test',
+            'recommendation': 'test',
+            'evidence': 'test',
+        })
+        finding.action_apply()
+        finding._verify_outcome()
+        self.assertFalse(finding.verification)
+
+    def test_verification_does_not_run_on_report_generation(self):
+        """3.6: rapportgenereringen verifierar INTE — mätpunkten är körningen."""
+        coworker = self._coworker('Verifiering rapport')
+        report = self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+        finding = self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'performance',
+            'finding': 'test',
+            'recommendation': 'test',
+            'evidence': 'test',
+        })
+        finding.action_apply()
+        applied = finding.applied_at
+        self._make_run(coworker, 0.6, applied - timedelta(hours=2))
+        self._make_run(coworker, 0.9, applied + timedelta(hours=2))
+        report._render_report()
+        finding.invalidate_recordset()
+        self.assertFalse(
+            finding.verification,
+            'rapportgenereringen får inte verifiera — bara eval-körningen')

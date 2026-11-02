@@ -507,6 +507,27 @@ class AIKaizenFinding(models.Model):
         ('applied', 'Applied'),
     ], default='pending')
 
+    # ── Utfallsverifiering (kaizen-eval-learning-loop 3.1–3.5) ────────
+    # Ett applicerat fynd får ett VERIFIERAT utfall: eval-accuracy före
+    # och efter `applied_at`. Fälten är tomma tills en körning skett efter
+    # appliceringen — bättre tomt än fel (proposal, Risk).
+    applied_at = fields.Datetime(
+        'Applied At', readonly=True,
+        help='När förslaget applicerades på skillen. Mätpunkten som '
+             'verifieringen jämför före och efter.')
+    verification = fields.Selection([
+        ('improved', 'Improved'),
+        ('unchanged', 'Unchanged'),
+        ('worse', 'Worse'),
+    ], string='Verification',
+        help='Utfallet av åtgärden, mätt som eval-accuracy före och efter '
+             'applied_at. Tomt = ingen körning har skett efter '
+             'appliceringen ännu.')
+    verification_evidence = fields.Text(
+        'Verification Evidence',
+        help='T.ex. "accuracy 0.62 → 0.81". Skrivs samtidigt som '
+             'verification och fryses sedan.')
+
     def action_approve(self):
         self.status = 'approved'
 
@@ -532,6 +553,10 @@ class AIKaizenFinding(models.Model):
             suggested_recipe=data.get('suggested_recipe'),
             notes=data.get('notes', '') or f'Kaizen finding: {self.finding[:200]}')
         self.status = 'applied'
+        # 3.1 — mätpunkten. Sätts när status blir 'applied', inte när
+        # fyndet skapas: verifieringen jämför accuracy FÖRE och EFTER
+        # åtgärden, och åtgärden sker här.
+        self.applied_at = fields.Datetime.now()
         return True
 
     def action_apply(self):
@@ -550,6 +575,128 @@ class AIKaizenFinding(models.Model):
             pass
 
         self.status = 'applied'
+        self.applied_at = fields.Datetime.now()
+
+    # ── Utfallsverifiering (kaizen-eval-learning-loop 3.3–3.5) ────────
+
+    #: Tröskel för "förbättrad"/"försämrad" i accuracy. Mindre rörelser än
+    #: så är brus: ett enskilt fall av tio väger 0.1, och att kalla det en
+    #: förbättring hade gjort fältet till en slumpgenerator.
+    VERIFICATION_THRESHOLD = 0.05
+
+    @api.model
+    def _verify_applied_findings(self):
+        """Sätt `verification` på applicerade fynd (3.3–3.5).
+
+        Anropas från `_cron_run_evals()` EFTER att runnet skrivits (3.6) —
+        inte från `generate_weekly_report`. Skälet är att mätpunkten är
+        körningen, inte rapporten: ett fynd som applicerats ska verifieras
+        nästa gång fallen faktiskt körs.
+
+        Ett fynd verifieras EN gång: `verification` frystes vid första
+        mätningen (design D2, "en mätpunkt"). Uppföljning över flera
+        veckor är ett separat change.
+
+        Returns:
+            int: antal fynd som fick ett utfall.
+        """
+        findings = self.search([
+            ('status', '=', 'applied'),
+            ('applied_at', '!=', False),
+            ('verification', '=', False),
+        ])
+        verified = 0
+        for finding in findings:
+            if finding._verify_outcome():
+                verified += 1
+        if verified:
+            _logger.info('Kaizen: %d applicerade fynd verifierade', verified)
+        return verified
+
+    def _verify_outcome(self):
+        """Jämför accuracy före och efter `applied_at` för ett fynd.
+
+        "Före" = senaste `ai.eval.run` för medarbetaren med
+        `run_date < applied_at`. "Efter" = första run med
+        `run_date > applied_at`.
+
+        Saknas någon av dem → inget utfall (3.4). Tyst, inte `unchanged`:
+        en vecka utan körning säger ingenting om åtgärden, och att skriva
+        "oförändrat" hade påstått en mätning som inte gjorts.
+
+        `worse` skapar ett nytt fynd med `severity='high'` (3.5) som
+        refererar det ursprungliga fyndet i `evidence`.
+
+        Returns:
+            bool: True om ett utfall sattes.
+        """
+        self.ensure_one()
+        coworker = self.report_id.coworker_id
+        if not coworker or not self.applied_at:
+            return False
+
+        Run = self.env['ai.eval.run']
+        before = Run.search([
+            ('coworker_id', '=', coworker.id),
+            ('run_date', '<', self.applied_at),
+            # Ett run utan fall mäter ingenting — accuracy 0.0 där är
+            # frånvaro av data, inte ett nederlag.
+            ('total_cases', '>', 0),
+        ], order='run_date desc, id desc', limit=1)
+        after = Run.search([
+            ('coworker_id', '=', coworker.id),
+            ('run_date', '>', self.applied_at),
+            ('total_cases', '>', 0),
+        ], order='run_date asc, id asc', limit=1)
+        if not before or not after:
+            return False
+
+        delta = after.accuracy - before.accuracy
+        if delta > self.VERIFICATION_THRESHOLD:
+            outcome = 'improved'
+        elif delta < -self.VERIFICATION_THRESHOLD:
+            outcome = 'worse'
+        else:
+            outcome = 'unchanged'
+
+        evidence = (
+            f"accuracy {before.accuracy:.2f} → {after.accuracy:.2f} "
+            f"({delta:+.2f}), run {before.id} → {after.id}")
+        self.write({
+            'verification': outcome,
+            'verification_evidence': evidence,
+        })
+        _logger.info(
+            'Kaizen: fynd %s verifierat — %s (%s)',
+            self.id, outcome, evidence)
+
+        if outcome == 'worse':
+            self._create_regression_finding(before, after, evidence)
+        return True
+
+    def _create_regression_finding(self, before, after, evidence):
+        """Skapa ett high-fynd när åtgärden gjorde det sämre (3.5).
+
+        Fyndet hamnar på SAMMA rapport som det ursprungliga: det är samma
+        veckas kedja (fynd → åtgärd → utfall), och rapporten är den plats
+        en människa läser. `evidence` namnger det ursprungliga fyndet så
+        kedjan går att följa bakåt.
+        """
+        self.ensure_one()
+        return self.env['ai.kaizen.finding'].create({
+            'report_id': self.report_id.id,
+            'severity': 'high',
+            'category': 'performance',
+            'finding': (
+                'Åtgärden gjorde det sämre: eval-accuracy föll efter att '
+                f'fyndet applicerades ({evidence})'),
+            'recommendation': (
+                'Återställ eller ompröva ändringen. Ett applicerat förslag '
+                'som sänker accuracy är en regression, inte en förbättring.'),
+            'evidence': (
+                f'original_finding={self.id}: {self.finding[:200]} | '
+                f'{evidence}'),
+        })
 
 
 def _trend(current, previous):
