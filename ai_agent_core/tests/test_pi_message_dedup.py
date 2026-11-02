@@ -190,3 +190,40 @@ class TestPiMessageDedup(TransactionCase):
             line.content_hash,
             self.Line._content_hash(
                 {'role': 'user', 'content': 'hasha mig'}))
+
+    # ── 7. giltig kursor är snabbvägen (2.3) ───────────────────────────
+
+    def test_valid_cursor_does_no_hash_lookup(self):
+        """Giltig kursor: deltat skrivs utan att läsa sessionens rader.
+
+        Ogiltig kursor: hash-dedupen läser sessionens (hash, tokens) en gång.
+        """
+        session = self._session()
+        self._persist(session, [{'role': 'user', 'content': 'ett'}])
+        self.assertEqual(session.pi_message_count, 1)
+
+        calls = []
+        original = type(self.Line).search_read
+
+        def _spy(records, domain, fields=None, **kwargs):
+            calls.append(domain)
+            return original(records, domain, fields, **kwargs)
+
+        type(self.Line).search_read = _spy
+        try:
+            # Giltig kursor: 1 persisterad, Pi skickar 2 poster.
+            self._persist(session, [
+                {'role': 'user', 'content': 'ett'},
+                {'role': 'assistant', 'content': 'tva'},
+            ])
+            self.assertEqual(
+                calls, [],
+                'giltig kursor ska inte slå upp hashar')
+
+            # Ogiltig kursor: kortare lista än kursorn.
+            session.write({'pi_message_count': 99})
+            self._persist(session, [{'role': 'user', 'content': 'ett'}])
+            self.assertTrue(
+                calls, 'ogiltig kursor ska slå upp hashar')
+        finally:
+            type(self.Line).search_read = original

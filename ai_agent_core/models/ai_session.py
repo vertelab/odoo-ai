@@ -1682,15 +1682,23 @@ class AICoworkerSession(models.Model):
                     last_asst_idx = i
 
             # Kända hashar/tokenantal för sessionen — underlag för dedupen.
+            #
+            # Bara vid OGILTIG kursor (pi-message-persist-dedup 2.3): då är
+            # deltat inte pålitligt och varje post måste jämföras mot det som
+            # redan finns. Vid en giltig kursor är deltat per definition nytt,
+            # och att läsa sessionens alla rader för att bygga kartan skulle
+            # kosta en genomgång av 30 000+ rader för fem nya poster. Den
+            # giltiga kursorn är snabbvägen — inga hash-uppslagningar.
             known_hashes = set()
             known_tokens = {}
-            for r in env['ai.coworker.session.line'].search_read(
-                    [('session_id', '=', session.id),
-                     ('content_hash', '!=', False)],
-                    ['content_hash', 'token_input', 'token_output']):
-                known_hashes.add(r['content_hash'])
-                known_tokens.setdefault(r['content_hash'], set()).add(
-                    (r['token_input'] or 0, r['token_output'] or 0))
+            if not cursor_valid:
+                for r in env['ai.coworker.session.line'].search_read(
+                        [('session_id', '=', session.id),
+                         ('content_hash', '!=', False)],
+                        ['content_hash', 'token_input', 'token_output']):
+                    known_hashes.add(r['content_hash'])
+                    known_tokens.setdefault(r['content_hash'], set()).add(
+                        (r['token_input'] or 0, r['token_output'] or 0))
 
             base_seq = 0
             if already:
