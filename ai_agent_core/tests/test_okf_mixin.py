@@ -25,13 +25,41 @@ from ._config_param_guard import ConfigParamGuardedCase
 
 
 class _OkfTestModel(common.TransactionCase):
-    """Bas: en modell som bär mixinen, med kända källor."""
+    """Bas: en modell som bär mixinen, med kända källor.
+
+    `_embedding_provider` mockas till None. Utan mocken letar
+    `_okf_embed_texts` upp Bifrost-providern i databasen och skickar en
+    riktig HTTP-förfrågan; testramverket blockerar den, anropet retryar
+    ("försök 1/3", "2/3") och körningen hänger tills Odoo-cronen dödar
+    processen. Mätt 2026-11-02: hela sviten dog på
+    `TestIndexableModels.test_batch_size_is_a_shared_cap` efter 4,5 min.
+
+    None är rätt värde: `_okf_upsert` markerar då konceptet som `pending`,
+    vilket är exakt det beteende testerna vill pröva — de mäter tak,
+    tidsbudget och fördelning, inte vektorer.
+
+    Mocken läggs i `setUp`, inte `setUpClass`: Odoos testramverk jämför
+    modellklassens attribut efter VARJE test och failar på nya
+    ("Found unexpected attributes on ai.provider: _embedding_provider").
+    Attributet måste därför vara borta igen innan testet räknas klart.
+    """
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.Mixin = cls.env['ai.okf.mixin']
         cls.Concept = cls.env['ai.okf.concept']
+
+    def setUp(self):
+        super().setUp()
+        self._embed_patch = patch.object(
+            type(self.env['ai.provider']), '_embedding_provider',
+            return_value=None)
+        self._embed_patch.start()
+
+    def tearDown(self):
+        self._embed_patch.stop()
+        super().tearDown()
 
 
 @tagged('okf', 'post_install', '-at_install')
