@@ -89,13 +89,18 @@
             <field name="sequence" eval="20"/>
         </record>
 
-        <!-- Mail-initiering: leverantörsfaktura-flöde -->
+        <!-- Mail-initiering: leverantörsfaktura-flöde.
+             OBS: alias_name sätts medvetet INTE här. `faktura@<domän>` ägs i en
+             svensk standarddatabas av leverantörsfaktura-journalen (l10n_se),
+             så ett hårdkodat `faktura` kolliderar och fällde hela
+             modulinstallationen (2026-11-02). Utan värde härleder
+             _ensure_mail_alias() aliaset från coworkerns namn och väljer ett
+             ledigt alternativ om det ändå är upptaget. -->
         <record id="coworker_invoice_init_mail" model="ai.coworker.init_type">
             <field name="coworker_id" ref="coworker_invoice_assistant"/>
             <field name="init_type">mail</field>
             <field name="enabled" eval="True"/>
             <field name="sequence" eval="10"/>
-            <field name="alias_name">faktura</field>
             <field name="alias_contact">everyone</field>
             <field name="mail_action">invoice_ai</field>
             <field name="mail_find_partner" eval="True"/>

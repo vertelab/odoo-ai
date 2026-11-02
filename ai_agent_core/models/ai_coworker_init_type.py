@@ -472,6 +472,20 @@ class AICoworkerInitType(models.Model):
         Aliasset (alias@företagets-domän) pekar på ai.coworker.session och
         sätter ai_coworker_id (= ai_agent) — inkommande mail kör medarbetaren
         via message_new.
+
+        Aliaset är UNIKT per (alias_name, alias_domain_id) i mail-modulen. Ett
+        hårdkodat alias kan därför kollidera med ett alias som redan finns i
+        databasen — i en svensk standarddatabas äger leverantörsfaktura-
+        journalen `faktura@<domän>` (l10n_se/account), så ett coworker-alias
+        med samma namn fällde hela modulinstallationen med UserError
+        (verifierat 2026-11-02 på sfa-test).
+
+        Beteende:
+        * ledigt namn            -> skapa aliaset
+        * upptaget av OSS        -> återanvänd (samma modell + coworker)
+        * upptaget av NÅGON ANNAN -> välj ett unikt alternativ, varna, fortsätt
+
+        En kollision får aldrig krascha en installation eller en uppgradering.
         """
         if not self.alias_name:
             self.alias_name = (
@@ -484,12 +498,56 @@ class AICoworkerInitType(models.Model):
             'alias_contact': self.alias_contact or 'everyone',
         }
         if not self.alias_id:
-            alias = self.env['mail.alias'].create(vals)
+            alias = self._find_free_mail_alias(self.alias_name)
+            if alias.alias_name != self.alias_name:
+                _logger.warning(
+                    'Mail-alias %s är upptaget av %s — använder %s för %s',
+                    self.alias_name, alias.display_name,
+                    alias.alias_name, self.coworker_id.name)
+                self.alias_name = alias.alias_name
+                vals['alias_name'] = alias.alias_name
             self.alias_id = alias.id
             _logger.info('Skapade mail-alias %s för %s',
                          self.alias_name, self.coworker_id.name)
         else:
             self.alias_id.write(vals)
+
+    def _find_free_mail_alias(self, alias_name):
+        """Return an existing or newly created mail.alias for ``alias_name``.
+
+        Uniqueness is per (alias_name, alias_domain_id). If the name is taken
+        by another document (e.g. the Vendor Bills journal), a suffixed
+        variant (``name-2``, ``name-3``, …) is used instead of raising.
+        """
+        MailAlias = self.env['mail.alias']
+        domain = self.env.company.alias_domain_id
+        model = self.env['ir.model']._get('ai.coworker.session')
+        base = alias_name
+        candidate = base
+        suffix = 1
+        while True:
+            existing = MailAlias.search([
+                ('alias_name', '=', candidate),
+                ('alias_domain_id', '=', domain.id),
+            ], limit=1)
+            if not existing:
+                return MailAlias.create({
+                    'alias_name': candidate,
+                    'alias_model_id': model.id,
+                    'alias_defaults': {'coworker_id': self.coworker_id.id},
+                    'alias_contact': self.alias_contact or 'everyone',
+                })
+            # Ours? Same target model and same coworker -> reuse it.
+            defaults = existing.alias_defaults or {}
+            if (existing.alias_model_id == model
+                    and defaults.get('coworker_id') == self.coworker_id.id):
+                return existing
+            suffix += 1
+            candidate = '%s-%d' % (base, suffix)
+            if suffix > 50:
+                raise UserError(_(
+                    'Kunde inte hitta ett ledigt mail-alias för %(name)s.',
+                    name=base))
 
     def _ensure_chat_user(self):
         """Create bot user for private chat if not exists.
