@@ -5091,6 +5091,20 @@ class AIOpenAIAPI(http.Controller):
         pi_session_id = (body.get('pi_session_id') or '').strip()
         coworker_ref = (body.get('coworker') or '').strip()
         tool_calls = body.get('tool_calls') or []
+        # Mänskligt godkännande, givet i Pi:s UI (inte här).
+        #
+        # /tools/run har ingen godkännandekanal: när PermissionEngine säger
+        # needs_user nekar grinden fail-closed. Pi-extensionen fångar det
+        # nekandet, frågar användaren i sin egen dialog och skickar om
+        # anropet med denna flagga satt.
+        #
+        # Flaggan vidgar INTE behörigheten — den ersätter bara det uteblivna
+        # svaret på frågan "får detta köras?". Hårda stopp
+        # (odoo_call_method, odoo_unlink) prövas före needs_user i
+        # PermissionEngine.evaluate() och nekas därför fortfarande, oavsett
+        # flaggan. Behörigheten i övrigt kommer från API-nyckelns användare
+        # (request.uid) och Odoos egna ir.model.access/record rules.
+        approved_by_user = body.get('approved_by_user') is True
         if not tool_calls:
             return Response(json.dumps({
                 'error': {'message': 'Missing tool_calls',
@@ -5244,9 +5258,27 @@ class AIOpenAIAPI(http.Controller):
 
                 # Grinden FÖRE exekvering. needs_user på en yta utan
                 # godkännandekanal = neka (fail-closed), inte köra.
+                #
+                # Undantag: `approved_by_user` betyder att användaren just
+                # har svarat JA på exakt detta anrop i Pi:s dialog. Då finns
+                # godkännandet — det kom bara från en annan yta.
+                #
+                # HÅRDA STOPP undantas uttryckligen: de får ALDRIG köras på
+                # denna väg, ens med ett godkännande. Skälet är att Pi:s
+                # dialog visar en sammanfattning (modell/id/fält), inte hela
+                # anropet — för odoo_call_method/odoo_unlink kan det dölja
+                # vad som faktiskt körs. De kräver godkännande i en yta som
+                # visar hela anropet (Odoo-UI:t eller webhook-vägen).
+                from odoo.addons.ai_agent_core.core.permission import (
+                    _ODOO_EXEC_TOOLS, _ODOO_EXTERNAL_TOOLS)
+                _is_hard_stop = (
+                    name in _ODOO_EXEC_TOOLS or name in _ODOO_EXTERNAL_TOOLS)
                 _decision = _permissions.evaluate(
                     name, args, metadata=tool)
-                if not _decision.allowed or _decision.needs_user:
+                _needs_user_unmet = (
+                    _decision.needs_user
+                    and not (approved_by_user and not _is_hard_stop))
+                if not _decision.allowed or _needs_user_unmet:
                     _logger.warning(
                         'tools/run nekade %s (session %s): %s',
                         name, sess.id if sess.exists() else 0,
