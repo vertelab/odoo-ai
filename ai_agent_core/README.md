@@ -26,7 +26,6 @@ Standalone AI agent engine for Odoo. Buzz-inspired architecture.
 │  │ AIProvider (EN klass — all skillnad är record-data)  │   │     │
 │  │ base_url + api_key + is_bifrost + api_style           │   │     │
 │  └─────────────────────────────────────────────────────┘   │     │
-│  │  BudgetEnforcingProvider (PAPER-004)                         │     │
 │  └─────────────────────────────────────────────────────────────┘     │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
@@ -71,7 +70,7 @@ ai_agent_core/
 │   ├── route.py            # TASK-002: Intelligent path selection
 │   ├── improve.py          # TASK-003: Structured feedback loop
 │   ├── verify.py           # TASK-004: Three-layer output validation
-│   ├── budget.py           # PAPER-004: Budget enforcement
+│   ├── budget.py           # BudgetState + BudgetExhaustedError (cap: ai.coworker.check_cap)
 │   └── eval.py             # PAPER-006: Per-agent evaluations
 ├── models/                 # Odoo models (require Odoo runtime)
 │   ├── ai_provider.py      # ai.provider — LLM provider configuration
@@ -141,14 +140,17 @@ result = asyncio.run(supervisor.run("Analyze Q2 sales"))
 
 ### 3. With Budget Enforcement
 
+Budgeten verkställs på **coworkern**, inte på providern. Det finns en
+sanning om kostnad (`ai.coworker.check_cap()` mot `budget_exhausted`),
+inte två — `BudgetTracker`/`BudgetEnforcingProvider` togs bort i
+`wire-orphaned-core-mechanisms` §2.
+
 ```python
-from ai_agent_core.core.budget import BudgetTracker, BudgetEnforcingProvider
+coworker = env['ai.coworker'].browse(coworker_id)
+if coworker.budget_exhausted:
+    raise BudgetExhaustedError(coworker.budget_warning)
 
-budget = BudgetTracker(limit=50.0)  # $50/month
-safe_provider = BudgetEnforcingProvider(provider, budget)
-
-loop = AgentLoop(provider=safe_provider, tools=tools, config=config)
-# Will raise BudgetExhaustedError if limit exceeded
+loop = AgentLoop(provider=provider, tools=tools, config=config)
 ```
 
 ### 4. With Taskless (detect → route → improve → verify)
@@ -494,7 +496,7 @@ class AgentConfig:
 | **Identity** (ID-001..008) | 60% | ✅ SOUL + Compilation + Templates |
 | **Skills** (SHARE-001..008) | 50% | ✅ Model + Triggers + Recipes |
 | **Taskless** (TASK-001..008) | 50% | ✅ DETECT + ROUTE + IMPROVE + VERIFY |
-| **Budget + Evals** (PAPER-004,006) | 100% | ✅ Both implemented |
+| **Budget + Evals** (PAPER-004,006) | 100% | ✅ Cap på coworkern + eval-pipeline |
 | **Supervisor** | 100% | ✅ Routing + Fan-out + Merge |
 | **Sessions** (SESS-001..004) | 100% | ✅ Model + Lifecycle + Persistence |
 
