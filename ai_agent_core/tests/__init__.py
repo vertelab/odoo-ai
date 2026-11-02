@@ -201,3 +201,7 @@ from . import test_eval_pipeline
 # inte bara cron. Utan testerna är buggen osynlig — en regel som bara en av
 # fyra vägar ser ser ut att fungera.
 from . import test_standing_rules
+
+# test-suite-baseline 2.1/2.2: grinden som jämför en svitkörning mot
+# BASELINE.md. Utan den är baslinjen en påminnelse, inte en grind.
+from . import test_baseline
