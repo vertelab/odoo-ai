@@ -794,6 +794,12 @@ class AIStreamController(http.Controller):
             # Loopen skapas inuti try; initiera till None så att finally kan
             # guarda (ett fel i new_event_loop gav annars NameError i finally).
             loop = None
+            # Strömmens handler-nyckel (D3). `session_uuid` skapas inne i
+            # `_stream()`, men avregistreringen måste ske i generate():s
+            # `finally` — klienten kan koppla ner vid vilket `yield` som
+            # helst, och då kastas GeneratorExit förbi allt efter loopen.
+            # Hållaren fylls i _stream() och läses i finally.
+            _handler_key = {'session_uuid': None}
             try:
                 _logger.info("SSE stream starting — prompt: %s...", prompt[:50])
                 loop = asyncio.new_event_loop()
@@ -819,6 +825,8 @@ class AIStreamController(http.Controller):
                         session_uuid = str(_uuid_mod.uuid4())
                         handler = WebUIInterruptHandler(session_uuid, env=gen_env)
                         _register_webui_handler(session_uuid, handler)
+                        # Låt finally se nyckeln — avregistreringen hör dit.
+                        _handler_key['session_uuid'] = session_uuid
                         yield f"data: {json.dumps({'type': 'session', 'session_uuid': session_uuid})}\n\n"
 
                         provider = gen_provider
@@ -1007,7 +1015,10 @@ class AIStreamController(http.Controller):
                                 **pending['data'],
                                 'session_uuid': session_uuid,
                             })}\n\n")
-                        _unregister_webui_handler(session_uuid)
+                        # Avregistreringen sker i generate():s finally (D3) —
+                        # den här raden är kvar som snabbväg på den lyckliga
+                        # vägen, men den är inte längre garanten. `pop(key,
+                        # None)` är idempotent, så dubbleringen är ofarlig.
 
                     # Fresh cursor + env for the post-teardown phase:
                     # tool handlers run ORM calls while streaming.
@@ -1136,6 +1147,9 @@ class AIStreamController(http.Controller):
                         if _stream_exc is not None:
                             raise _stream_exc
                 finally:
+                    # D3: avregistrera WebUI-handlern — ALLTID, inte bara på
+                    # den lyckliga vägen (se _unregister_webui_handler_safely).
+                    _unregister_webui_handler_safely(_handler_key)
                     # session-history-relevance 3.5: låt streaming-tråden bli
                     # klar först — annars kan finally röra loopen medan tråden
                     # fortfarande kör den (drain/aclose/close kolliderar).
@@ -2451,6 +2465,30 @@ def _register_webui_handler(session_uuid: str, handler):
 
 def _unregister_webui_handler(session_uuid: str):
     _webui_handlers.pop(session_uuid, None)
+
+
+def _unregister_webui_handler_safely(handler_key: dict):
+    """Avregistrera strömmens handler från en `finally` (D3).
+
+    `generate()` är en generator. Klienten kan koppla ner vid vilket
+    `yield` som helst; då kastas GeneratorExit förbi raden efter loopen och
+    handlern blev kvar i `_webui_handlers` för evigt — en per avbruten
+    stream. `finally` körs alltid.
+
+    Kast-säkert: en generator får inte kasta annat än GeneratorExit under
+    stängning. `pop(key, None)` är redan idempotent, så ett andra anrop
+    (lycklig väg + finally) är ofarligt.
+
+    Args:
+        handler_key: dict med nyckeln 'session_uuid' (None innan strömmen
+            hunnit registrera sin handler).
+    """
+    try:
+        session_uuid = handler_key.get('session_uuid')
+        if session_uuid:
+            _unregister_webui_handler(session_uuid)
+    except Exception:  # noqa: BLE001 — städning får ej kasta
+        _logger.warning('webui handler unregister failed', exc_info=True)
 
 
 def _get_quest_memories(quest, session_id=None, query=None) -> str:
