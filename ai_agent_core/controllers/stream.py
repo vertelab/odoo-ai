@@ -5487,8 +5487,15 @@ class AIOpenAIAPI(http.Controller):
                     pass  # best-effort: tyst fallback — se etiketteringsregeln
                 aloop.close()
 
+            # `session_uuid` krävs av godkännandekanalen: klienten pollar
+            # `/ai/interrupt/poll` och svarar på `/ai/interrupt/respond`
+            # med den nyckeln. Utan den i svaret kan Pi inte svara på en
+            # `needs_approval`-begäran — kanalen vore verkningslös.
+            _approval_uuid = (
+                _approval_key(sess) if sess.exists() else '')
             return Response(json.dumps({
                 'session_id': sess.id if sess.exists() else 0,
+                'session_uuid': _approval_uuid,
                 'results': results,
             }), content_type='application/json')
         except Exception as e:

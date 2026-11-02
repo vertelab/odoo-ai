@@ -447,3 +447,35 @@ class TestPiFlagLeavesATrace(TransactionCase):
         src = textwrap.dedent(
             inspect.getsource(stream_mod.AIOpenAIAPI.tools_run))
         self.assertIn('approved_by_user and not _is_hard_stop', src)
+
+
+@tagged('ai_core', 'post_install', '-at_install')
+class TestApprovalChannelContract(TransactionCase):
+    """Kanalens kontrakt mellan Odoo och Pi.
+
+    Klienten behöver `session_uuid` i `/tools/run`-svaret för att kunna
+    polla och svara. Utan den är kanalen verkningslös — begäran
+    registreras men ingen kan nå den.
+    """
+
+    def test_response_carries_the_session_uuid(self):
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIOpenAIAPI.tools_run))
+        self.assertIn(
+            "'session_uuid'", src,
+            '/tools/run måste svara med session_uuid — annars kan klienten '
+            'inte polla godkännandekanalen')
+
+    def test_approval_key_is_deterministic(self):
+        """Samma session ger samma nyckel — annars tappar poll begäran."""
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        sess = self.env['ai.coworker.session'].create({
+            'status': 'active', 'init_type': 'manual',
+        })
+        first = stream_mod._approval_key(sess)
+        second = stream_mod._approval_key(sess)
+        self.assertEqual(first, second)
+        self.assertIn(str(sess.id), first)
