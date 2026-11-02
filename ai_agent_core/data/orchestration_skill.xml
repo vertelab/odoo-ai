@@ -20,6 +20,11 @@ Review each specialist's response. Check for:
 - Consistency: Any contradictions with other answers?
 - Confidence: Is the answer clear or uncertain?
 
+**Konfidenströskel:** om ditt svar på ett delsteg har lägre konfidens än
+{min_confidence} ska du hellre fråga specialisten igen än att gissa. Det är
+samma regel som den pensionerade SupervisorLoop hade: låg konfidens →
+omrouting, inte ett svar som ser säkert ut.
+
 ### Phase 3: Refine (if needed, max {max_iterations} rounds)
 If gaps or contradictions found, formulate follow-up questions.
 Include context from previous rounds. Send to relevant specialists.
@@ -27,6 +32,10 @@ Include context from previous rounds. Send to relevant specialists.
 ### Phase 4: Synthesize
 Combine all answers into ONE cohesive final response.
 If a specialist has no relevant answer, skip it.
+
+**Parallellt:** anropa flera `call_specialist_*`-verktyg i SAMMA tur när
+deras uppgifter är oberoende — det är så fan-out sker. Beroende delsteg
+körs i sekvens.
             </field>
             <field name="improvement_guidance">Default supervisor skill. Improve via kaizen feedback.</field>
         </record>

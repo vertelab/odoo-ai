@@ -5450,8 +5450,21 @@ class AICoworker(models.Model):
             # Build the supervisor agent prompt from skill recipe + specialist list
             agent_descriptions = '\n'.join(
                 f"- **{s.name}**: {s.description}" for s in specialists)
+            # Rendera receptets platshållare (wire-orphaned §7.2): recipen
+            # är en mall med {agents}, {max_iterations} och {min_confidence}.
+            # Utan rendering fick modellen literalerna kvar i prompten.
+            # `str.replace` i stället för `.format`: receptet är
+            # användarredigerbart och kan innehålla klammerparenteser som
+            # `.format` skulle tolka som fält.
+            _rendered_recipe = skill_recipe
+            for _key, _value in (
+                ('{agents}', agent_descriptions),
+                ('{max_iterations}', str(max_rounds or self.max_iterations or 3)),
+                ('{min_confidence}', str(self.min_confidence or 0.8)),
+            ):
+                _rendered_recipe = _rendered_recipe.replace(_key, _value)
             supervisor_prompt = (
-                f"{skill_recipe}\n\n"
+                f"{_rendered_recipe}\n\n"
                 f"Available specialists (call via tools):\n{agent_descriptions}\n"
                 f"Delegera uppgifter genom att anropa rätt call_specialist_* verktyg.\n"
                 f"När alla delar är klara, sammanställ ett slutgiltigt svar."
