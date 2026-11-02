@@ -97,13 +97,17 @@ class TestPgVectorPersistsWithoutPackage(TransactionCase):
         """
         rec = self._memory()
         with patch.object(pg_vector, 'Vector', None):
+            # `assertRaises` MÅSTE omsluta både write och flush: write()
+            # lägger bara värdet i cachen, felet kommer när det når
+            # kolumnen. Låg flush utanför blocket kastade felet utanför
+            # testets kontroll.
+            #
+            # Savepointen rullas tillbaka av Odoo:s testramverk efter
+            # testet — ingen `cr.rollback()` behövs (och är förbjuden).
+            # Den trasiga transaktionen städas alltså av ramverket.
             with self.assertRaises(Exception):
                 rec.write({'embedding': [0.1] * 3})
                 self.env.flush_all()
-            # Felet lämnar en trasig transaktion. Utan rollback till en
-            # savepoint följer den med resten av testsviten och fäller
-            # efterföljande tester med "current transaction is aborted".
-            self.env.cr.rollback()
 
     def test_none_still_means_no_vector(self):
         """None ska fortfarande vara NULL — guarden får inte bli en påtvingad vektor."""
