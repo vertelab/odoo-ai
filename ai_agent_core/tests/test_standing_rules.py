@@ -191,3 +191,35 @@ class TestApprovedAutomationIsRead(StandingRuleBase):
         self.assertNotIn(
             'odoo_unlink', names,
             'registret ska inte innehålla ett verktyg coworkern inte har')
+
+
+@tagged('ai_agent_core', 'post_install', '-at_install')
+class TestOutcomeVocabulary(StandingRuleBase):
+    """3.1 — `finish_reason` håller sig inom fältets selektion."""
+
+    def test_cron_success_uses_a_valid_finish_reason(self):
+        """En lyckad cron-körning sätter ett värde ur selektionen."""
+        Session = self.env['ai.coworker.session']
+        allowed = {key for key, _label
+                   in Session._fields['finish_reason'].selection}
+        self.assertIn('stop', allowed)
+        self.assertNotIn(
+            'completed', allowed,
+            "'completed' finns inte i selektionen — koden får inte använda det")
+
+    def test_no_code_writes_completed(self):
+        """Källkoden ska inte skriva 'completed' som finish_reason."""
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parent.parent
+        offenders = []
+        for path in root.rglob('*.py'):
+            if 'tests' in path.parts or '__pycache__' in path.parts:
+                continue
+            source = path.read_text(encoding='utf-8')
+            if "'finish_reason': 'completed'" in source \
+                    or '"finish_reason": "completed"' in source:
+                offenders.append(path.relative_to(root).as_posix())
+        self.assertFalse(
+            offenders,
+            "finish_reason='completed' finns inte i selektionen: %s"
+            % offenders)

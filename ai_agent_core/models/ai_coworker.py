@@ -6961,7 +6961,10 @@ class AICoworker(models.Model):
             # ocksa gor den sokbar och synlig i UI:t.
             session.write({
                 'status': 'done',
-                'finish_reason': 'completed',
+                # 'completed' finns inte i fältets selektion
+                # (unattended-standing-rules 3.1). En lyckad körning slutar
+                # med 'stop' — samma värde som loopen rapporterar.
+                'finish_reason': 'stop',
                 'end_date': fields.Datetime.now(),
             })
             if result_text:
@@ -8420,6 +8423,30 @@ class AICoworker(models.Model):
                     session=session,
                     init_type='powerbox',
                 )
+
+                # Nekade hårda stopp ska SYNAS (unattended-standing-rules
+                # 3.2). Utan callback försvann nekandet tyst: användaren
+                # fick ett svar som såg färdigt ut, utan spår av att ett
+                # verktyg stoppats. Skriv raden på sessionen i stället.
+                def _record_powerbox_denial(tool_name, args, reason,
+                                            _session=session):
+                    try:
+                        self.env['ai.coworker.session.line'].sudo().create({
+                            'session_id': _session.id,
+                            'role': 'system',
+                            'content': (
+                                'Nekat verktygsanrop: %s (%s)'
+                                % (tool_name, reason)),
+                            'sequence': self.env[
+                                'ai.coworker.session']._next_session_sequence(
+                                    _session),
+                        })
+                    except Exception:
+                        _logger.warning(
+                            'Powerbox: kunde inte spara nekandet för %s',
+                            tool_name, exc_info=True)
+
+                loop_obj.denial_callback = _record_powerbox_denial
 
                 async def _run():
                     try:
