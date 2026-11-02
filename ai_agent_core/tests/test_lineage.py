@@ -103,10 +103,27 @@ class TestLineage(TransactionCase):
 
     # ── suggestion_to_action ────────────────────────────────────────────
 
+    def _materializable_type(self):
+        """En suggestion_type som kan skapa ett objekt i den här databasen.
+
+        `_materialize()` returnerar False när målmodellen inte är
+        installerad (t.ex. `calendar.event` i en testdatabas utan
+        `calendar`), och då sätts varken `result_ref` eller
+        `suggestion_to_action`-kanten. Testerna ska pröva kedjan, inte
+        vilka moduler som råkade installeras — välj därför en typ som
+        finns.
+        """
+        for candidate in ('calendar.event', 'dms.file', 'project.task'):
+            if candidate in self.env:
+                return candidate
+        self.skipTest('ingen materialiserbar suggestion_type i den här databasen')
+
+
     def test_suggestion_to_action_edge_created(self):
         """action_accept (materialiserad) skapar suggestion_to_action-edge."""
         sugg = self.Sugg._create_suggestion(
-            'Boka möte via lineage', suggestion_type='calendar.event',
+            'Boka möte via lineage',
+            suggestion_type=self._materializable_type(),
             session_id=self.session.id, user=self.env.user,
             coworker_id=self.coworker.id)
         sugg.action_accept()
@@ -137,7 +154,7 @@ class TestLineage(TransactionCase):
     def test_get_lineage_backward(self):
         """Bakåt: åtgärd → förslag → session + koncept (källa)."""
         sugg = self.Sugg._create_suggestion(
-            'Boka möte', suggestion_type='calendar.event',
+            'Boka möte', suggestion_type=self._materializable_type(),
             session_id=self.session.id, user=self.env.user,
             coworker_id=self.coworker.id,
             evidence_ids=[self.concept.id])
@@ -158,7 +175,7 @@ class TestLineage(TransactionCase):
     def test_get_lineage_forward(self):
         """Framåt: källa (koncept) → förslag → åtgärd."""
         sugg = self.Sugg._create_suggestion(
-            'Boka möte', suggestion_type='calendar.event',
+            'Boka möte', suggestion_type=self._materializable_type(),
             session_id=self.session.id, user=self.env.user,
             coworker_id=self.coworker.id,
             evidence_ids=[self.concept.id])

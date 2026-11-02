@@ -605,6 +605,112 @@ class AIMemory(models.Model):
                 'Chunksökning misslyckades för minne %s: %s', self.name, e)
             return []
 
+    def _bm25_matches(self, query):
+        """True om artefaktens search_vector matchar frågan (svensk FTS)."""
+        self.ensure_one()
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT 1 FROM ai_memory
+                    WHERE id = %s
+                      AND search_vector @@ plainto_tsquery('swedish', %s)
+                    LIMIT 1
+                """, (self.id, query))
+                return bool(self.env.cr.fetchone())
+        except Exception as exc:
+            _logger.warning('BM25-kontroll misslyckades: %s', exc)
+            return False
+
+    def _search_chunks(self, query, k=3):
+        """Hybrid sökning över chunkar: cosine + svensk BM25.
+
+        Två signaler i en fråga, samma mönster som ai.memory.mixin:s
+        _search_memory — men här söks CHUNKAR, inte rader. `limit` avser
+        chunkar: en artefakt med 900 chunkar får inte förbruka hela
+        budgeten på en enda artefakt.
+
+        Returns:
+            list[str] — chunktexter, högst `k` stycken.
+        """
+        self.ensure_one()
+        if not self.rag_ids:
+            return []
+
+        vec = None
+        try:
+            vecs = self._embed_texts([query])
+            raw = vecs[0] if vecs else None
+            # SQL-parametern ska vara en pgvector-literal, inte en Python-lista
+            if raw:
+                vec = '[' + ','.join(str(v) for v in raw) + ']'
+        except Exception as exc:
+            _logger.warning('Fråge-embedding misslyckades: %s', exc)
+
+        scored = {}
+
+        # SIGNAL 1: cosine (pgvector)
+        #
+        # Tröskeln är nödvändig: utan den returnerar cosine ALLTID de
+        # närmaste grannarna, även för en fråga som inte har någon
+        # semantisk koppling alls. Mätt 2026-10-30: frågan
+        # 'obegripligtord' gav 2 träffar mot en artefakt om avtal.
+        # Samma princip som _okf_search (memory-spec rad 87): varje signal
+        # får sin egen tröskel i sin egen enhet.
+        if vec:
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute("""
+                        SELECT id, content,
+                               1 - (embedding <=> %s::vector) AS score
+                        FROM ai_memory_chunk
+                        WHERE memory_id = %s
+                          AND embedding IS NOT NULL
+                          AND 1 - (embedding <=> %s::vector) >= %s
+                        ORDER BY score DESC
+                        LIMIT %s
+                    """, (vec, self.id, vec, _CHUNK_MIN_COSINE, k * 4))
+                    for row in self.env.cr.dictfetchall():
+                        scored[row['id']] = {
+                            'content': row['content'],
+                            'score': float(row['score'] or 0.0),
+                        }
+            except Exception as exc:
+                _logger.warning(
+                    'Cosine-sökning över chunkar misslyckades: %s', exc)
+
+        # SIGNAL 2: svensk BM25 (tsvector)
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT id, content,
+                           ts_rank(search_vector,
+                                   plainto_tsquery('swedish', %s)) AS score
+                    FROM ai_memory_chunk
+                    WHERE memory_id = %s
+                      AND search_vector @@ plainto_tsquery('swedish', %s)
+                    ORDER BY score DESC
+                    LIMIT %s
+                """, (query, self.id, query, k * 4))
+                for row in self.env.cr.dictfetchall():
+                    prev = scored.get(row['id'])
+                    ts = float(row['score'] or 0.0)
+                    if prev:
+                        prev['score'] = min(1.0, prev['score'] + ts)
+                    else:
+                        scored[row['id']] = {
+                            'content': row['content'],
+                            'score': ts,
+                        }
+        except Exception as exc:
+            _logger.warning('BM25-sökning över chunkar misslyckades: %s', exc)
+
+        if not scored:
+            return []
+
+        ranked = sorted(
+            scored.values(), key=lambda r: r['score'], reverse=True)[:k]
+        return [r['content'] for r in ranked if r['content']]
+
     def _get_embeddings(self):
         """Embeddings-instans för FAISS — eller None med en begriplig orsak.
 

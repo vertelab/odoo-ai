@@ -143,6 +143,7 @@ class AILineageLink(models.Model):
             if not found:
                 break
             progressed = False
+            next_from = next_to = None
             for edge in found:
                 key = (edge.id,)
                 if key in seen:
@@ -159,17 +160,25 @@ class AILineageLink(models.Model):
                     'note': edge.note,
                     'create_date': edge.create_date,
                 })
-                # Följ kedjan vidare
+                # Följ kedjan vidare — men bara ETT steg per hopp. Att
+                # sätta `current_*` inne i loopen gjorde att en andra kant
+                # från samma nod skrev över målet, och kedjan hoppade fel
+                # (mätt: framåt från ett koncept nådde förslaget men aldrig
+                # åtgärden).
                 if direction == 'backward':
                     if edge.from_model and (edge.from_model, edge.from_id) not in seen:
-                        current_model, current_id = edge.from_model, edge.from_id
+                        next_from = (edge.from_model, edge.from_id)
                         progressed = True
                 else:
                     if edge.to_model and (edge.to_model, edge.to_id) not in seen:
-                        current_model, current_id = edge.to_model, edge.to_id
+                        next_to = (edge.to_model, edge.to_id)
                         progressed = True
             if not progressed:
                 break
+            if direction == 'backward' and next_from:
+                current_model, current_id = next_from
+            elif direction == 'forward' and next_to:
+                current_model, current_id = next_to
 
         return edges
 

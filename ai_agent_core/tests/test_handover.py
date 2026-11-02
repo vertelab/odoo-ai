@@ -169,6 +169,14 @@ class TestHandover(TransactionCase):
         # write_date sätts SIST — skrivningen av raden ovan rör sessionen
         # och skulle annars skriva över den tvingade tidsstämpeln.
         old.write({'write_date': '2020-01-01 00:00:00'})
+        # `write_date` är ett `automatic`-fält: Odoo skriver över det vid
+        # varje write(). Tidsstämpeln måste därför sättas med rå SQL efter
+        # skrivningen, annars får båda sessionerna samma sekund och
+        # ordningen blir godtycklig (mätt: gammal hamnade först).
+        self.env.cr.execute(
+            "UPDATE ai_coworker_session SET write_date = %s WHERE id = %s",
+            ('2020-01-01 00:00:00', old.id))
+        old.invalidate_recordset(['write_date'])
         found = self.Session._handover_suggestions(user=self.user)
         self.assertIn(old, found)
         self.assertIn(new, found)

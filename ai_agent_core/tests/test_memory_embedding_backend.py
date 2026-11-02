@@ -62,7 +62,14 @@ class TestDeadFieldGone(TransactionCase):
 
 @tagged('ai_core', 'post_install', '-at_install')
 class TestNoSilentDownload(TransactionCase):
-    """17.4: ett FAISS-anrop får inte ladda ner en modell tyst."""
+    """17.4: ett FAISS-anrop får inte ladda ner en modell tyst.
+
+    `memory_type` bär artefaktens KÄLLA sedan ai-memory-pgvector T6.1 —
+    'faiss' togs bort som värde. Testerna skapade artefakten med
+    `memory_type='faiss'` och föll därför på valideringen innan de nådde
+    det de prövar. Källan är irrelevant här: det som testas är
+    `_get_embeddings()`s reservväg, inte lagringsformatet.
+    """
 
     def setUp(self):
         super().setUp()
@@ -75,7 +82,7 @@ class TestNoSilentDownload(TransactionCase):
 
         memory = self.env['ai.memory'].create({
             'name': 'B12 memory',
-            'memory_type': 'faiss',
+            'memory_type': 'text',
         })
         # Tvinga "ingen provider" — annars används testmiljöns provider och
         # reservvägen prövas aldrig.
@@ -101,7 +108,7 @@ class TestNoSilentDownload(TransactionCase):
 
         memory = self.env['ai.memory'].create({
             'name': 'B12 provider memory',
-            'memory_type': 'faiss',
+            'memory_type': 'text',
         })
 
         class _Prov:
