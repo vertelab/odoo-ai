@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pre-migration 18.0.2.0.30: flytta default-coworkern till bolaget.
+"""Pre-migration 18.0.2.0.31: flytta default-coworkern till bolaget.
 
 VARFÖR: `is_default` på `ai.coworker` tas bort. Flaggan gjorde en
 ORGANISATIONSINSTÄLLNING till en egenskap hos en medarbetare och krävde att
@@ -80,7 +80,7 @@ def _company_id_for(cr, coworker_id):
 def migrate(cr, version):
     if not _column_exists(cr, 'res_company', 'ai_default_coworker_id'):
         _logger.info(
-            'Pre-migration 18.0.2.0.30: res_company.ai_default_coworker_id '
+            'Pre-migration 18.0.2.0.31: res_company.ai_default_coworker_id '
             'saknas — hoppar över')
         return
 
@@ -91,13 +91,13 @@ def migrate(cr, version):
         source = 'xmlid'
     if coworker_id is None:
         _logger.info(
-            'Pre-migration 18.0.2.0.30: ingen default-coworker att flytta')
+            'Pre-migration 18.0.2.0.31: ingen default-coworker att flytta')
         return
 
     company_id = _company_id_for(cr, coworker_id)
     if company_id is None:
         _logger.warning(
-            'Pre-migration 18.0.2.0.30: coworker %s är bolagslös och '
+            'Pre-migration 18.0.2.0.31: coworker %s är bolagslös och '
             'databasen har flera bolag — lämnar ai_default_coworker_id tomt '
             '(ingen gissning)', coworker_id)
         return
@@ -111,9 +111,9 @@ def migrate(cr, version):
     """, (coworker_id, company_id))
     if cr.rowcount:
         _logger.info(
-            'Pre-migration 18.0.2.0.30: bolag %s fick default-coworker %s '
+            'Pre-migration 18.0.2.0.31: bolag %s fick default-coworker %s '
             '(källa: %s)', company_id, coworker_id, source)
     else:
         _logger.info(
-            'Pre-migration 18.0.2.0.30: bolag %s hade redan ett '
+            'Pre-migration 18.0.2.0.31: bolag %s hade redan ett '
             'default-val — oförändrat', company_id)
