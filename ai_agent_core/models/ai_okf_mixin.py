@@ -449,6 +449,37 @@ class AIOkfMixin(models.AbstractModel):
             self._set_okf_dirty()
         return result
 
+    def _lock_rows_in_order(self):
+        """Ta radlås på `self.ids` i stigande id-ordning.
+
+        VARFÖR (T/12475): `_set_okf_dirty()` och `_write_okf_fields()` gör rå
+        SQL-`UPDATE` utanför ORM:en. Två Odoo-workers som sparade samma post
+        samtidigt tog båda ett tuple-lås på samma rad och väntade sedan på
+        varandra — en evig väntan, eftersom `lock_timeout` var 0. Posten gick
+        inte att spara och skärmen "fastnade i uppdateringen" utan ett enda
+        felmeddelande.
+
+        `SELECT ... ORDER BY id FOR UPDATE` ger en deterministisk låsordning:
+        två transaktioner som rör samma rader tar dem alltid i samma följd och
+        kan därför inte låsa varandra i en cirkel. Det är samma grepp Odoo
+        själv använder i `_flush_update`.
+
+        PostgreSQL stödjer INTE `UPDATE ... ORDER BY` — därför ett separat
+        `SELECT ... FOR UPDATE` före UPDATE:en. Låsen hålls till
+        transaktionens slut, så de täcker den efterföljande UPDATE:en.
+
+        `FOR UPDATE` på en rad som redan är låst väntar — men nu är väntan
+        alltid enkelriktad (lägre id först), så den kan inte bli cirkulär.
+        Skulle en rad ändå vara låst länge tar `lock_timeout` (10s på
+        postgres16) över och ger ett tydligt fel i stället för en hangning.
+        """
+        if not self:
+            return
+        self.env.cr.execute(
+            'SELECT id FROM %s WHERE id = ANY(%%s) ORDER BY id FOR UPDATE'
+            % self._table,
+            (list(self.ids),))
+
     def _set_okf_dirty(self):
         """Sätt okf_dirty direkt i SQL — kringgår write()-hooken.
 
@@ -456,10 +487,20 @@ class AIOkfMixin(models.AbstractModel):
         buffert skrivas EFTER vårt `UPDATE` och skriva över flaggan med det
         gamla värdet. Det var precis vad som hände i testet — flaggan sattes
         och försvann i samma andetag.
+
+        LÅSORDNING (T/12475): två Odoo-workers som sparade samma post
+        samtidigt tog båda ett tuple-lås på samma rad och väntade sedan på
+        varandra — en evig väntan, eftersom `lock_timeout` var 0. Posten gick
+        inte att spara och skärmen "fastnade i uppdateringen" utan ett enda
+        felmeddelande.
+
+        Låsen tas av `_lock_rows_in_order()` innan UPDATE:en körs — se den
+        metoden för varför.
         """
         if not self:
             return
         self.flush_recordset(['okf_dirty'])
+        self._lock_rows_in_order()
         self.env.cr.execute(
             'UPDATE %s SET okf_dirty = TRUE WHERE id = ANY(%%s)' % self._table,
             (list(self.ids),))
@@ -511,6 +552,10 @@ class AIOkfMixin(models.AbstractModel):
             else:
                 params.append(value)
         assignments = ', '.join('%s = %%s' % f for f in vals)
+        # Samma låsordning som `_set_okf_dirty()` — annars kan en
+        # indexerings-cron och en användares sparning låsa samma rader i olika
+        # följd och dödläges-krascha (T/12475).
+        self._lock_rows_in_order()
         self.env.cr.execute(
             'UPDATE %s SET %s WHERE id = ANY(%%s)' % (self._table, assignments),
             params + [list(self.ids)],
