@@ -138,6 +138,15 @@ class ResConfigSettings(models.TransientModel):
         config_parameter='ai_agent_core.default_identity_id',
         help='Default identity template for new agents.')
 
+    # Default coworker är ett BOLAGSFÄLT (res.company), inte en
+    # config_parameter: en many2one mot ai.coworker ger referensintegritet
+    # och syns i bolagsformuläret. Fältet härleds därför till company_id.
+    ai_default_coworker_id = fields.Many2one(
+        'ai.coworker', string='Default AI Coworker',
+        related='company_id.ai_default_coworker_id', readonly=False,
+        help='AI-medarbetaren som förväljs i webbchatten och används av '
+             'onboarding när ingen annan är vald.')
+
     # ─────────────────────────────────────────────
     # Default Tools (explicit-agent-tools)
     # ─────────────────────────────────────────────

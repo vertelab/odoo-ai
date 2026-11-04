@@ -10,6 +10,17 @@ _logger = logging.getLogger(__name__)
 class ResCompany(models.Model):
     _inherit = 'res.company'
 
+    # ── Default coworker (organisation, inte medarbetaregenskap) ──
+    #
+    # Vilken AI-medarbetare som är förvald är ett BOLAGSBESLUT. Fältet låg
+    # tidigare som `is_default` på ai.coworker, vilket gjorde en
+    # organisationsinställning till en egenskap hos en medarbetare och
+    # krävde att exakt en rad bar flaggan. Här är det ett fält per bolag.
+    ai_default_coworker_id = fields.Many2one(
+        'ai.coworker', string='Default AI Coworker',
+        help='AI-medarbetaren som förväljs i webbchatten och används av '
+             'onboarding när ingen annan är vald. Gäller per bolag.')
+
     # ── Company Identity (ported from ai_agent) ──
     company_mission = fields.Html(
         'Our Mission',
@@ -65,6 +76,20 @@ class ResCompany(models.Model):
                 ('owner_company_id', '=', r.id),
                 ('archived', '=', False),
             ])
+
+    def _ai_default_coworker(self):
+        """Bolagets förvalda coworker, eller None.
+
+        Enda uppslagningen av default-coworkern (D6). Returnerar None när
+        fältet är tomt, när posten raderats eller när den är avaktiverad —
+        anroparen äger sin egen fallback (webbchatten: första tillgängliga
+        web_ui-coworker; onboarding: ValidationError).
+        """
+        self.ensure_one()
+        coworker = self.ai_default_coworker_id
+        if coworker and coworker.active:
+            return coworker
+        return None
 
     def action_open_company_memory(self):
         """Smartknapp: öppna bolagets LEVANDE minne (ai.okf.concept).

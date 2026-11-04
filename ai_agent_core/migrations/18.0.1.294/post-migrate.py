@@ -28,8 +28,20 @@ def migrate(cr, version):
 
     env = api.Environment(cr, SUPERUSER_ID, {})
 
-    # 1. Default-medarbetaren (adoptera legacy om den finns)
-    coworker = env['ai.coworker'].search([('is_default', '=', True)], limit=1)
+    # 1. Default-medarbetaren (adoptera legacy om den finns).
+    #
+    # `is_default` togs bort i 18.0.2.0.30. Migrationen kan köras om på en
+    # installation som ligger efter, så kolumnen prövas innan den läses —
+    # annars kraschar uppgraderingen på en DB där fältet redan är släppt.
+    cr.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'ai_coworker' AND column_name = 'is_default'"
+    )
+    if cr.fetchone():
+        coworker = env['ai.coworker'].search(
+            [('is_default', '=', True)], limit=1)
+    else:
+        coworker = env['ai.coworker'].browse()
     if not coworker:
         _logger.info("Ingen default-medarbetare — hoppar över (ny installation "
                      "får agenten via data-XML)")

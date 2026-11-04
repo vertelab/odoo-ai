@@ -216,20 +216,13 @@
                             <field name="identity_id"/>
                             <field name="orchestration_mode" widget="radio"/>
                             <field name="orchestration_mode_help" readonly="1" class="text-muted" nolabel="1"/>
-                            <field name="supervisor_model_id" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
                             <field name="conference_mechanism" invisible="orchestration_mode != 'conference'"/>
+                        </group>
+                        <group string="Avdelning">
+                            <field name="department_id"/>
+                            <field name="supervisor_model_id" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
                             <field name="max_iterations" invisible="orchestration_mode not in ('supervisor', 'buzz', 'linear', 'conference')"/>
                             <field name="min_confidence" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
-                            <field name="department_id"/>
-                            <field name="is_default"/>
-                            <field name="heartbeat_enabled"/>
-                            <field name="heartbeat_status" readonly="1"
-                                decoration-success="heartbeat_operational"
-                                decoration-danger="heartbeat_enabled and not heartbeat_operational"/>
-                        </group>
-                        <group string="HITL">
-                            <field name="hitl_threshold" widget="radio"/>
-                            <field name="active" widget="boolean_toggle"/>
                             <field name="last_successful_run" readonly="1"/>
                         </group>
                     </group>
@@ -243,6 +236,20 @@
                             </group>
                         </page>
 
+                        <page string="Autonom" name="autonom">
+                            <group>
+                                <group string="Obevakad körning">
+                                    <field name="hitl_threshold" widget="radio"/>
+                                </group>
+                                <group string="Heartbeat">
+                                    <field name="heartbeat_enabled"/>
+                                    <field name="heartbeat_status" readonly="1"
+                                        decoration-success="heartbeat_operational"
+                                        decoration-danger="heartbeat_enabled and not heartbeat_operational"/>
+                                    <field name="heartbeat_operational" readonly="1" invisible="1"/>
+                                </group>
+                            </group>
+                        </page>
                         <page string="Initiering" name="initiering">
                             <group>
                                 <group>

@@ -623,11 +623,11 @@ class AIOnboarding(models.Model):
     def action_start_interview(self):
         """Starta onboarding — öppna wizard för intervju."""
         self.ensure_one()
-        coworker = self.coworker_id or self.env['ai.coworker'].search([
-            ('is_default', '=', True)], limit=1)
+        coworker = self.coworker_id or self.env.company._ai_default_coworker()
         if not coworker:
             raise models.ValidationError(
-                _('No default coworker found. Install ai_agent_core first.'))
+                _('No default coworker found. Set one in Settings → AI Agents '
+                  '→ Default AI Coworker, or install ai_agent_core first.'))
         self.write({
             'coworker_id': coworker.id,
             'state': 'scanning',

@@ -943,9 +943,17 @@ class AICoworker(models.Model):
         ('high_risk', 'Endast högriskåtgärder kräver godkännande'),
         ('always', 'Alltid godkännande (HITL)'),
     ], string='HITL-tröskel', default='high_risk',
-        help='När krävs godkännande innan coworkern agerar. '
-             'Paperclip-approval-gates som default: högriskåtgärder '
-             '(skrivningar, externa anrop) kräver alltid HITL.')
+        help='Coworkerns TILLITSSTEG — inte grinden själv. Värdet läses av '
+             'mekanismer som behöver veta hur mycket medarbetaren får göra '
+             'på eget initiativ: direkta minnesskrivningar, delegeringens '
+             'beställartillit och det tillitssteg som rapporteras för '
+             'medarbetaren.\n\n'
+             'Det ändrar INTE vad behörighetsgrinden tillåter — hårda stopp '
+             '(odoo_call_method, odoo_unlink) kräver människa oavsett värde.\n\n'
+             'Verkan gäller OBEVAKAD körning (cron, mail, watch, webhook, '
+             'heartbeat). I interaktiva körvägar (webbchatt, Discuss, server '
+             'action, powerbox, externt API) frågar coworkern om godkännande '
+             'på samma sätt oavsett detta värde.')
 
     # ── Coworker-katalog (gap A1/A3, task 8.7) ──
     example_prompts = fields.Text(
@@ -4525,29 +4533,22 @@ class AICoworker(models.Model):
         ("Allmän" från hooks/migration 1.8) måste ske här.
 
         Steg:
-        1. Behåll äldsta is_default-coworkern, avaktivera ev. duplikat
+        1. Hitta default-coworkern via xmlid (inte via en flagga — default-
+           valet bor på res.company sedan autonomy-tab-and-company-default)
         2. Byt namn "Allmän" → "Allmän assistent"
         3. Bind xmlids (coworker, lead-agent, länk) via ir.model.data
         4. Döp om lead-agenten "Allmän assistent" → "Allmän kärna"
         5. Säkerställ web_ui-init aktiverad (chatten kräver enabled)
         """
-        defaults = self.search([('is_default', '=', True)], order='id asc')
-        if not defaults:
+        IrModelData = self.env['ir.model.data'].sudo()
+        xmlid = IrModelData.search([
+            ('module', '=', 'ai_agent_core'),
+            ('name', '=', 'coworker_default_assistent'),
+            ('model', '=', 'ai.coworker'),
+        ], limit=1)
+        keep = self.browse(xmlid.res_id).exists() if xmlid else self.browse()
+        if not keep:
             return True  # data-XML skapar på ny installation
-
-        keep = defaults[0]
-        # 1. Avlägsna duplikat (t.ex. data-XML-kopia skapad före adoption)
-        for dup in defaults[1:]:
-            dup_agent_ids = dup.agent_ids.ids
-            dup.write({'active': False, 'is_default': False})
-            for agent in self.env['ai.agent'].sudo().browse(dup_agent_ids):
-                if not self.env['ai.coworker.agent'].search_count([
-                    ('agent_id', '=', agent.id),
-                    ('coworker_id.active', '=', True),
-                ]):
-                    agent.write({'active': False})
-            _logger.info('Adopterade bort duplikat-coworker %s (%s)',
-                         dup.id, dup.name)
 
         # 2. Byt namn
         if keep.name == 'Allmän':
@@ -4555,8 +4556,6 @@ class AICoworker(models.Model):
             _logger.info('Döpte om default-coworker → Allmän assistent')
 
         # 3. Bind xmlids
-        IrModelData = self.env['ir.model.data'].sudo()
-
         def _bind(name, model, res_id):
             existing = IrModelData.search([
                 ('module', '=', 'ai_agent_core'), ('name', '=', name),
@@ -8831,10 +8830,6 @@ class AICoworker(models.Model):
 
     # ── Org integration fields (ai-org-onboarding) ──
 
-    is_default = fields.Boolean(
-        'Default Coworker', default=False,
-        help='Systemets allmänna coworker — den som fanns från installation.')
-
     employee_id = fields.Many2one(
         'hr.employee', string='HR Employee',
         help='Motswarande hr.employee för denna AI-coworker. '
@@ -10174,8 +10169,13 @@ class AICoworker(models.Model):
             except Exception as e:
                 _logger.warning('Could not seed init types for %s: %s',
                               record.name, e)
-            # Auto-create hr.employee for new coworkers (inte default)
-            if not vals.get('employee_id') and not vals.get('is_default'):
+            # Auto-create hr.employee for new coworkers (inte default).
+            # Default-coworkern känner vi igen på xmlid — flaggan is_default
+            # är borta sedan autonomy-tab-and-company-default.
+            is_default_coworker = (
+                record.get_external_id().get(record.id)
+                == 'ai_agent_core.coworker_default_assistent')
+            if not vals.get('employee_id') and not is_default_coworker:
                 try:
                     record._ensure_employee()
                 except Exception as e:

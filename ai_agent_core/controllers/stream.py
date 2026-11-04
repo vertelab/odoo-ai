@@ -1256,10 +1256,12 @@ class AIStreamController(http.Controller):
             if web_ui_init:
                 web_ui_quests.append(q)
 
-        # Default AI-medarbetare: is_default=True (annars första). Den visas
-        # förvald i dropdownen — data-driven via xmlid, ingen hårdkodning.
+        # Default AI-medarbetare: bolagets val (res.company), annars första
+        # tillgängliga web_ui-coworker. Default-valet är ett bolagsbeslut —
+        # det låg tidigare som en flagga på coworkern.
+        company_default = request.env.company.sudo()._ai_default_coworker()
         default_quest = next(
-            (q for q in web_ui_quests if q.is_default),
+            (q for q in web_ui_quests if company_default and q.id == company_default.id),
             web_ui_quests[0] if web_ui_quests else None,
         )
 
