@@ -172,7 +172,6 @@ Skapa aldrig åtgärder i affärssystemet utan godkännande.
         </field>
         <field name="status">active</field>
         <field name="orchestration_mode">single</field>
-        <field name="injection_level">full</field>
         <field name="hitl_threshold">always</field>
         <field name="tool_ids" eval="[(6, 0, [
             ref('tool_zabbix_problems'),
@@ -217,7 +216,6 @@ loggas i sessionen för spårbarhet.
         </field>
         <field name="status">active</field>
         <field name="orchestration_mode">single</field>
-        <field name="injection_level">full</field>
         <field name="hitl_threshold">always</field>
         <field name="tool_ids" eval="[(6, 0, [ref('tool_zabbix_problems')])]"/>
         <field name="example_prompts">

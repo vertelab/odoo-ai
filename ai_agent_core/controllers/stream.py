@@ -2949,6 +2949,18 @@ def _persist_session_with_retry(cr, env, sess, response_text, input_t,
         except Exception as e:
             # Övriga fel (t.ex. programmeringsfel) — logga och ge upp.
             # Persist får aldrig krascha en körning.
+            #
+            # LÅSTAK (2026-11-04): en låstidskollision (LockNotAvailable) är
+            # INTE ett programmeringsfel. Utan rollback lämnades transaktionen
+            # aborterad men ÖPPEN — och med den ACCESS SHARE på de tabeller
+            # persist-vägen läst (ai_coworker_session). Nästa
+            # moduluppgradering som behövde ACCESS EXCLUSIVE stod då still
+            # tills Odoos cron-timeout dödade workern (mätt: 10 min, två
+            # gånger samma dag). Rulla alltid tillbaka innan vi ger upp.
+            try:
+                cr.rollback()
+            except Exception:
+                pass  # best-effort: tyst fallback — se etiketteringsregeln
             _logger.warning('session persist failed: %s', e)
             return False
     return False
@@ -4878,6 +4890,25 @@ class AIOpenAIAPI(http.Controller):
                     provider = _gen_provider
                     from odoo import api as _api, registry as _registry
                     _gen_cr = _registry(_gen_dbname).cursor()
+                    # ── Låstak på turens cursor (2026-11-04) ──────────────
+                    # /ai/v1/tools/run exekverar verktyg på EN långlivad
+                    # cursor per request. Under en Pi-tur ligger den i
+                    # 'idle in transaction' medan Pi väntar på LLM — och
+                    # ACCESS SHARE på varje tabell verktyget läst (t.ex.
+                    # ai_coworker_session) hålls kvar. En moduluppgradering
+                    # som behöver ACCESS EXCLUSIVE (ALTER TABLE/CREATE INDEX)
+                    # får då inte låset och faller på Odoos 15 s låstak
+                    # (mätt 2026-11-04: CREATE INDEX ... ON
+                    # ai_coworker_session föll på lock timeout).
+                    #
+                    # Sätt ett låstak på cursorn: en verktygsskrivning som
+                    # krockar med en DDL ger då ett tydligt fel i stället för
+                    # att blockera uppgraderingen. Läsande verktyg påverkas
+                    # inte (de tar inga konfliktande lås).
+                    try:
+                        _gen_cr.execute("SET lock_timeout = '3s'")
+                    except Exception:
+                        pass  # best-effort: tyst fallback — se etiketteringsregeln
                     try:
                         _gen_env = _api.Environment(_gen_cr, _gen_uid, _gen_context)
                         # Session (session-cost-context 3.1): skapas i
@@ -4897,6 +4928,11 @@ class AIOpenAIAPI(http.Controller):
                             _ai_context_id=_sess.id,
                             ai_lineage_session_id=_sess.id,
                         ))
+                        # Sessions-id för slut-committen nedan. Efter en
+                        # commit är ORM-cachen ogiltig — vi måste binda om
+                        # sessionen från den NYA transaktionen (annars skriver
+                        # persist-vägen på en död cache).
+                        _sess_id = _sess.id
                     except Exception:
                         _gen_cr.close()
                         raise
@@ -5136,6 +5172,26 @@ class AIOpenAIAPI(http.Controller):
                         tool_history = [
                             (tc['name'], tc['arguments'][:200])
                             for tc in aggregated_tool_calls]
+                        # ── Släpp turens transaktion före persist ─────────
+                        # (2026-11-04) Strömmen är klar och inget i den här
+                        # grenen har skrivit något: sessionen skapades ovan
+                        # och committades redan före LLM-anropet. Att behålla
+                        # den långlivade transaktionen genom persist-fasen
+                        # håller kvar ACCESS SHARE på ai_coworker_session
+                        # (läst av _find_or_create_session) och blockerar
+                        # DDL-uppgraderingar i onödan.
+                        #
+                        # Efter commit är ORM-cachen ogiltig → bind om
+                        # sessionen från den nya transaktionen. Persist-vägen
+                        # skriver bara på en färsk cursor.
+                        try:
+                            _gen_cr.commit()
+                        except Exception:
+                            _logger.warning(
+                                'kunde inte committa före persist',
+                                exc_info=True)
+                        _sess = _gen_env['ai.coworker.session'].browse(
+                            _sess_id)
                         # Konkurrensskydd (2026-10-12): flera samtidiga
                         # /ai/stream- eller /ai/v1/chat/completions-anrop mot
                         # SAMMA session skriver samma ai_coworker_session-rad.
@@ -5289,6 +5345,21 @@ class AIOpenAIAPI(http.Controller):
                 status=400, content_type='application/json')
 
         import asyncio
+        # ── Låstak på request-cursorn (2026-11-04) ─────────────────────
+        # Den här vägen är Pi:s mest trafikerade: Pi gör ett anrop per
+        # verktygsrunda och Odoo exekverar verktygen på requestens cursor.
+        # Pi väntar sedan på LLM medan transaktionen ligger 'idle in
+        # transaction' och håller ACCESS SHARE på allt verktyget läst — bl.a.
+        # ai_coworker_session. En moduluppgradering som behöver ACCESS
+        # EXCLUSIVE (ALTER TABLE / CREATE INDEX) faller då på Odoos 15 s
+        # låstak, vilket 2026-11-04 stoppade uppgraderingen av ai_agent_core.
+        #
+        # Låstaket gör en krock till ett tydligt fel i stället för en lång
+        # blockering. Läsande verktyg påverkas inte (inga konfliktande lås).
+        try:
+            request.env.cr.execute("SET lock_timeout = '3s'")
+        except Exception:
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
         Sess = request.env['ai.coworker.session'].sudo()
         sess = Sess.browse(session_id) if session_id else Sess.browse(0)
         if not sess.exists() and pi_session_id:
@@ -5394,6 +5465,36 @@ class AIOpenAIAPI(http.Controller):
                 mode=PermissionMode.INTERACTIVE,
                 user_group_ids=set(request.env.user.groups_id.ids),
             )
+            # ── Coworkerns stående regler (2026-11-04) ──
+            # Grinden byggdes här UTAN att coworkerns regler lästes in, så
+            # `auto_allowed_tools` och godkända automationer
+            # (`ai.coworker.hitl.standing_rule`) hade ingen verkan på den
+            # mest trafikerade vägen. En Pi-agent med `odoo_write` i
+            # auto_allowed_tools fastnade ändå i needs_user → fail-closed,
+            # eftersom den här ytan inte har någon människa som svarar.
+            #
+            # Reglerna är ADD-only och prövas EFTER hårda stopp i
+            # evaluate(), så de kan aldrig automatisera odoo_call_method
+            # eller odoo_unlink. Se ai_coworker._apply_standing_rules.
+            if quest and hasattr(quest, '_apply_standing_rules'):
+                try:
+                    quest.sudo()._apply_standing_rules(_permissions)
+                except Exception:
+                    _logger.warning(
+                        'kunde inte läsa stående regler för coworker %s',
+                        getattr(quest, 'name', '?'), exc_info=True)
+                # `auto_allow_tools` prövas bara i CUSTOM-läget (AUTO
+                # släpper igenom allt ändå). Utan detta byte blev en
+                # coworkers `auto_allowed_tools` verkningslös på den här
+                # vägen — INTERACTIVE gav needs_user ändå, och ytan har
+                # ingen människa som kan svara (fail-closed).
+                #
+                # Det vidgar INTE behörigheten: hårda stopp prövas före
+                # CUSTOM-grenen, registret begränsar redan vilka verktyg
+                # som finns, och `auto_allow_tools` fylls bara av
+                # coworkerns egna, människoattesterade regler.
+                if _permissions.auto_allow_tools:
+                    _permissions.mode = PermissionMode.CUSTOM
 
             async def _run_one(tc):
                 name = tc.get('name', '')
