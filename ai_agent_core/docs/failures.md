@@ -343,6 +343,86 @@ inte längre håller en worker — den ger `done` och klienten poll:ar om.
 interrupt-flödet är kritiskt, eller acceptera att godkännanden kan kräva en
 omladdning.
 
+### 11.2 Stående regler måste läsas på VARJE väg (2026-11-04)
+
+> **Mätt i drift:** en Pi-agent med `odoo_write` i coworkerns
+`auto_allowed_tools` blev ändå nekad på `/ai/v1/tools/run` med
+`Permission denied: approval timed out` — i 60 sekunder, varje gång.
+
+`/tools/run` byggde sin `PermissionEngine` med `mode=INTERACTIVE` och
+läste **inte** coworkerns regler (`ai_coworker._apply_standing_rules`).
+Följden:
+
+1. `auto_allow_tools` fylldes aldrig. Fältet prövas bara i
+   `PermissionMode.CUSTOM`, så även om det fyllts hade INTERACTIVE gett
+   `needs_user` för en skrivning.
+2. `needs_user` på en yta utan människa → fail-closed. En handler
+   registreras för sessionen, frågan väntar i `APPROVAL_TIMEOUT` (60 s)
+   och dör. Pi:s dialogfråga hinner aldrig ställas för att Pi-extensionen
+   bara får svaret *efter* timeouten.
+
+**Fixen är två rader, inte en ny mekanism:**
+
+```python
+quest.sudo()._apply_standing_rules(_permissions)   # reglerna läses
+if _permissions.auto_allow_tools:
+    _permissions.mode = PermissionMode.CUSTOM      # annars verkningslösa
+```
+
+**Det vidgar inte behörigheten.** Hårda stopp (`odoo_call_method`,
+`odoo_unlink`) prövas FÖRE CUSTOM-grenen i `evaluate()` — verifierat:
+`odoo_call_method` med `approved_by_user: true` nekas fortfarande.
+Verktygsregistret begränsar redan vilka verktyg som finns för coworkern,
+och `auto_allow_tools` fylls bara av coworkerns egna, människoattesterade
+regler (`auto_allowed_tools` + `cf.coworker.hitl.standing_rule`).
+
+**Allmän regel:** en grind som saknar en väg är inte en grind — den är en
+tyst åtstramning. `tests/test_structural_gates.py` fångar att *obevakade*
+vägar anropar `_apply_standing_rules`; den fångade inte `/tools/run`
+eftersom den vägen läses som interaktiv. Kommer en ny väg till, lägg den i
+den grindens lista.
+
+### 11.3 Övergiven transaktion blockerar moduluppgradering (2026-11-04)
+
+> **Mätt i drift:** uppgraderingen av `ai_agent_core` föll tre gånger på
+`CREATE INDEX IF NOT EXISTS ai_coworker_session_coworker_create_idx` med
+`canceling statement due to lock timeout`. Två gånger låg orsaken i en
+`idle in transaction`-session som höll `AccessShareLock` +
+`RowExclusiveLock` på `ai_coworker_session`.
+
+Tre separata läckor, alla i `controllers/stream.py`:
+
+1. **Persist-fel utan rollback.** `_persist_session_with_retry` fångade
+   `Exception`, loggade och gav upp — men rullade aldrig tillbaka. En
+   `LockNotAvailable` (Odoos `lock_timeout` är 15 s under
+   `modules/loading.py`) lämnade transaktionen *aborterad men öppen*, med
+   låsen kvar. Workern höll dem tills cron-timeouten (1200 s) dödade den.
+   Fixen är två rader: `cr.rollback()` i `except`-grenen.
+2. **Ingen commit före persist.** Strömmen höll turens cursor genom hela
+   persist-fasen och därmed `ACCESS SHARE` på `ai_coworker_session` (läst
+   av `_find_or_create_session`). Nu committas turen före persist och
+   sessionen binds om från den nya transaktionen (`_sess_id`).
+3. **Inget låstak på verktygens cursor.** `/tools/run` exekverar på
+   requestens cursor. Pi gör ett anrop per verktygsrunda och väntar sedan
+   på LLM — under den väntan ligger transaktionen `idle in transaction`
+   och håller `ACCESS SHARE` på allt verktyget läst. En DDL som behöver
+   `ACCESS EXCLUSIVE` blockerades i upp till 15 s per tabell medan Pi
+   arbetade. Nu sätts `SET lock_timeout = '3s'` på båda cursors: en krock
+   blir ett tydligt fel i stället för en lång blockering.
+
+**Diagnostik som faktiskt avgjorde saken:**
+
+```sql
+select a.pid, a.state, now()-a.xact_start age,
+       left(regexp_replace(a.query,'\s+',' ','g'),60) q
+from pg_stat_activity a
+where a.datname = '<db>' and a.state = 'idle in transaction'
+order by a.xact_start;
+```
+
+`age` på tio minuter och en query som slutar i `SAVEPOINT "..."` är
+signaturen: Odoo-flush utan avslutande commit/rollback.
+
 ---
 
 ## Referenser
