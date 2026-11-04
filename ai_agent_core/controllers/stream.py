@@ -5338,6 +5338,10 @@ class AIOpenAIAPI(http.Controller):
         # flaggan. Behörigheten i övrigt kommer från API-nyckelns användare
         # (request.uid) och Odoos egna ir.model.access/record rules.
         approved_by_user = body.get('approved_by_user') is True
+        # Klienten kan be om den asynkrona svarskanalen (se kommentaren vid
+        # _approval_handler_for längre ner). Utan flaggan nekar vi direkt i
+        # stället för att blockera i 60 s på ett svar som inte kan komma.
+        approval_channel = body.get('approval_channel') is True
         if not tool_calls:
             return Response(json.dumps({
                 'error': {'message': 'Missing tool_calls',
@@ -5570,9 +5574,24 @@ class AIOpenAIAPI(http.Controller):
                     # `/ai/interrupt/poll`, visar frågan och svarar på
                     # `/ai/interrupt/respond`.
                     #
+                    # MEN: klienten får inget svar förrän det här
+                    # HTTP-anropet returnerar, så den kan inte polla medan
+                    # vi väntar — den ligger i samma anrop. En väntan här
+                    # kan därför bara sluta i timeout, och Pi:s egen dialog
+                    # (som frågar EFTER att nekandet kommit) hinner aldrig
+                    # ställas. Mätt 2026-11-04: varje skrivning från en Pi-
+                    # agent tog 60 s och nekades sedan.
+                    #
+                    # Svarskanalen används därför bara när klienten uttryck-
+                    # ligen säger att den pollar (`approval_channel`). Då är
+                    # den ett medvetet val, inte en gissning. Standard är att
+                    # neka DIREKT — Pi får sitt nekande, frågar i sin egen
+                    # dialog och kör om med `approved_by_user`.
+                    #
                     # Hårda stopp går aldrig hit: de nekas alltid på den här
                     # ytan (Pi:s dialog visar bara en sammanfattning).
-                    _handler = _approval_handler_for(sess)
+                    _handler = (_approval_handler_for(sess)
+                                if approval_channel else None)
                     if (_needs_user_unmet and not _is_hard_stop
                             and _handler is not None):
                         _req = _register_approval(
