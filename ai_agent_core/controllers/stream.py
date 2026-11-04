@@ -2383,6 +2383,29 @@ def _approval_key(sess):
     return 'tools-run-%s' % (getattr(sess, 'id', 0) or 0)
 
 
+#: Verktyg som Pi-vägen (`/tools/run`) släpper igenom UTAN ett extra
+#: godkännande när coworkern saknar egna `auto_allowed_tools`.
+#:
+#: VARFÖR: en Pi-agent är en människa som delegerat arbetet — hon startade
+#: sessionen, ser varje anrop i terminalen och kan avbryta. Ett "ja" per
+#: skrivning gör agenten obrukbar för det hon bad om.
+#:
+#: VAD SOM INTE INGÅR: `odoo_call_method` och `odoo_unlink`. De är hårda
+#: stopp, prövas före den här listan i `PermissionEngine.evaluate()` och
+#: nekas alltid på den här ytan. Klienten kan välja bort listan helt med
+#: `permission_defaults: 'ask'`.
+_TOOLS_RUN_DEFAULT_ALLOW = frozenset({
+    'odoo_create',
+    'odoo_write',
+    'task_update_fields',
+    'task_set_status',
+    'prd_module_design',
+    'note_create',
+    'note_create_from_conversation',
+    'note_create_from_record',
+})
+
+
 def _approval_handler_for(sess):
     """Handler för sessionen — skapas vid behov.
 
@@ -5342,6 +5365,10 @@ class AIOpenAIAPI(http.Controller):
         # _approval_handler_for längre ner). Utan flaggan nekar vi direkt i
         # stället för att blockera i 60 s på ett svar som inte kan komma.
         approval_channel = body.get('approval_channel') is True
+        # 'ask' återställer det gamla beteendet (godkännande per skrivning).
+        # Standard är 'allow': Pi-agenten är en delegerad människa.
+        _permission_defaults = str(
+            body.get('permission_defaults') or 'allow').lower()
         if not tool_calls:
             return Response(json.dumps({
                 'error': {'message': 'Missing tool_calls',
@@ -5369,6 +5396,17 @@ class AIOpenAIAPI(http.Controller):
         if not sess.exists() and pi_session_id:
             sess = Sess.search([('pi_session_id', '=', pi_session_id)],
                                limit=1)
+            # En session skapad via sessions-lookup bär ingen coworker (Pi
+            # väljer den inte vid session_start). Hittas den här utan
+            # coworker men anropet namnger en, backfilla den — annars läses
+            # grinden mot en TOM coworker och `auto_allowed_tools` saknas
+            # helt. Det var hela orsaken till att en Pi-agent med regler
+            # ändå nekades: sessionen var från september, skapad före
+            # coworker-införandet, och hade coworker_id = NULL.
+            if sess and not sess.coworker_id and coworker_ref:
+                _bf_quest = self._resolve_coworker(coworker_ref)
+                if _bf_quest:
+                    sess._backfill_coworker(_bf_quest.id)
         if not sess.exists() and pi_session_id and coworker_ref:
             # Pi-session känd men Odoo-sessionen finns ännu inte (t.ex. ett
             # Odoo-verktyg anropas innan chat-completions hunnit skapa den):
@@ -5487,18 +5525,34 @@ class AIOpenAIAPI(http.Controller):
                     _logger.warning(
                         'kunde inte läsa stående regler för coworker %s',
                         getattr(quest, 'name', '?'), exc_info=True)
-                # `auto_allow_tools` prövas bara i CUSTOM-läget (AUTO
-                # släpper igenom allt ändå). Utan detta byte blev en
-                # coworkers `auto_allowed_tools` verkningslös på den här
-                # vägen — INTERACTIVE gav needs_user ändå, och ytan har
-                # ingen människa som kan svara (fail-closed).
+                # `auto_allow_tools` prövas BARA i CUSTOM-läget (AUTO
+                # släpper igenom allt ändå). Två fall måste båda sluta i
+                # CUSTOM:
                 #
-                # Det vidgar INTE behörigheten: hårda stopp prövas före
-                # CUSTOM-grenen, registret begränsar redan vilka verktyg
-                # som finns, och `auto_allow_tools` fylls bara av
-                # coworkerns egna, människoattesterade regler.
+                #   1. coworkern HAR auto_allowed_tools (t.ex. Faktura-
+                #      Assistenten, Infrastructure Operator) — dess
+                #      människoattesterade regler ska gälla.
+                #   2. coworkern SAKNAR dem men anropet vill ha default-
+                #      allow (`permission_defaults='allow'`) — Pi-vägen.
+                #
+                # BUGGEN (2026-11-04): dessa låg som if/else, så fall 2
+                # fyllde listan men bytte ALDRIG läge. Resultatet blev
+                # `allow=['odoo_write', ...]` i INTERACTIVE, där listan
+                # inte läses alls → varje skrivning nekades med "write
+                # tool — requires user approval". Fällan var att fixen
+                # såg korrekt ut i loggen (listan var fylld) medan läget
+                # teg.
+                if not _permissions.auto_allow_tools \
+                        and _permission_defaults != 'ask':
+                    _permissions.auto_allow_tools.update(
+                        _TOOLS_RUN_DEFAULT_ALLOW)
                 if _permissions.auto_allow_tools:
                     _permissions.mode = PermissionMode.CUSTOM
+                    _logger.info(
+                        'tools/run: session %s -> CUSTOM, %d auto-allowed '
+                        'verktyg (default_allow=%r)',
+                        sess.id, len(_permissions.auto_allow_tools),
+                        _permission_defaults)
 
             async def _run_one(tc):
                 name = tc.get('name', '')
