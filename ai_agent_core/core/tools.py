@@ -1273,6 +1273,7 @@ def builtin_tools() -> list[Tool]:
             risk_level="read_only",
             source="builtin",
             executor="nats",
+            trust="untrusted",
             capabilities=["browser"],
             nats_subject="pi.task.do",
             nats_skills="agent-browser",

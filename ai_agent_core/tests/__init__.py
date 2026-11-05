@@ -211,3 +211,10 @@ from . import test_standing_rules
 # test-suite-baseline 2.1/2.2: grinden som jämför en svitkörning mot
 # BASELINE.md. Utan den är baslinjen en påminnelse, inte en grind.
 from . import test_baseline
+
+# De två filerna nedan saknades här helt — verifierat med `git log -S`:
+# noll träffar i hela historiken, alltså hade de aldrig kört. Red-team-sviten
+# bevakar core/trust.py och struktur grindarna bevakar *var* kod får byggas.
+# Utan importen är båda dokumentation, inte tester.
+from . import test_trust_redteam
+from . import test_structural_gates
