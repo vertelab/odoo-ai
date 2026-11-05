@@ -985,10 +985,22 @@ def resolve_provider_from_coworker(coworker, agent_rel=None):
 
 
 def get_default_provider(env=None):
-    """Get the default provider from system parameters.
+    """Default-providern när ingen medarbetare ger en.
 
-    Använder ir.config_parameter 'ai_agent_core.default_model_id' för att
-    slå upp en ai.model. Returnerar (provider, model) eller (None, None).
+    Kedja (default-coworker-som-provider D6):
+      1. bolagets default-medarbetare → ledande agent → ai.model
+      2. ir.config_parameter 'ai_agent_core.default_model_id' (Salt/reparation)
+      3. (None, None)
+
+    SIGNATUREN ÄR OFÖRÄNDRAD med flit: ~30 anropsplatser, varav flera i
+    core/ (router.py, route.py, conference.py, tools.py) utan env eller
+    coworker. Att byta signaturen skulle kräva en fyra raders kedja på
+    varje sådant ställe. Att byta den INTERNA källan ger samma beteende
+    till noll anropsplatsändringar.
+
+    ⚠️ Namnet är nu något missvisande: resultatet kan tillhöra
+    default-MEDARBETARENS agent, inte en lös parameter. Det är avsiktligt —
+    funktionen svarar på "vad är default när ingen medarbetare anges".
 
     OBS (agent-model-resolution D3): den här funktionen krävde tidigare en
     HTTP-request (`odoo.http.request`) och returnerade därför ALLTID
@@ -1006,28 +1018,61 @@ def get_default_provider(env=None):
                 return None, None
             env = request.env
 
+        # 1. Bolagets default-medarbetare. Enda uppslagningen är
+        #    res.company._ai_default_coworker() — den returnerar None när
+        #    valet saknas eller är avaktiverat.
+        try:
+            default_coworker = env.company.sudo()._ai_default_coworker()
+        except Exception:
+            default_coworker = None
+        if default_coworker:
+            provider, model = resolve_provider_from_coworker(default_coworker)
+            if provider:
+                _logger.debug(
+                    'get_default_provider: källa=coworker=%s',
+                    default_coworker.id)
+                return provider, model
+
+        # 2. Den interna parametern (Salt: ai_default_model).
         param = env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.default_model_id'
         )
         if not param:
+            _logger.debug('get_default_provider: källa=none')
             return None, None
 
         model = env['ai.model'].sudo().browse(int(param))
         if not model.exists():
             return None, None
 
+        _logger.debug('get_default_provider: källa=param')
         return resolve_provider_from_model(model), model
     except Exception:
         return None, None
 
 
-def get_default_model_name():
-    """Namnet på default-modellen (ai_agent_core.default_model_id).
+def get_default_model_name(env=None):
+    """Namnet på default-modellen — ALLTID en sträng.
 
     Används som fallback när en agent saknar modell — aldrig hårdkodade
-    leverantörsnamn. Returnerar '' om ingen default är konfigurerad.
+    leverantörsnamn. Löser via get_default_provider() (default-medarbetarens
+    agent → parametern) och returnerar `api_name or name`, eller '' när
+    ingen modell finns.
+
+    KONTRAKT: returnerar en sträng, aldrig en coworker eller ett record.
+    Det är kontraktet mot `provider.chat(model=...)` och mot de 22
+    anropsplatserna.
+
+    ⚠️ `env` är en BAKÅTKOOMPATIBEL tilläggsparameter (default None). Utan
+    den faller funktionen tillbaka på `odoo.http.request` — och returnerade
+    därför alltid '' i cron, shell och tester, där ingen request finns,
+    trots att en env var tillgänglig på anropsplatsen. Samma fälla som
+    `get_default_provider()` hade (agent-model-resolution D3).
+
+    Args:
+        env: Odoo environment. Om None, försök med `odoo.http.request`.
     """
-    _provider, model = get_default_provider()
+    _provider, model = get_default_provider(env=env)
     # Wire-semantik: api_name om satt, annars name (bakåtkompatibelt).
     return (model.api_name or model.name) if model else ''
 
@@ -1052,6 +1097,80 @@ def get_cheapest_model():
         ], order='sys_multiplier asc, cost_input_1k asc, id asc', limit=1)
     except Exception:
         return None
+
+
+def resolve_coworker_or_default(coworker, env=None):
+    """(provider, ai.model) för coworkern — annars default-medarbetaren.
+
+    Ersätter mönstret `provider_instance or get_default_provider()[0]`, som
+    tyst tappade medarbetarens verktyg/skills när agenten saknade modell:
+    den föll till en MODELLÖS parameter-provider, och körningen fortsatte
+    utan den kontext användaren valt.
+
+    Kedja (default-coworker-som-provider D3.1):
+      1. coworkerns egen agent-kedja (ProviderFactory.from_coworker)
+      2. bolagets default-medarbetare — samma kedja
+      3. get_default_provider(env) (parametern/Salt) — sista utväg
+      4. (None, None)
+
+    Kastar ALDRIG. Anroparens befintliga felväg (`raise ValueError` /
+    `ValidationError`) ska ligga kvar oförändrad — helpern returnerar
+    (None, None) och låter anroparen bestämma vad användaren ser.
+
+    Args:
+        coworker: ai.coworker-record (får vara tom)
+        env: Odoo environment. Behövs för default-uppslagningen när
+             coworkern saknas eller är tom.
+
+    Returns:
+        (AIProvider, ai.model) eller (None, None)
+    """
+    try:
+        if coworker:
+            provider, model = resolve_provider_from_coworker(coworker)
+            if provider:
+                return provider, model
+
+        # Fallback: bolagets default-medarbetare. Bara när den skiljer sig
+        # från coworkern — annars upprepar vi samma misslyckade uppslag.
+        _env = env
+        if _env is None and coworker:
+            _env = coworker.env
+        if _env is None:
+            try:
+                from odoo.http import request
+                _env = request.env if request else None
+            except Exception:
+                _env = None
+
+        default_coworker = None
+        if _env is not None:
+            try:
+                default_coworker = _env.company.sudo()._ai_default_coworker()
+            except Exception:
+                default_coworker = None
+
+        if default_coworker and (
+                not coworker or default_coworker.id != coworker.id):
+            provider, model = resolve_provider_from_coworker(default_coworker)
+            if provider:
+                _logger.warning(
+                    'Provider-fallback: coworker %s saknade upplösbar '
+                    'modell — använder default-medarbetaren %s (%s)',
+                    coworker.id if coworker else '-',
+                    default_coworker.id, default_coworker.name)
+                return provider, model
+
+        # Sista utväg: parametern (Salt/reparation). Behålls för
+        # installationer som ännu inte har någon default-medarbetare.
+        provider, model = get_default_provider(env=_env)
+        if provider:
+            return provider, model
+    except Exception:
+        _logger.warning(
+            'resolve_coworker_or_default misslyckades', exc_info=True)
+
+    return None, None
 
 
 class ProviderFactory:

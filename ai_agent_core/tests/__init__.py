@@ -18,6 +18,7 @@ from . import test_okf_mixin
 from . import test_okf_memory
 from . import test_companion_memory
 from . import test_company_default_coworker
+from . import test_default_coworker_resolution
 from . import test_okf_fail_closed
 from . import test_okf_owner_scoping
 # Ägar-åtgärden bakom smartknapparna (okf-smart-buttons F2.2).

@@ -26,7 +26,6 @@ from odoo.tests import common
 _GUARDED_KEYS = (
     'ai_agent_core.default_tool_ids',
     'ai_agent_core.default_model_id',
-    'ai_agent_core.default_provider_id',
     'ai_agent_core.google_api_key',
 )
 

@@ -4449,17 +4449,46 @@ class AICoworker(models.Model):
     def _resolve_default_model(self):
         """Default-modellen för en coworker utan agent-modell.
 
-        uteslutande datadrivet: 1) ai_agent_core.default_model_id
-        2) billigaste aktiva modellen (get_cheapest_model).
+        Kedjan (default-coworker-som-provider D3), helt datadrivet:
+          1) default-medarbetarens ledande agents model_id
+          2) ai_agent_core.default_model_id (ägs av Salt: ai_default_model)
+          3) billigaste aktiva modellen (get_cheapest_model)
+
+        VARFÖR medarbetaren först: den är användarens uttryckliga val.
+        Parametern är en provisionerings- och reparationsdefault — att låta
+        en Salt-skriven parameter slå ut ett medarbetarval vore samma fel
+        som den här ändringen rättar (AI-ikonen styrdes av en tyst
+        marknadsplats-inställning i stället för av användarens val).
+
         Returnerar ai.model-record eller tom records.
         """
         self.ensure_one()
+
+        # 1. Default-medarbetarens ledande agent.
+        #    Bolagets val (res.company.ai_default_coworker_id) är den enda
+        #    uppslagningen — _ai_default_coworker() returnerar None när
+        #    valet saknas eller är avaktiverat, och vi gissar inte vidare.
+        try:
+            company = self.company_id or self.env.company
+            default_coworker = company.sudo()._ai_default_coworker()
+            if default_coworker and default_coworker.id != self.id:
+                # ai.coworker.agent är sorterad 'sequence asc' — första
+                # posten är den ledande agenten.
+                lead = default_coworker.agent_ids[:1]
+                if lead and lead.agent_id.model_id:
+                    return lead.agent_id.model_id
+        except Exception:
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
+
+        # 2. Den interna parametern (Salt/reparation).
         default_model_id = self.env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.default_model_id', '')
         if default_model_id and default_model_id.isdigit():
             model = self.env['ai.model'].browse(int(default_model_id))
             if model.exists():
                 return model
+
+        # 3. Billigaste aktiva modellen.
         try:
             from odoo.addons.ai_agent_core.core.provider import get_cheapest_model
             model = get_cheapest_model()
@@ -6833,8 +6862,11 @@ class AICoworker(models.Model):
                 return {'status': 'dispatched', 'session_id': session.id,
                         'pid': _dispatch.get('pid'), 'port': _dispatch.get('port')}
 
-            provider_instance, provider_model = ProviderFactory.from_coworker(self)
-            provider = provider_instance or get_default_provider()[0] 
+            # Fallback-kedja (default-coworker-som-provider D3.1): coworkerns
+            # egen agent → bolagets default-medarbetare → parametern. Ersätter
+            # `provider_instance or get_default_provider()[0]`, som tyst föll
+            # till en MODELLÖS provider när agenten saknade modell.
+            provider, provider_model = resolve_coworker_or_default(self)
             # explicit-agent-tools: ENDAST settings-default + explicita
             # tool_ids — inga interna builtins registreras implicit.
             tools, tool_access_groups = self._session_tools(session=session)
@@ -7875,11 +7907,15 @@ class AICoworker(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider)
+                ProviderFactory, get_default_provider,
+                resolve_coworker_or_default)
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
-                provider_instance, provider_model = ProviderFactory.from_coworker(self)
-                provider = provider_instance or get_default_provider()[0] 
+                # Fallback-kedja (default-coworker-som-provider D3.1):
+                # coworkerns egen agent → bolagets default-medarbetare →
+                # parametern. Ersätter det modellösa
+                # `provider_instance or get_default_provider()[0]`.
+                provider, provider_model = resolve_coworker_or_default(self)
                 # explicit-agent-tools: ENDAST settings-default + explicita
                 # tool_ids — inga interna builtins registreras implicit.
                 tools, tool_access_groups = self._session_tools(
@@ -8428,11 +8464,15 @@ class AICoworker(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider)
+                ProviderFactory, get_default_provider,
+                resolve_coworker_or_default)
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
-                provider_instance, provider_model = ProviderFactory.from_coworker(self)
-                provider = provider_instance or get_default_provider()[0] 
+                # Fallback-kedja (default-coworker-som-provider D3.1):
+                # coworkerns egen agent → bolagets default-medarbetare →
+                # parametern. Ersätter det modellösa
+                # `provider_instance or get_default_provider()[0]`.
+                provider, provider_model = resolve_coworker_or_default(self)
                 # explicit-agent-tools: ENDAST settings-default + explicita
                 # tool_ids — inga interna builtins registreras implicit.
                 tools, _tool_access_groups = self._session_tools(session=session)

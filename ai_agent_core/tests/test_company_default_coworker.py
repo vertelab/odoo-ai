@@ -59,3 +59,15 @@ class TestCompanyDefaultCoworker(TransactionCase):
     def test_is_default_finns_inte(self):
         """Flaggan på coworkern är borta — default bor på bolaget."""
         self.assertNotIn('is_default', self.Coworker._fields)
+
+    def test_borttagen_coworker_ger_none(self):
+        """Pekar valet på en RADERAD post ska uppslagningen ge None, inte krascha.
+
+        `_ai_default_coworker()` läser `self.ai_default_coworker_id` — ett
+        tomt recordset när målet raderats (ondelete sätter NULL) — och
+        returnerar None. Det skiljer sig från avaktiverad (active=False),
+        som testas separat, men båda ska ge None utan att kasta.
+        """
+        self.company.ai_default_coworker_id = self.coworker
+        self.coworker.unlink()
+        self.assertFalse(self.company._ai_default_coworker())

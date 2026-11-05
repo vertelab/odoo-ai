@@ -92,15 +92,21 @@ class ResConfigSettings(models.TransientModel):
             'ai_agent_core.google_api_key', '')
         return val or os.environ.get('GOOGLE_API_KEY', '')
 
-    ai_api_default_provider_id = fields.Many2one(
-        'ai.provider', string='Default Provider',
-        config_parameter='ai_agent_core.default_provider_id',
-        help='Default AI provider for new agents.')
-
-    ai_api_default_model_id = fields.Many2one(
-        'ai.model', string='Default Model',
-        config_parameter='ai_agent_core.default_model_id',
-        help='Default AI model for new agents.')
+    # ── Default Provider / Default Model: BORTTAGNA ──
+    #
+    # `ai_api_default_provider_id` (ai_agent_core.default_provider_id) skrevs
+    # men lästes aldrig av någon kod — en död parameter i UI:t.
+    #
+    # `ai_api_default_model_id` var värre: den hette "Default Model" men var
+    # systemets GLOBALA LLM-fallback, och styrde därför AI-ikonen via en tyst
+    # marknadsplats-inställning i stället för via användarens medarbetarval.
+    #
+    # Defaulten är nu en MEDARBETARE: res.company.ai_default_coworker_id
+    # (fältet ai_default_coworker_id nedan). Parametern
+    # ai_agent_core.default_model_id finns KVAR som intern lagring — den ägs
+    # av Salt (ai_default_model i odoo.conf) och av
+    # _repair_missing_agent_models() — men den är inte längre en
+    # användarinställning och ska inte ha något fält här.
 
     # ─────────────────────────────────────────────
     # Tool Executor (NATS)

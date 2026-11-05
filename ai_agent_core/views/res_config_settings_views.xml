@@ -227,12 +227,10 @@
                          AI API
                          ════════════════════════════════════════════ -->
                     <block title="AI API">
-                        <setting id="ai_api_default_provider" title="Default Provider">
-                            <field name="ai_api_default_provider_id"/>
-                        </setting>
-                        <setting id="ai_api_default_model" title="Default Model">
-                            <field name="ai_api_default_model_id"/>
-                        </setting>
+                        <!-- Default Provider och Default Model är borttagna.
+                             Defaulten är en medarbetare (AI Agents → Default
+                             AI Coworker) — inte en lös provider eller modell.
+                             Se models/res_config_settings.py för motivering. -->
                         <setting id="ai_google_api_key" title="Google API Key"
                                  help="För YouTube-/Google-baserade AI-verktyg. Tomt → fallback till GOOGLE_API_KEY.">
                             <field name="ai_google_api_key" widget="password"/>
@@ -277,6 +275,31 @@
                         </setting>
                         <setting id="agent_default_coworker" title="Default AI Coworker"
                                  help="AI-medarbetaren som förväljs i webbchatten och används av onboarding när ingen annan är vald. Gäller per bolag.">
+                            <!-- Förklaring i klartext (design D7). Syns utan
+                                 hover med flit: mekanismen är osynlig tills
+                                 den går fel, och den som felsöker läser inte
+                                 tooltips. Inga interna parameternamn — de
+                                 hör i Technical-menyn. -->
+                            <div class="well well-sm mb8 p-2 bg-light rounded">
+                                <strong>Så fungerar default-medarbetaren</strong>
+                                <p class="mb-1 mt-1">
+                                    När du använder AI utan att välja en specifik
+                                    medarbetare — via AI-ikonen, ett API-anrop eller
+                                    en schemalagd körning — används
+                                    <strong>default-medarbetaren</strong>. Den bär hela
+                                    kedjan: agent, kompetenser, verktyg och modell.
+                                </p>
+                                <ul class="mb-1 ps-3">
+                                    <li><strong>Fältet ovan</strong> vinner när det är satt.</li>
+                                    <li><strong>Är fältet tomt</strong> används första medarbetare du har åtkomst till.</li>
+                                    <li><strong>Saknar en medarbetare en egen modell</strong> lånar den default-medarbetarens modell i stället för att köra utan.</li>
+                                </ul>
+                                <p class="mb-0">
+                                    Modellvalet är inte längre en egen inställning — det
+                                    följer av vilken medarbetare som är default. Vill du
+                                    byta modell byter du modell på den medarbetarens agent.
+                                </p>
+                            </div>
                             <field name="ai_default_coworker_id"/>
                         </setting>
                         <setting id="agent_default_tools"

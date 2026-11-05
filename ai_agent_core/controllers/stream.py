@@ -62,9 +62,10 @@ except Exception as _qia_err:  # noqa: BLE001 — vid tidig import kan
 # webhook) can construct AIProvider without NameError.
 try:
     from odoo.addons.ai_agent_core.core.provider import (
-        ProviderFactory, get_default_provider)
+        ProviderFactory, get_default_provider, resolve_coworker_or_default)
 except Exception:
     ProviderFactory = get_default_provider = None
+    resolve_coworker_or_default = None
 
 
 def _content_to_text(content):
@@ -299,11 +300,39 @@ class AIStreamController(http.Controller):
 
         # Resolve quest configuration — frontend skickar quest_id (alias för coworker_id)
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = get_default_model_name()
         system_prompt = ""
         quest = None
         if not coworker_id:
             coworker_id = kw.get('quest_id')
+
+        # Default-medarbetaren när ingen anges (default-coworker-som-provider
+        # D4). Den modellösa direktvägen — `model = get_default_model_name()`
+        # satt FÖRE coworker-uppslagningen, med `quest = None` — körde utan
+        # verktyg, skills och identitet. AI-ikonen betedde sig därför olika
+        # beroende på om coworker_id skickades med. En väg är lättare att
+        # resonera om: utan medarbetare → default-medarbetaren, annars ett
+        # tydligt fel.
+        if not coworker_id:
+            try:
+                _default = request.env.company.sudo()._ai_default_coworker()
+            except Exception:
+                _default = None
+            if not _default:
+                _logger.info(
+                    '/ai/stream: ingen coworker_id och ingen '
+                    'default-medarbetare — nekar anropet')
+                return Response(
+                    json.dumps({
+                        "error": "Ingen AI-medarbetare vald. Ange "
+                                 "coworker_id, eller sätt en Default AI "
+                                 "Coworker i Inställningar → AI Agents."
+                    }),
+                    status=400,
+                    content_type='application/json',
+                )
+            coworker_id = _default.id
+
+        model = get_default_model_name()
 
         if coworker_id:
             try:
@@ -4372,7 +4401,8 @@ class AIOpenAIAPI(http.Controller):
         # ── Imports (must be at method level for both sync + stream paths) ──
         import asyncio
         from odoo.addons.ai_agent_core.core.provider import (
-            ProviderFactory, get_default_provider, Message, Role)
+            ProviderFactory, get_default_provider, Message, Role,
+            resolve_coworker_or_default)
 
         tools = tools or []
 
@@ -4681,8 +4711,11 @@ class AIOpenAIAPI(http.Controller):
                         quest._ensure_agent()
                     except Exception:
                         _logger.exception('Failed to auto-create default agent')
-                provider_instance, provider_model = ProviderFactory.from_coworker(quest)
-                provider = provider_instance or get_default_provider()[0]
+                # Fallback-kedja (default-coworker-som-provider D3.1):
+                # medarbetarens egen agent → bolagets default-medarbetare →
+                # parametern. Ersätter det modellösa
+                # `provider_instance or get_default_provider()[0]`.
+                provider, provider_model = resolve_coworker_or_default(quest)
                 if provider is None:
                     raise ValueError(
                         'Ingen AI-leverantör konfigurerad för medarbetaren. '
@@ -4830,9 +4863,9 @@ class AIOpenAIAPI(http.Controller):
 
         else:
             # Streaming SSE
-            _gen_provider, _gen_pmodel = ProviderFactory.from_coworker(quest)
-            if not _gen_provider:
-                _gen_provider = get_default_provider()[0]
+            # Samma fallback-kedja som icke-strömningsgrenen — en väg, inte
+            # två (default-coworker-som-provider D3.1).
+            _gen_provider, _gen_pmodel = resolve_coworker_or_default(quest)
             # OBS: andra elementet är ai.model-record — använd model_name (sträng)
             gen_model = model_name
 
