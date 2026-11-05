@@ -8439,38 +8439,34 @@ class AICoworker(models.Model):
         if record is None and res_model and res_id:
             record = self.env[res_model].browse(int(res_id)).exists()
 
-        # Build context from record
-        record_context = ''
-        if record:
-            try:
-                record_data = record.read()[0] if hasattr(record, 'read') else {}
-                # Include key fields (skip binary, computed, related)
-                key_fields = {}
-                for field, value in record_data.items():
-                    if value is not None and not isinstance(value, (bytes, bool)):
-                        key_fields[field] = str(value)[:200]
-                record_context = '\n'.join(
-                    f'{k}: {v}' for k, v in list(key_fields.items())[:15]
-                )
-            except Exception:
-                record_context = str(record)[:500]
-
-        # Compile full prompt
-        full_prompt = prompt
-        if record_context:
-            full_prompt = (
-                f"Context (record {res_model or '?'}#{res_id or '?'}):\n"
-                f"{record_context}\n\n"
-                f"Task: {prompt}"
-            )
-
-        # Create session
+        # Rekordkontexten sätts på SESSIONEN (ai_record_*), inte som en
+        # egen sträng i prompten. Det är den enda vägen till LLM:en —
+        # `_build_context_parts()` läser `_inject_session_record()`.
+        # Tidigare byggdes här en parallell kontext i full_prompt, medan
+        # sessionen lämnades utan `ai_record_*`: felsökningsvyn visade en
+        # record-koppling som modellen aldrig såg, och två implementationer
+        # av samma sak kunde driva isär (complete-powerbox-transcript 5.2/5.4).
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.id,
             'status': 'active',
             'init_type': 'powerbox',
             'user_id': self.env.user.id,
         })
+        if record:
+            try:
+                # Singular: powerbox gäller ETT rekord. `_set_records_context`
+                # sätter `ai_record_id = False` och `ai_record_ids = [id]`
+                # (markering), vilket är fel form här — kärnans
+                # `_inject_session_record` läser `ai_record_id`.
+                session._set_record_context(record)
+            except Exception:
+                # best-effort: en record som inte kan serialiseras får inte
+                # fälla körningen — prompten fungerar utan kontexten.
+                _logger.warning(
+                    'powerbox: kunde inte sätta rekordkontext på session %s',
+                    session.id, exc_info=True)
+
+        full_prompt = prompt
 
         # Budgetcheck (budget-hard-cap D4): powerbox returnerar budget slut
         self._unlock_budget_activities()
@@ -8569,8 +8565,15 @@ class AICoworker(models.Model):
                     if ai_model:
                         sys_mult = ai_model.sys_multiplier
 
+                # Sekvensen måste sättas explicit: fältets default är 10,
+                # och `UNIQUE(session_id, sequence)` (B2) gör att den andra
+                # raden kolliderar med den första. `_next_session_sequence`
+                # läser max befintlig sekvens — samma strategi som de övriga
+                # skrivvägarna använder.
+                _pb_seq = self._next_session_sequence(session)
                 self.env['ai.coworker.session.line'].create({
                     'session_id': session.id,
+                    'sequence': _pb_seq,
                     'role': 'user',
                     'content': full_prompt[:2000],
                     'token_input': input_t,
@@ -8579,6 +8582,7 @@ class AICoworker(models.Model):
                 })
                 self.env['ai.coworker.session.line'].create({
                     'session_id': session.id,
+                    'sequence': _pb_seq + 1,
                     'role': 'assistant',
                     'content': response.text,
                     'token_input': 0,

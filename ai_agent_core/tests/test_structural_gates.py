@@ -861,6 +861,67 @@ class StructuralGateToolTrust(TransactionCase):
         self.assertNotEqual(unmarked.trust, 'untrusted')
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Grind 7 — slash-kommandot i html-fältet (complete-powerbox-transcript 6.3)
+# ──────────────────────────────────────────────────────────────────────
+
+#: Filer som tillsammans utgör slash-kommandot i ett html-fält.
+POWERBOX_JS = 'static/src/js/wysiwyg_powerbox.js'
+
+
+class StructuralGatePowerboxCommand(TransactionCase):
+    """Grind: powerbox-kommandot ska finnas kvar och vara kopplat.
+
+    Ett JS-beteende kan inte prövas i en `TransactionCase` — ingen webbläsare.
+    Det som *kan* prövas är att kontraktet mot backend finns kvar: kommandot
+    hämtar sina medarbetare från `/ai/powerbox/lookup`, kör via
+    `/ai/powerbox/run`, och registrerar sig i `MAIN_PLUGINS` så
+    html_editor-instanserna får det. Glider någon av dem bort blir
+    slash-kommandot tyst verkningslöst — det syns inte i något annat test.
+    """
+
+    def _source(self):
+        path = MODULE_ROOT / POWERBOX_JS
+        self.assertTrue(path.exists(), f'{POWERBOX_JS} saknas')
+        return path.read_text(encoding='utf-8')
+
+    def test_command_keeps_its_backend_contract(self):
+        """Kontraktet mot /ai/powerbox/lookup och /ai/powerbox/run finns kvar."""
+        src = self._source()
+        for endpoint in ('/ai/powerbox/lookup', '/ai/powerbox/run'):
+            self.assertIn(
+                endpoint, src,
+                f'Kommandot måste anropa {endpoint} — utan det hämtas inga '
+                'medarbetare respektive körs ingenting')
+
+    def test_plugin_is_registered_for_html_editors(self):
+        """Pluginet registreras i MAIN_PLUGINS, annars får editorn det inte."""
+        src = self._source()
+        self.assertIn('MAIN_PLUGINS', src)
+        self.assertIn('ai_powerbox', src,
+                      'Plugin-id:t måste finnas — det är nyckeln både i '
+                      'MAIN_PLUGINS och i kommandokatalogen')
+
+    def test_commands_are_added_to_the_powerbox(self):
+        """Kommandona läggs i PowerboxPlugin:s katalog (kategori "ai")."""
+        src = self._source()
+        self.assertIn('getAvailablePowerboxCommands', src,
+                      'Utan patchen på getAvailablePowerboxCommands syns '
+                      'inga AI-medarbetare när användaren skriver "/"')
+        self.assertIn('categoryId: "ai"', src,
+                      'Kommandona ska hamna i AI-kategorin, inte spridas')
+
+    def test_composer_service_is_optional_not_required(self):
+        """Tjänsten får inte göras obligatorisk — då kraschar kärnan utan
+        ai_agent_transcript (6.1:s avgränsning)."""
+        src = self._source()
+        self.assertIn('getComposerService', src,
+                      'Konsumenten av ai_powerbox-tjänsten ska finnas (6.1)')
+        self.assertIn('return false', src,
+                      'Utan tjänsten ska kärnans egen väg användas — '
+                      'funktionen måste kunna lämna över, inte kasta')
+
+
 if __name__ == '__main__':
     unittest.main()
 
