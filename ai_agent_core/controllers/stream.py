@@ -15,6 +15,14 @@ import threading
 import time
 from html import escape
 
+# Keepalive-tröskel för SSE-strömmen (webui-stream-feedback 4.1).
+#
+# Under en lång verktygskörning sänder loopen ingenting på flera sekunder —
+# mätt 2026-11-05 tog sju webbsökningar 7–20 s. Utan livstecken ger klienten
+# upp och visar "Anslutningen till AI-servern bröts" trots att servern
+# arbetar. 10 s ligger under de idle-timeouts webbläsare och Caddy har.
+KEEPALIVE_THRESHOLD = 10
+
 from odoo import http, fields, api
 from odoo.http import request, Response
 
@@ -814,6 +822,17 @@ class AIStreamController(http.Controller):
             # (2026-10-12: state sattes först på rad ~752 och ett avbrott
             # dessförinnan gav NameError i finally).
             state = {'loop_obj': None}
+            # Keepalive (webui-stream-feedback 4.1): när inget event sänts på
+            # KEEPALIVE_THRESHOLD sekunder skickas ett livstecken. Utan det
+            # ger klienten upp under en lång verktygskörning och visar
+            # "Anslutningen till AI-servern bröts" — trots att servern
+            # arbetar. Mätt 2026-11-05: sju webbsökningar tog 7–20 s, och
+            # chatten bröt mitt i.
+            #
+            # Tidsstämpeln mäts i SÄNDNINGSVÄGEN (inte med en timer): en
+            # timer som skriver till en stängd kö efter att klienten kopplat
+            # ner är en kraschkälla.
+            _last_send = {'t': time.time()}
             # session-history-relevance 3.5: tråd-handtag så att finally kan
             # säkerställa att streaming-tråden är klar innan loopen rörs.
             _thread_holder = {'thread': None}
@@ -1020,6 +1039,13 @@ class AIStreamController(http.Controller):
                                         "id": event.tool_call.id,
                                         "name": event.tool_call.name,
                                     }
+                            elif event.type == "retry":
+                                # provider-transient-retry D5: synligt försök.
+                                # Innehåller aldrig svarstext — web-UI:t visar
+                                # "försöker igen (n/m)" i stället för att
+                                # strömmen ser död ut under väntan.
+                                data["attempt"] = getattr(event, 'attempt', 0)
+                                data["reason"] = getattr(event, 'reason', '')
                             elif event.type in ("done", "error"):
                                 data["finish_reason"] = event.finish_reason
                                 if event.type == "done":
@@ -1119,13 +1145,27 @@ class AIStreamController(http.Controller):
                         _thread.start()
 
                         # Yielda direkt medan tråden producerar.
+                        #
+                        # Keepalive (webui-stream-feedback 4.1): `get` väntar
+                        # här medan tråden arbetar. Under en lång
+                        # verktygskörning kommer inget event alls — och utan
+                        # livstecken ger klienten upp och visar
+                        # "Anslutningen till AI-servern bröts" trots att
+                        # servern arbetar. Mätt 2026-11-05: sju webbsökningar
+                        # tog 7–20 s och chatten bröt mitt i.
+                        #
+                        # Timeouten sätts till KEEPALIVE_THRESHOLD (inte 300)
+                        # så vi vaknar i tid och kan skicka ett livstecken.
+                        # `_queue.Empty` betyder "ingen chunk än", inte
+                        # "streamen är död" — den distinktionen fanns inte
+                        # förut (300 s timeout behandlade tystnad som fel).
                         while True:
                             try:
-                                _item = _chunk_q.get(timeout=300)
+                                _item = _chunk_q.get(
+                                    timeout=KEEPALIVE_THRESHOLD)
                             except _queue.Empty:
-                                _logger.error(
-                                    'stream timeout: ingen chunk på 300s')
-                                break
+                                yield 'data: {"type": "keepalive"}\n\n'
+                                continue
                             if _item is _SENTINEL:
                                 break
                             yield _item
@@ -5053,6 +5093,20 @@ class AIOpenAIAPI(http.Controller):
                                         _dsml['hold'] = None
                                 else:
                                     yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": _tok}}]})}\n\n'
+                            elif event.type == 'retry':
+                                # provider-transient-retry D5: ett synligt
+                                # "försöker igen" utan innehåll. Klienten ser
+                                # att körningen lever under väntan i stället
+                                # för att tolka tystnaden som avbrott.
+                                # `delta: {}` = keep-alive, inget läggs till
+                                # svaret. Äldre klienter ignorerar en chunk
+                                # utan content/tool_calls.
+                                _logger.info(
+                                    'provider retry %s/%s (%s) — streamen lever',
+                                    getattr(event, 'attempt', 0),
+                                    getattr(event, 'attempt', 0),
+                                    getattr(event, 'reason', ''))
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}}]})}\n\n'
                             elif event.type == 'tool_call_start':
                                 tc = event.tool_call
                                 idx = len(aggregated_tool_calls)

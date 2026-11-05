@@ -439,7 +439,7 @@ var activeSessionCoworker=''; // coworker_id för den aktiva sessionen
 // Pre-select quest from URL params
 var urlQuestId=params.get('quest_id')||'';
 if(urlQuestId){activeQuestId=urlQuestId}
-var currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
+var currentAiMessage=null,currentAgentCards={},lastToolCard=null,streaming=!1,currentEventSource=null,tokenCount=0;
 var lastUsageInput=0,lastUsageOutput=0,currentToolCalls=[];
 var currentAnswerEl=null,currentDebugEl=null,currentSourcesEl=null,currentSpinnerEl=null;
 var currentDebugText='',currentSources=[];
@@ -1061,7 +1061,11 @@ function renderUsage(usage){
         sep.style.display='none';
     }else{
         billing.className='usage-part';
-        billing.textContent='Debitering: '+
+        // Etiketten är "tokens", inte "Debitering" (webui-stream-feedback
+        // 3.2): gränssnittet är en avläsning av förbrukning, inte ett
+        // fakturaunderlag. Att säga "Debitering" påstår att en faktura
+        // utfärdats, vilket UI:t inte kan veta.
+        billing.textContent=
             Number(usage.token_sys||0).toLocaleString('sv-SE')+' tokens';
         if(unmeasured)billing.textContent+=' ('+unmeasured+' rad'+
             (unmeasured===1?'':'er')+' omätt)';
@@ -1207,9 +1211,21 @@ function handleStreamEvent(e){
         case'source':if(e.token&&currentSources.indexOf(e.token)<0)currentSources.push(e.token);
             if(currentSourcesEl){currentSourcesEl.style.display='';var sb=currentSourcesEl.querySelector('.ai-sources-body');sb.innerHTML=currentSources.map(function(u){return'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')}
             break;
-        case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör…</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;
+        case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör…</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;lastToolCard=a;
             if(e.tool_call)currentToolCalls.push({name:e.tool_call.name});
             if(currentSpinnerEl)currentSpinnerEl.style.display='flex';break;
+        // Verktyget är klart (webui-stream-feedback 2.2). /ai/stream-vägen
+        // skickar inget id med tool_call_end — markera därför det senast
+        // öppna kortet. Utan detta stod "Kör…" kvar tills finishStream
+        // rensade korten, vilket såg ut som att verktyget hängt sig.
+        case'tool_call_end':if(lastToolCard){var tb=lastToolCard.querySelector('.agent-card-body');if(tb)tb.textContent='Klar';lastToolCard=null}break;
+        // Livstecken från servern (webui-stream-feedback 4.2). Servern skickar
+        // detta när inget annat sänts på 10 s — t.ex. under en lång
+        // verktygskörning. Klienten ska INTE rendera något: eventet finns
+        // bara för att anslutningen ska hållas vid liv och för att
+        // EventSource inte ska ge upp. Att rendera det hade gjort "tystnad"
+        // till synligt innehåll.
+        case'keepalive':break;
         case'needs_approval':if(e.tool_name){showInterruptDialog('Godkänn verktyg: '+esc(e.tool_name)+(e.risk_level?' ('+esc(e.risk_level)+')':''),'tool_approval')}break;
         case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;
         case'done':if(currentSpinnerEl)currentSpinnerEl.style.display='none';currentEventSource.close();
@@ -1245,6 +1261,19 @@ function finishStream(){
             // progress indicators; the final text replaces them)
             if(txt&&answerEl){answerEl.innerHTML=addMessageActions(md2html(txt))}
             if(currentSpinnerEl)currentSpinnerEl.style.display='none';
+            // Turantalet tokens, hämtat från serverns `done`-event
+            // (webui-stream-feedback 3.1). INTE en klientsidig räkning:
+            // `tokenCount` räknar bara strömmade text-chunks och missar
+            // input-tokens och verktygsrundor. Etiketten är "tokens" —
+            // aldrig "Debitering" (3.2).
+            var _tin=lastUsageInput||0,_tout=lastUsageOutput||0;
+            if(_tin+_tout>0&&answerEl){
+                var _badge=document.createElement('div');
+                _badge.className='turn-tokens';
+                _badge.style.cssText='color:var(--text-muted);font-size:0.85em;margin-top:6px';
+                _badge.textContent=(_tin+_tout).toLocaleString('sv-SE')+' tokens';
+                answerEl.appendChild(_badge);
+            }
             // Save assistant response (svar + debug + källor + tool_calls).
             // Servern persisterar redan turens assistantsvar själv
             // (web-ui-stream-turn-persistens 2.1) — denna POST berikar
@@ -1277,7 +1306,7 @@ function finishStream(){
     document.getElementById('cancel-btn').style.display='none';
     document.getElementById('prompt-input').focus();
     removeImagePreview();
-    currentAiMessage=null;currentAgentCards={};currentEventSource=null;
+    currentAiMessage=null;currentAgentCards={};lastToolCard=null;currentEventSource=null;
     currentAnswerEl=null;currentDebugEl=null;currentSourcesEl=null;currentSpinnerEl=null;
     currentDebugText='';currentSources=[];
     lastUsageInput=0;lastUsageOutput=0;currentToolCalls=[];

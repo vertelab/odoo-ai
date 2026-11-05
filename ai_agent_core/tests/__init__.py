@@ -108,6 +108,7 @@ from . import test_webui_token_usage
 # SSE-generatorernas namnbindning (NameError i _cr_holder, 2026-10-11).
 # Filen MÅSTE importeras här — annars körs den aldrig. Det är samma fälla
 # som test_workspace och test_graph_executor ovan föll i.
+from . import test_stream_keepalive
 from . import test_stream_scope_bindings
 from . import test_explicit_agent_tools
 from . import test_builtin_fallback_removal
@@ -239,3 +240,8 @@ from . import test_personal_memory_sources
 from . import test_provider_resolution
 from . import test_session_accounting
 from . import test_tool_history_consumers
+
+# provider-transient-retry: klassificering + backoff + retry mitt i stream.
+# Utan dessa tester är retryn osynlig — den enda retry som fanns satt på
+# anslutningen och kunde inte se svarskroppen (se ändringens proposal).
+from . import test_provider_transient_retry

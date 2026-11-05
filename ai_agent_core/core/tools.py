@@ -34,6 +34,12 @@ from odoo.addons.ai_agent_core.core.ssrf import (
 
 _logger = logging.getLogger(__name__)
 
+#: Total tidsbudget för web_search:s leverantörskedja (webui-stream-feedback
+#: 5.1). Kedjan DDGS×2 + DDG HTML + Bing + Brave har 20 s timeout VAR —
+#: värsta fallet var ~80 s, tillräckligt för att chatten ska ge upp innan
+#: första träffen. Budgeten styr helheten, inte den enskilda leverantören.
+_WEB_SEARCH_BUDGET = 15.0
+
 # ---------------------------------------------------------------------------
 # Tool (TOOL-001)
 # ---------------------------------------------------------------------------
@@ -561,6 +567,20 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
     import html as _html
     from bs4 import BeautifulSoup as _Soup
     from urllib.parse import quote_plus as _q
+    import time as _t
+
+    # Total tidsbudget för hela leverantörskedjan (webui-stream-feedback 5.1).
+    #
+    # VARFÖR: kedjan DDGS×2 + DDG HTML + Bing + Brave har 20 s timeout VAR.
+    # Värsta fallet var ~80 s — tillräckligt för att chatten ska ge upp
+    # innan första träffen. Mätt 2026-11-05 tog sju sökningar 7–20 s.
+    #
+    # Budgeten styr HELHETEN, inte den enskilda leverantören: en långsam men
+    # fungerande leverantör ska fortfarande få sin chans om den är först.
+    _deadline = _t.monotonic() + _WEB_SEARCH_BUDGET
+
+    def _out_of_budget():
+        return _t.monotonic() >= _deadline
 
     UA = ('Mozilla/5.0 (X11; Linux x86_64; rv:126.0) '
           'Gecko/20100101 Firefox/126.0')
@@ -623,6 +643,10 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
                             _html.unescape(sn.get_text(strip=True)) if sn else ''))
         return res
 
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan DDG HTML — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
     links = await _search('ddg',
         'https://html.duckduckgo.com/html/?q=' + _q(query) + '&kl=wt-wt&l=wt-wt'
         + ('&df=' + _df if _df else ''),
@@ -650,6 +674,10 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
         # formen (&filters=ex1%3a%22ez<kod>%22) är stabil över tid.
         _bing_fresh = {'d': '1', 'w': '2', 'm': '3', 'y': '4'}[_df]
         _bing_url += '&filters=ex1%3a%22ez' + _bing_fresh + '%22'
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan Bing — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
     lines2 = await _search('bing', _bing_url, _bing)
     out = await _to_lines(lines2 or [])
     if out:
@@ -671,6 +699,10 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
     _brave_url = 'https://search.brave.com/search?q=' + _q(query)
     if _df:
         _brave_url += '&tf=' + {'d': 'pd', 'w': 'pw', 'm': 'pm', 'y': 'py'}[_df]
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan Brave — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
     lines3 = await _search('brave', _brave_url, _brave)
     out3 = await _to_lines(lines3 or [])
     if out3:
