@@ -212,7 +212,11 @@ class AIPersonalGoal(models.Model):
         domain = [('user_id', '=', user_id), ('archived', '=', False)]
         if status:
             domain.append(('status', '=', status))
-        return self.search(domain, order='deadline, create_date')
+        # `deadline` finns inte — fältet heter `time_bound`. En sortering på
+        # ett okänt fält kastar ValueError, så search_for_user kraschade
+        # varje gång den anropades med ett mål i databasen. Hittat av
+        # test_memory_learning_nudging, som aldrig hade kört.
+        return self.search(domain, order='time_bound, create_date')
 
     @api.model
     def suggest_goals_from_evolution(self, user_id, signals):

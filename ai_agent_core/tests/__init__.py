@@ -218,3 +218,22 @@ from . import test_baseline
 # Utan importen är båda dokumentation, inte tester.
 from . import test_trust_redteam
 from . import test_structural_gates
+
+# ── Importerade 2026-11-05 ────────────────────────────────────────────
+# Dessa 13 filer saknades helt i listan ovan. `git log -S` gav noll träffar
+# för var och en i hela historiken — de hade aldrig kört. Att de importeras
+# nu är inte samma sak som att de är gröna: de kan ha legat döda i månader.
+# Kör dem, rätta eller radera, en i taget.
+from . import test_budget_hard_cap
+from . import test_buzz_workspace
+from . import test_company_memory
+from . import test_core
+from . import test_loop_constructor_contract
+from . import test_memory_governance
+from . import test_memory_learning_nudging
+from . import test_openworker_gate
+from . import test_orchestration_types
+from . import test_personal_memory_sources
+from . import test_provider_resolution
+from . import test_session_accounting
+from . import test_tool_history_consumers

@@ -436,8 +436,15 @@ class AICoworker(models.Model):
         scope_model = self.env['ai.memory.scope']
         code_to_scope = {s.code: s for s in scope_model.search([])}
 
-        # memory_profile från identity (om tom)
-        if not self.memory_profile and identity.memory_profile:
+        # memory_profile från identity. Fältet har default 'balanced', så
+        # `not self.memory_profile` är alltid False vid create och
+        # identitetens profil nådde aldrig fram. Samma fälla som
+        # `memory_learning_direct` hade (se create): identitetens profil är
+        # den auktoritativa vid skapande, coworkerns eget värde används bara
+        # om det avviker från defaulten.
+        if identity.memory_profile and (
+                not self.memory_profile
+                or self.memory_profile == 'balanced'):
             self.memory_profile = identity.memory_profile
 
         # learning från identity (om tom)
@@ -7830,6 +7837,25 @@ class AICoworker(models.Model):
         # session med status='error' och felmeddelandet
         # "'NoneType' object has no attribute 'aclose'", som pekade på fel
         # sak. En körning som inte kan genomföras ska inte lämna ett spår.
+        # Budgetcheck (budget-hard-cap D4): hårt stopp innan LLM-körning.
+        # Ligger FÖRE provider-upplösningen med flit: en medarbetare som nått
+        # taket ska få "Budget slut" även om ingen provider är konfigurerad.
+        # Låg den efter krävde ett budgetstopp en fungerande provider — och
+        # en medarbetare utan modell fick ett provider-fel i stället för det
+        # besked användaren behöver.
+        self._unlock_budget_activities()
+        if self.budget_exhausted and not self.monthly_budget_soft:
+            self.check_cap()  # triggar notis en gång per månad
+            _logger.info('run() skippad för %s: budget slut', self.name)
+            return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
+                   'Höj taket i inställningarna eller vänta till nästa månad.'
+        if self.daily_budget_exhausted:
+            self.check_daily_cap()  # notis en gång per dygn
+            _logger.info('run() skippad för %s: dagsbudget slut (%.2fM/%.0fM)',
+                         self.name, self.daily_budget_used_mtokens,
+                         self.daily_cap_mtokens)
+            return self.budget_block_message()[1]
+
         self._resolve_provider_or_raise()
 
         # Build system prompt
@@ -7914,29 +7940,12 @@ class AICoworker(models.Model):
             'name': prompt[:80] if prompt else 'Quest run',
         })
 
-        # Budgetcheck (budget-hard-cap D4): hårt stopp innan LLM-körning.
-        # Notis/aktivitet en gång per månad; upplåsning vid höjd budget/ny månad.
-        self._unlock_budget_activities()
-        if self.budget_exhausted and not self.monthly_budget_soft:
-            self.check_cap()  # triggar notis en gång per månad
-            _logger.info('run() skippad för %s: budget slut', self.name)
-            return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
-                   'Höj taket i inställningarna eller vänta till nästa månad.'
+        # Mjukt månadstak: varna men kör vidare. (Det hårda stoppet och
+        # dagsbudgeten prövas före provider-upplösningen — se ovan.)
         if self.budget_exhausted:
-            # Mjukt månadstak: varna men kör vidare.
             self.check_cap()
             _logger.info('run(): mjukt månadstak för %s (%.2fM förbrukat) — '
                          'kör vidare', self.name, self.started_mtokens)
-
-        # Dagsbudget (mjukt stopp): samma effekt per körning, men taket
-        # öppnas av sig självt vid midnatt — ingen åtgärd krävs.
-        if self.daily_budget_exhausted:
-            self.check_daily_cap()  # notis en gång per dygn
-            _logger.info('run() skippad för %s: dagsbudget slut (%.2fM/%.0fM)',
-                         self.name, self.daily_budget_used_mtokens,
-                         self.daily_cap_mtokens)
-            # EN källa för texten — samma ordval i alla kanaler.
-            return self.budget_block_message()[1]
 
         try:
             import asyncio
@@ -10292,6 +10301,18 @@ class AICoworker(models.Model):
                     profile = record.memory_profile
                 if profile == 'hermes':
                     record.memory_learning_direct = True
+            # Minnesinställningarna seedas från identiteten (governance 2.4).
+            # Anropet låg tidigare BARA i mall-kopieringsvägen
+            # (`_ensure_own_identity`) — en medarbetare skapad med en vanlig
+            # (icke-mall) identitet fick därför inga scopes alls:
+            # `memory_scopes` var tom, och injektionen läste ingenting.
+            # Idempotent: `_seed_memory_settings` skriver bara tomma fält.
+            try:
+                record._seed_memory_settings()
+            except Exception as e:
+                _logger.warning(
+                    'Kunde inte seeda minnesinställningar på %s: %s',
+                    record.id, e)
         return records
 
 

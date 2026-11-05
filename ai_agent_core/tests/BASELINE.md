@@ -28,21 +28,22 @@ omgångar av "försök 1/3").
 
 ## Uppmätt baslinje
 
-**Mätt om 2026-11-05** efter att `test_trust_redteam.py` och
-`test_structural_gates.py` importerades i `tests/__init__.py` (de hade aldrig
-kört — se nedan).
+**Mätt om 2026-11-05** efter att ALLA 15 saknade testfiler importerats i
+`tests/__init__.py` och rättats (se nedan).
 
 ```
-ai_agent_core: 2083 tester, 110 s, 129706 queries
-Module ai_agent_core: 1 failures, 4 errors of 527 tests
+ai_agent_core: 2293 tester, 119 s, 140296 queries
+Module ai_agent_core: 1 failures, 4 errors of 649 tests
 ```
 
-De 527 är modul-fasen; de 2 083 är hela sviten inklusive beroenden.
+De 649 är modul-fasen; de 2 293 är hela sviten inklusive beroenden.
 
 ⚠ **Den tidigare baslinjen (1 920 tester, 0 fel) var mätt mot en ofullständig
 svit.** 15 testfiler saknades i `tests/__init__.py` och kördes aldrig. Att
-siffran nu är 2 083 är inte en regression — det är de tester som alltid
-funnits men varit osynliga.
+siffran nu är 2 293 är inte en regression — det är de tester som alltid
+funnits men varit osynliga. De 13 sista filerna gav 44 fel när de
+importerades; samtliga var antingen döda tester eller riktiga kodfel (se
+"Fynd när de 13 filerna importerades").
 
 ## Kända fel
 
@@ -69,6 +70,36 @@ De 20 fel som fanns när baslinjen först skrevs (2026-11-02) är åtgärdade:
 | `TestHandover` | `write_date` är `automatic` — tidsstämpeln sätts med rå SQL |
 | `TestPgVector*` | `convert_to_cache` prövas direkt; ingen `cr.rollback()` i test |
 | `TestPowerboxScoping` | Hoppar över när `sale.order` inte är installerad |
+
+## Fynd när de 13 filerna importerades (2026-11-05)
+
+De 44 felen var inte brus. De föll i tre klasser:
+
+**Riktiga kodfel (4) — åtgärdade i källkoden:**
+
+| Fel | Konsekvens |
+|---|---|
+| `ai_personal_goal.search_for_user()` sorterade på `deadline` | Fältet heter `time_bound` → `ValueError` varje anrop med ett mål i DB |
+| `_seed_memory_settings()` anropades bara i mall-kopieringsvägen | En medarbetare med vanlig identitet fick **inga memory_scopes** → injektionen läste ingenting |
+| `memory_profile`-seedningen såg `not self.memory_profile` | Fältet har default `'balanced'` och är aldrig tomt → identitetens profil nådde aldrig fram |
+| `run()` prövade budgeten EFTER provider-upplösning | En medarbetare som nått taket fick provider-fel i stället för "Budget slut" (och krävde en provider för att neka) |
+
+**Döda tester (mekaniska API-byten) — rättade:**
+
+- `invalidate_cache()` → `invalidate_model()` (borttaget i Odoo 17)
+- `ai.coworker.agent.quest_id` → `coworker_id` (bytt i `ai.quest → ai.coworker`)
+- `add_memory()` returnerar recordset, inte id
+- `source_ref` är `Reference` med begränsad selection — `res.partner` ej tillåten
+- `supersedes_id` är avvecklad med flit (konceptet uppdateras på plats)
+- Session-rader kräver explicit `sequence` (`UNIQUE(session_id, sequence)`)
+- `build_request()` saknade `headers=`-parametern i en fake
+- `get_cheapest_model()` kräver `request.env` → testet prövar frågan direkt
+- Beroende moduler (`sale`, `crm`, `product`) kan saknas → guardas
+- Data-XML äger redan de URL:er/nycklar två tester antog var lediga
+
+**Tester som beskröev ett önskemål, inte koden — rättade till vad som
+faktiskt gäller:** `_check_quest_error` auto-skapa en agent, avdelning
+injiceras inte i prompten, partnernamnet bär badge-prefix.
 
 ## Regeln
 
