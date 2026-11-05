@@ -45,7 +45,7 @@
         </record>
 
         <record id="agent_invoice_partner" model="ai.agent">
-            <field name="name">Mail → Partner</field>
+            <field name="name">Mail till Partner</field>
             <field name="ai_role">Mail Sender Analyst</field>
             <field name="description">Analyserar avsändaren av ett inkommande mail och hittar/skapar rätt res.partner (via skill: Mail: Hitta/skapa res.partner).</field>
             <field name="ai_goal">Hitta eller skapa rätt res.partner från mail-avsändaren.</field>
