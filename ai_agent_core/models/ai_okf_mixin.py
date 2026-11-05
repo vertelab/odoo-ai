@@ -50,6 +50,14 @@ from psycopg2.extras import Json
 
 _logger = logging.getLogger(__name__)
 
+#: Modeller som bryggor registrerat för dirty-indexering.
+#: Modulglobal, inte ett klassattribut: Odoos testramverk fäller varje nytt
+#: klassattribut på en modell ("Found unexpected attributes on
+#: ai.okf.mixin: _okf_extra_indexable_models"), och `type(self)._x = []`
+#: skapar ett nytt attribut på den ÄRVDA modellen, inte på basen.
+#: Processvid är rätt livstid: registreringen görs en gång per register.
+_OKF_EXTRA_INDEXABLE = []
+
 #: Systemparameter för sammanfattningens maxlängd.
 #: Default 2000 — samma tal `ai.memory.mixin` redan använde, så att
 #: ärvningen är beteende-bevarande.
@@ -1124,7 +1132,11 @@ class AIOkfMixin(models.AbstractModel):
     #: returnerar — `@api.model`-uppslagningen sker på den abstrakta modellen,
     #: inte på den ärvande. Mätt i test på luke18 2026-09-22: en överridning
     #: på `website.page` hade ingen verkan på cronen.
-    _okf_extra_indexable_models = None  # sätts lazy (klassattribut får inte vara muterbart)
+    # INGEN klassattribut-deklaration: Odoos testramverk fäller varje nytt
+    # klassattribut på en modell ("Found unexpected attributes on
+    # ai.okf.mixin"). Registreringen bor därför i en modulglobal — den är
+    # processvid, vilket är rätt: registreringen görs en gång per register.
+    # Se `_OKF_EXTRA_INDEXABLE` nedanför klassdefinitionen.
 
     @api.model
     def _okf_register_indexable(self, model_name):
@@ -1132,11 +1144,18 @@ class AIOkfMixin(models.AbstractModel):
 
         Idempotent. Modellen behöver inte finnas än — listan filtreras mot
         `self.env` när cronen kör.
+
+        MUTATION PÅ KLASSEN, INTE PÅ INSTANSEN: `type(self)._x = []` skapar
+        ett NYTT klassattribut, och Odoos testramverk fäller det
+        ("Found unexpected attributes on ai.okf.mixin:
+        _okf_extra_indexable_models"). Attributet finns redan i klassens
+        `__dict__` (deklarerat `= None`), så vi muterar listan in-place i
+        stället för att sätta ett nytt attribut. Samma fälla som
+        `_okf_summary_takes_owner` redan dokumenterar.
         """
-        if self._okf_extra_indexable_models is None:
-            type(self)._okf_extra_indexable_models = []
-        if model_name not in self._okf_extra_indexable_models:
-            self._okf_extra_indexable_models.append(model_name)
+        extra = _OKF_EXTRA_INDEXABLE
+        if model_name not in extra:
+            extra.append(model_name)
             _logger.info('OKF: registrerade %s för dirty-indexering',
                          model_name)
         return True
@@ -1152,7 +1171,7 @@ class AIOkfMixin(models.AbstractModel):
         Modeller som inte finns i miljön hoppas över utan fel.
         """
         models = ['ai.personal.memory', 'ai.company.memory']
-        for name in (self._okf_extra_indexable_models or []):
+        for name in list(_OKF_EXTRA_INDEXABLE):
             if name not in models:
                 models.append(name)
         return models
