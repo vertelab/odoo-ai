@@ -319,7 +319,7 @@ class AIOnboarding(models.Model):
             # till en tyst nolla.
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import (
-                Message, _run_provider, get_default_provider,
+                Message, Role, _run_provider, get_default_provider,
                 get_default_model_name)
 
             modules_text = ', '.join(
@@ -346,7 +346,7 @@ class AIOnboarding(models.Model):
                 provider.chat(
                     model=(model_rec and model_rec._get_api_name())
                     or get_default_model_name(),
-                    messages=[Message(role='user', content=prompt)],
+                    messages=[Message(role=Role.USER, content=prompt)],
                     max_tokens=1500),
                 provider)
             response = (raw.text or '').strip()

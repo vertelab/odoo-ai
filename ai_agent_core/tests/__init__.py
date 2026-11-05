@@ -99,6 +99,7 @@ from . import test_ssrf_guard
 from . import test_extract
 from . import test_content_verification
 from . import test_stream_turn_persist
+from . import test_message_role
 # WebUI:s token-/kostnadsvisning (restore-webui-token-usage 6.1-6.3).
 # usage-blocket i thread_get, bokföringen på assistant-raden och
 # dubbelbokningsskyddet i _save_client_response.

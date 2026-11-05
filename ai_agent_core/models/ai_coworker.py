@@ -5117,7 +5117,7 @@ class AICoworker(models.Model):
                 try:
                     return await provider.chat(
                         model=model_name,
-                        messages=[Message(role='user', content=prompt)],
+                        messages=[Message(role=Role.USER, content=prompt)],
                         max_tokens=1500)
                 finally:
                     # Stäng providerns httpx-klient innan asyncio.run()

@@ -1437,7 +1437,7 @@ class AICoworkerSession(models.Model):
             result = _run_provider(
                 provider.chat(
                     model=model_name,
-                    messages=[Message(role='user',
+                    messages=[Message(role=Role.USER,
                                       content=self._title_prompt(transcript))],
                     max_tokens=512),
                 provider)
@@ -2297,7 +2297,7 @@ class AICoworkerSession(models.Model):
             result = _run_provider(
                 provider.chat(
                     model=model_name,
-                    messages=[Message(role='user',
+                    messages=[Message(role=Role.USER,
                                       content=self._final_summary_prompt(transcript))],
                     max_tokens=2048),
                 provider)

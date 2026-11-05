@@ -104,6 +104,46 @@ class Message:
     source: Optional[dict] = None    # Connector/source framing
     ts: Optional[float] = None        # Append timestamp (unix seconds)
 
+    def __post_init__(self):
+        """Gör `role` till en Role-medlem, oavsett vad anroparen skickade.
+
+        VARFÖR (fix-message-role-string): `@dataclass` validerar inte
+        fälttyper. `Message(role='user')` gick därför igenom konstruktionen,
+        och kraschade först i `to_openai()`:
+
+            AttributeError: 'str' object has no attribute 'value'
+
+        Sju anropsplatser gjorde detta (namngenerering, onboarding,
+        webbplats-RAG, personligt minne, koncept-extraktion). Alla fångade
+        undantaget och loggade en varning — därför var felet tyst. Symptomet
+        som syntes var att sessionsnamnen aldrig blev berättande:
+
+            WARNING ai_session: Namn: generering misslyckades för session
+            27912: 'str' object has no attribute 'value'
+
+        Normaliseringen ligger här och inte bara på anropsplatserna: skyddet
+        ska ligga där felet uppstår, så en framtida anropsplats inte kan
+        återinföra det (samma resonemang som AgentConfig.__post_init__,
+        fix-stream-max-rounds-none).
+
+        Ett OKÄNT rollvärde nekas — ett meddelande med fel roll ger ett svar
+        som ser rimligt ut men är byggt på fel indata, vilket är värre än ett
+        tydligt fel vid konstruktionen.
+        """
+        if isinstance(self.role, str):
+            try:
+                self.role = Role(self.role)
+            except ValueError:
+                raise ValueError(
+                    'Message.role=%r är inte en Role-medlem (giltiga: %s)'
+                    % (self.role,
+                       ', '.join(sorted(r.value for r in Role))))
+            # debug, inte warning: sju anropsplatser × varje LLM-anrop
+            # hade fyllt loggen. Konverteringen syns när någon letar.
+            _logger.debug(
+                'Message.role var en sträng — normaliserade till %s',
+                self.role.name)
+
     def to_openai(self) -> dict:
         """Serialize to OpenAI format. Sidecars are stripped."""
         msg = {"role": self.role.value, "content": self.content}
