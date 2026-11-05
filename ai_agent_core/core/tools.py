@@ -811,19 +811,52 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000,
 
 
 def _sanitize_tool_name(name: str) -> str:
-    """Transliterera icke-ASCII-tecken i verktygsnamn.
+    """Gör ett verktygsnamn giltigt för en provider: ``^[a-zA-Z0-9_-]+$``.
 
-    Cerebras/Bifrost kan inte kompilera JSON-schema-grammatik för verktyg
-    med icke-ASCII-namn (t.ex. 'driftlarm_update_bedömning' → 400
-    'Failed to compile the JSON schema grammar').
+    VARFÖR (fix-tool-name-sanitization): ett verktygsnamn med `&` gav
+    `[InvalidParameter] invalid function name format` från opencode-go, och
+    hela webbchatten svarade "Anslutningen till AI-servern bröts". Felet kom
+    från agenten `SEO & GEO-specialist` → `call_specialist_seo_&_geo_specialist`.
+
+    Den tidigare implementationen translittererade BARA icke-ASCII:
+
+        if name.isascii():
+            return name          # & ÄR ascii → oförändrat
+
+    Två hål: (1) ASCII-specialtecken som `&`, `+`, `/` passerade rakt igenom;
+    (2) vissa icke-ASCII-tecken bryts inte ner av NFKD (`→` U+2192 har ingen
+    kompatibilitetsuppdelning), så `mail_→_partner` förblev ogiltigt.
+
+    Cerebras nekar dessutom att kompilera JSON-schema för icke-ASCII-namn
+    ('driftlarm_update_bedömning' → 400 'Failed to compile the JSON schema
+    grammar'), så translittereringen behövs fortfarande — den är steg 1.
+
+    Ordningen är viktig: translitterera FÖRE ersättning, annars blir `allmän`
+    till `allm_n` i stället för `allman`.
+
+    Idempotent: ``f(f(x)) == f(x)``. Det krävs av `stream.py`, som slår upp ett
+    verktyg med både det råt och det saniterade namnet.
     """
+    import re
     import unicodedata
-    if name.isascii():
+
+    if not name:
         return name
+
+    # 1. Translitterera icke-ASCII: å → a. Görs först så att `allmän` blir
+    #    `allman` och inte `allm_n`.
     normalized = unicodedata.normalize('NFKD', name)
     ascii_name = ''.join(
         c for c in normalized if not unicodedata.combining(c))
-    return ascii_name
+
+    # 2. Ersätt allt utanför regexet. Fångar både ASCII-specialtecken
+    #    (&, +, /) och icke-ASCII som NFKD inte bryter ner (→, emoji).
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', ascii_name)
+
+    # 3. Kollapsa upprepningar och trimma kanter, annars blir `a & b` →
+    #    `a___b` och namnet varierar med hur många mellanslag någon skrev.
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+    return sanitized
 
 
 def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
@@ -3914,11 +3947,21 @@ def specialist_tools(agents) -> list[Tool]:
     tools = []
     for name, description, loop in agents:
         safe_name = name.strip().lower().replace(' ', '_').replace('-', '_')
-        # Sanitera icke-ASCII (t.ex. 'allmän_kärna' → 'allman_karna') —
-        # Bifrost nekar verktygsnamn som inte matchar ^[a-zA-Z0-9_-]+$
+        # Sanitera till ^[a-zA-Z0-9_-]+$ — providers nekar namn med `&`, `→`
+        # m.fl. (`[InvalidParameter] invalid function name format`).
         safe_name = _sanitize_tool_name(safe_name)
+        tool_name = f"call_specialist_{safe_name}"
+        # Vakt: efter saniteringen ska namnet ALLTID matcha regexet. Om det
+        # inte gör det är saniteringen trasig, och då vill vi veta det här
+        # i stället för att providern svarar 400 mitt i en användares tur.
+        import re as _re
+        if not _re.match(r'^[a-zA-Z0-9_-]+$', tool_name):
+            _logger.error(
+                'specialist_tools: byggt verktygsnamn %r matchar inte '
+                '^[a-zA-Z0-9_-]+$ (agentnamn=%r) — saniteringen är trasig',
+                tool_name, name)
         tool = Tool(
-            name=f"call_specialist_{safe_name}",
+            name=tool_name,
             description=(
                 f"Delegera EN konkret delfråga till specialisten '{name}'. "
                 f"{description or ''}. VIKTIGT: `query` MÅSTE alltid vara en konkret, "
