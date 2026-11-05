@@ -226,12 +226,19 @@ def _is_silent(handler):
 
 
 def _has_label(handler, source_lines):
-    """Sant om etiketten står i ``except``-raden eller i kroppens första rad."""
-    candidates = [source_lines[handler.lineno - 1]]
-    if handler.body:
-        first = handler.body[0]
-        candidates.append(source_lines[first.lineno - 1])
-    return any(label in line for line in candidates for label in SILENT_EXCEPT_LABELS)
+    """Sant om etiketten står mellan ``except``-raden och första satsen.
+
+    Kommentarer blir inga AST-noder, så etiketten hamnar ofta på en egen rad
+    *mellan* ``except`` och ``continue``/``pass``. Den första versionen tittade
+    bara på ``except``-raden och på första satsens rad — och missade därmed
+    varje etikett som skrivits på det naturliga sättet (ovanför satsen).
+    Mätt 2026-11-05: ``core/channels.py:89`` hade etiketten på rätt plats och
+    föll ändå.
+    """
+    first_body_line = handler.body[0].lineno if handler.body else handler.lineno
+    # Från except-raden fram till (och med) första satsen.
+    span = source_lines[handler.lineno - 1:first_body_line]
+    return any(label in line for line in span for label in SILENT_EXCEPT_LABELS)
 
 
 def _find_unlabelled_silent_excepts(root):
@@ -436,6 +443,14 @@ class StructuralGateToolExecution(TransactionCase):
 #: `NormalizedItem` och `process_item` har aldrig räknats som mekanismer
 #: (dataklass respektive modulnivåfunktion).
 CORE_WIRING_ALLOWLIST = [
+    (
+        'EvalRunner',
+        'Skapas uteslutande via fabriken `AgentEvaluator.create_runner()` '
+        '(core/eval.py:107). Den anropande sidan ser alltså aldrig klassnamnet '
+        '— bara `create_runner`. Att kräva en namngiven referens utanför '
+        'core/ vore att kräva att konstruktorn anropas direkt, vilket är '
+        'precis vad fabriken finns för att undvika.',
+    ),
     (
         'AIProvider',
         'Abstrakt bas för provider-klienterna; instansieras aldrig direkt. '

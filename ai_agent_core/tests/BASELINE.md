@@ -28,18 +28,35 @@ omgångar av "försök 1/3").
 
 ## Uppmätt baslinje
 
+**Mätt om 2026-11-05** efter att `test_trust_redteam.py` och
+`test_structural_gates.py` importerades i `tests/__init__.py` (de hade aldrig
+kört — se nedan).
+
 ```
-ai_agent_core: 1920 tester, 347 s, 124103 queries
-Module ai_agent_core: 0 failures, 0 errors
+ai_agent_core: 2083 tester, 110 s, 129706 queries
+Module ai_agent_core: 1 failures, 4 errors of 527 tests
 ```
 
-De 500 är modul-fasen; de 1 920 är hela sviten inklusive beroenden.
+De 527 är modul-fasen; de 2 083 är hela sviten inklusive beroenden.
+
+⚠ **Den tidigare baslinjen (1 920 tester, 0 fel) var mätt mot en ofullständig
+svit.** 15 testfiler saknades i `tests/__init__.py` och kördes aldrig. Att
+siffran nu är 2 083 är inte en regression — det är de tester som alltid
+funnits men varit osynliga.
 
 ## Kända fel
 
-**Inga.** Baslinjen är noll sedan 2026-11-02.
+Fyra kända fel, alla dokumenterade med orsak. **Ingen ändring får öka antalet.**
 
-De 20 fel som fanns när baslinjen skrevs är åtgärdade:
+| Test | Fel | Orsak |
+|---|---|---|
+| `TestClassifyCacheWeak.test_entry_disappears_when_cursor_is_gc` | `3 != 1` | `_CLASSIFY_CACHE` är modulglobal och delas mellan tester i samma process — en tidigare testpost ligger kvar. Testet antar en tom cache. |
+| `TestLineage` (3 st) | `ValueError: Wrong value for suggestion_type: 'project.task'` | Testet skickar ett modellnamn där fältet väntar en `Selection`-nyckel. Testfixturen är fel, inte koden. |
+| `MailChannelCharacterization.test_reply_is_sent_via_send_mail_reply` | `0 != 1` | Karaktäriseringstest mot en patchad `run()`; anropet når inte `send_mail_reply` i den här miljön. |
+| `MailChannelCharacterization.test_reply_is_truncated_to_4000_chars` | följdfel av ovanstående | Samma rot. |
+| `TestCompactionWithoutSession` (setUpClass) | `'PreforkServer' object has no attribute 'httpd'` | `HttpCase` kräver en körande HTTP-server. Räknas normalt utanför baslinjen (se nedan) men ligger i `ai_agent_core` så det syns här. |
+
+De 20 fel som fanns när baslinjen först skrevs (2026-11-02) är åtgärdade:
 
 | Kategori | Åtgärd |
 |---|---|

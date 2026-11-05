@@ -6796,6 +6796,9 @@ class AICoworker(models.Model):
             try:
                 rule = json.loads(hitl.standing_rule or '{}')
             except (json.JSONDecodeError, TypeError):
+                # best-effort: en standing_rule som inte går att tolka ska
+                # inte fälla hela körningen — posten hoppas över och de
+                # övriga reglerna gäller fortfarande.
                 continue
             action = rule.get('action_type')
             if action:
@@ -6882,7 +6885,25 @@ class AICoworker(models.Model):
             # egen agent → bolagets default-medarbetare → parametern. Ersätter
             # `provider_instance or get_default_provider()[0]`, som tyst föll
             # till en MODELLÖS provider när agenten saknade modell.
-            provider, provider_model = resolve_coworker_or_default(self)
+            #
+            # Importen ligger här och inte i toppen: `core/provider.py` drar in
+            # httpx och provider-klienterna, och modulen ska kunna laddas utan
+            # dem. Samma mönster som de andra provider-importerna i filen.
+            from odoo.addons.ai_agent_core.core.provider import (
+                resolve_coworker_or_default)
+            # raise_on_error=True: en schemalagd körning är obevakad, så den
+            # underliggande orsaken (t.ex. ModuleNotFoundError: tenacity) mår
+            # måste bevaras hela vägen till sessionens system-rad. Utan den blir
+            # allt som går fel "ingen provider kunde lösas" — och operatören
+            # får gissa. Fail-closed: en körning utan provider ska inte skapa
+            # en halv session.
+            provider, provider_model = resolve_coworker_or_default(
+                self, raise_on_error=True)
+            if provider is None:
+                raise ValueError(
+                    'Ingen provider kunde lösas för schemalagd körning: '
+                    f'{self.name} (agent={len(self.agent_ids)} st, '
+                    f'modell={provider_model or "saknas"})')
             # explicit-agent-tools: ENDAST settings-default + explicita
             # tool_ids — inga interna builtins registreras implicit.
             tools, tool_access_groups = self._session_tools(session=session)

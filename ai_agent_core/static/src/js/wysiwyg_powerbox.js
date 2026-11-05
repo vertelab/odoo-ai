@@ -197,6 +197,67 @@ function showPreviewOverlay(plugin, result, originalHtml) {
 }
 
 /** Visa prompt och kör en medarbetare — med overlay (granska + Ersätt/Lägg till/Avbryt). */
+/**
+ * Kör en medarbetare via `ai_powerbox`-tjänsten (ai_agent_transcript).
+ *
+ * Tjänsten (registrerad i `registry.category("services")` av
+ * `quest_powerbox.js`) kan mer än kärnans plugin: den slår upp en
+ * `ai.composer` för interface-punkten och skickar `frontendInfo` +
+ * `textSelection` till `/ai/powerbox/run`. Kärnans egen väg skickar bara
+ * text + modell + res_id.
+ *
+ * Tjänsten är valfri — `ai_agent_transcript` behöver inte vara installerad.
+ * Saknas den faller vi tillbaka på kärnans väg, oförändrat.
+ *
+ * @returns {Object|null} tjänsten, eller null om den inte finns
+ */
+function getComposerService(plugin) {
+    const service = plugin.services?.ai_powerbox;
+    if (!service || typeof service.launchFromEditor !== "function") return null;
+    return service;
+}
+
+/** Vald text i editorn, om det finns en markering. */
+function getTextSelection(plugin) {
+    try {
+        const selection = plugin.dependencies?.selection;
+        const docSel = plugin.document?.getSelection?.();
+        if (!selection || !docSel || !docSel.rangeCount) return "";
+        if (!(selection.isSelectionInEditable?.(docSel) ?? false)) return "";
+        return docSel.toString() || "";
+    } catch (e) {
+        return "";
+    }
+}
+
+/**
+ * Kör via composer-tjänsten när den finns. Returnerar true om tjänsten tog
+ * hand om anropet (även när den returnerade null — då har den redan visat
+ * sitt eget fel), false om vi ska använda kärnans väg.
+ */
+async function runViaComposerService(plugin) {
+    const service = getComposerService(plugin);
+    if (!service) return false;
+    const { resModel, resId } = getRecordContext(plugin);
+    if (!resModel || !resId) {
+        // Tjänsten kräver ett rekord — utan det är kärnans väg rätt.
+        return false;
+    }
+    try {
+        await service.launchFromEditor({
+            interfaceKey: "html_field_record",
+            recordModel: resModel,
+            recordId: resId,
+            textSelection: getTextSelection(plugin),
+            recordData: plugin.config?.recordInfo || undefined,
+        });
+    } catch (e) {
+        console.warn("ai_powerbox service failed, keeping core path:", e);
+        return false;
+    }
+    return true;
+}
+
 async function promptAndRun(plugin, quest, initialText) {
     const { resModel, resId } = getRecordContext(plugin);
     const prompt = window.prompt(
@@ -270,7 +331,13 @@ patch(PowerboxPlugin.prototype, {
             title: quest.name,
             description: quest.sub_description || "",
             icon: "fa-superpowers",
-            run: () => promptAndRun(aiPluginInstance, quest, ""),
+            run: async () => {
+                // Composer-tjänsten (ai_agent_transcript) äger uppslagningen
+                // när den finns; annars kärnans egen väg. Se
+                // runViaComposerService().
+                if (await runViaComposerService(aiPluginInstance)) return;
+                return promptAndRun(aiPluginInstance, quest, "");
+            },
         }));
         return [...baseCommands, ...aiCommands];
     },

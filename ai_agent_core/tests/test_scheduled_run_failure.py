@@ -74,8 +74,15 @@ class TestScheduledRunFailure(common.TransactionCase):
         """Haveriet ska lämna ett spår — inte en tyst tom session."""
         quest = self._make_quest('test-setup-message')
 
+        # Patcha det söm som koden FAKTISKT går genom. Sedan
+        # default-coworker-som-provider D3.1 löses providern via
+        # `resolve_coworker_or_default()` → `resolve_provider_from_coworker()`,
+        # inte via `ProviderFactory.from_coworker()`. Det gamla sömmet
+        # patchades utan verkan: undantaget kastades aldrig, och testet föll
+        # på fel orsak ("2 != 1 rader") i stället för att pröva sitt eget
+        # påstående.
         with patch(
-            'odoo.addons.ai_agent_core.core.provider.ProviderFactory.from_coworker',
+            'odoo.addons.ai_agent_core.core.provider.resolve_provider_from_coworker',
             side_effect=ModuleNotFoundError("No module named 'tenacity'"),
         ):
             quest.action_run_scheduled()

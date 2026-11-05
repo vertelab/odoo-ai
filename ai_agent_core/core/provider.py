@@ -1099,7 +1099,7 @@ def get_cheapest_model():
         return None
 
 
-def resolve_coworker_or_default(coworker, env=None):
+def resolve_coworker_or_default(coworker, env=None, raise_on_error=False):
     """(provider, ai.model) för coworkern — annars default-medarbetaren.
 
     Ersätter mönstret `provider_instance or get_default_provider()[0]`, som
@@ -1113,14 +1113,21 @@ def resolve_coworker_or_default(coworker, env=None):
       3. get_default_provider(env) (parametern/Salt) — sista utväg
       4. (None, None)
 
-    Kastar ALDRIG. Anroparens befintliga felväg (`raise ValueError` /
+    Kastar normalt ALDRIG. Anroparens befintliga felväg (`raise ValueError` /
     `ValidationError`) ska ligga kvar oförändrad — helpern returnerar
     (None, None) och låter anroparen bestämma vad användaren ser.
+
+    Undantag: `raise_on_error=True` används av obevakade körningar (cron),
+    där en saknad provider är fatal och den underliggande orsaken måste
+    bevaras. Utan den blir `ModuleNotFoundError: No module named 'tenacity'`
+    till en intetsägande "ingen provider" — och operatören får gissa.
 
     Args:
         coworker: ai.coworker-record (får vara tom)
         env: Odoo environment. Behövs för default-uppslagningen när
              coworkern saknas eller är tom.
+        raise_on_error: när True kastas det ursprungliga felet vidare i
+             stället för att sväljas.
 
     Returns:
         (AIProvider, ai.model) eller (None, None)
@@ -1169,6 +1176,8 @@ def resolve_coworker_or_default(coworker, env=None):
     except Exception:
         _logger.warning(
             'resolve_coworker_or_default misslyckades', exc_info=True)
+        if raise_on_error:
+            raise
 
     return None, None
 
