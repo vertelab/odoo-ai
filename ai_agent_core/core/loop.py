@@ -822,7 +822,15 @@ class AgentLoop:
             #    permanent.
             if self._untrusted_escalation and not decision.needs_user:
                 risk = self._risk_class(tc, tool)
-                if risk in (RiskClass.EXTERNAL, RiskClass.WRITE_LOCAL):
+                # Hämtningsverktyg (fetch_url, web_search) är LÄSANDE men
+                # deras resultat är det som bar injektionen. Utan dem här
+                # vore eskaleringen verkningslös för sitt huvudscenario: en
+                # sida med inbäddad injektion flaggas korrekt, men nästa
+                # hämtning krävde aldrig godkännande.
+                from .permission import UNTRUSTED_FETCH_TOOLS
+                is_fetch = tc.name in UNTRUSTED_FETCH_TOOLS
+                if is_fetch or risk in (RiskClass.EXTERNAL,
+                                        RiskClass.WRITE_LOCAL):
                     self._untrusted_escalation = False
                     _logger.warning(
                         "Tool '%s' escalated to human approval: a previous "

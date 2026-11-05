@@ -78,12 +78,33 @@ _RISK_LEVEL_TO_CLASS: dict[str, RiskClass] = {
 }
 
 # Tool names that are always READ (bypass metadata)
+#
+# `odoo_fetch_url` och `odoo_web_search` stod här och är BORTTAGNA
+# 2026-11-05: de hämtar innehåll från internet, och det innehållet är
+# definitionsmässigt otrovärdigt. Att klassa dem som alltid READ gjorde
+# untrusted-tool-output:s eskalering verkningslös för sitt huvudscenario —
+# en sida med en inbäddad injektion flaggades korrekt (`verdict='hitl'`),
+# men nästa hämtning krävde aldrig godkännande, eftersom eskaleringen bara
+# gäller EXTERNAL/WRITE_LOCAL.
+#
+# De klassas nu via sin `risk_level` (Tool-fältet: 'safe' → READ för
+# läsning, men `classify()` kan höja dem när metadata säger annat). Det
+# bevarar att en vanlig hämtning inte kräver godkännande — eskaleringen
+# slår bara till EFTER ett flaggat resultat.
 _ALWAYS_READ = {
-    "odoo_calculator", "odoo_web_search", "odoo_fetch_url", "echo",
+    "odoo_calculator", "echo",
     "search_read", "read", "todo_write", "load_skill",
     # Generic Odoo model tools (read-only)
     "describe_model", "odoo_search", "okf_search", "graph_query",
 }
+
+#: Verktyg som hämtar otrovärdigt innehåll. De är LÄSANDE (ingen
+#: skrivning), men deras resultat får eskalera nästa anrop — därför får de
+#: inte vara `_ALWAYS_READ`. Se `untrusted-tool-output` D1.
+UNTRUSTED_FETCH_TOOLS = frozenset({
+    "odoo_fetch_url", "odoo_web_search", "fetch_url", "web_search",
+    "news_fetch", "news_digest", "browser_navigate",
+})
 
 # Tool name prefixes that indicate WRITE_LOCAL
 _WRITE_LOCAL_PREFIXES = ("write_", "create_")

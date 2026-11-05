@@ -324,7 +324,11 @@ class TestIndexableModels(_OkfTestModel):
         # `event.event` får förekomma när bryggan
         # `website_ai_event` registrerat den — det som
         # prövas är att KÄRNAN inte lägger till den själv.
-        extra = self.Mixin._okf_extra_indexable_models or []
+        # Registreringen bor i en modulglobal, inte i ett klassattribut —
+        # Odoo:s testramverk fäller nya klassattribut på modeller.
+        from odoo.addons.ai_agent_core.models.ai_okf_mixin import (
+            _OKF_EXTRA_INDEXABLE)
+        extra = list(_OKF_EXTRA_INDEXABLE)
         for name in ('event.event', 'crm.lead', 'project.task'):
             if name in models:
                 self.assertIn(
