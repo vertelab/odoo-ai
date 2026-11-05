@@ -5074,7 +5074,7 @@ class AICoworker(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                Message, ProviderFactory, get_default_provider,
+                Message, ProviderFactory, Role, get_default_provider,
                 get_default_model_name)
 
             provider, provider_model = ProviderFactory.from_coworker(self)

@@ -1142,7 +1142,7 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                 # av except) och 'gpt-4o-mini' finns inte i installationen.
                 # Använd samma provider-kedja som resten av systemet.
                 from odoo.addons.ai_agent_core.core.provider import (
-                    Message, ProviderFactory, _run_provider,
+                    Message, ProviderFactory, Role, _run_provider,
                     get_default_provider, get_default_model_name)
                 provider, model_rec = get_default_provider(self.env)
                 if not provider:
