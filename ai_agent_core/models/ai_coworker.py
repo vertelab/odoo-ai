@@ -4964,8 +4964,17 @@ class AICoworker(models.Model):
                     # på sista raden, vilket gav en rad som inte stod i
                     # förhållande till innehållet.
                     source_ref=f'ai.coworker.session,{session.id}',
+                    # Schemat kräver source_ref + int line (se
+                    # _validate_attribution). Nyckeln 'source' utan 'line' gav
+                    # "Invalid attribution: each attribution item needs an int
+                    # line" — felet svaldes av except-grenen nedan och
+                    # `_learn_from_session` kunde ALDRIG skriva ett koncept.
+                    # Det förklarar F1:s mätning "personal-koncept från
+                    # samtal: ~0": inte att modellen inte ville, utan att
+                    # varje skrivning kastades.
                     attribution=[{
-                        'source': f'ai.coworker.session,{session.id}',
+                        'source_ref': f'ai.coworker.session,{session.id}',
+                        'line': 1,
                         'role': 'summary',
                     }],
                     generated_by='learning',
@@ -5032,8 +5041,15 @@ class AICoworker(models.Model):
                 summary=summary,
                 title=name[:80],
                 source_ref='ai.coworker.session,%s' % session.id,
+                # Samma schemafel som ovan: 'source' utan 'line' kastade
+                # "Invalid attribution" — men här svaldes det på DEBUG-nivå,
+                # så procedurens OKF-koncept uteblev helt tyst medan
+                # ai.skill-skrivningen lyckades. Det är därför
+                # coworker-scopet hade 0 koncept trots fungerande
+                # procedur-inlärning (D7).
                 attribution=[{
-                    'source': 'ai.coworker.session,%s' % session.id,
+                    'source_ref': 'ai.coworker.session,%s' % session.id,
+                    'line': 1,
                     'role': 'summary',
                 }],
                 generated_by='learning',

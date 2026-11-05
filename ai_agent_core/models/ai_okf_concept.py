@@ -684,7 +684,15 @@ class AIOkfConcept(models.Model):
                 summary=summary,
                 title=f'Roll: {emp.job_id.name}',
                 source_ref=f'hr.employee,{emp.id}',
-                attribution=[{'source': f'hr.employee,{emp.id}', 'role': 'hr'}],
+                # Schemat kräver source_ref + int line (se
+                # _validate_attribution). Nyckeln 'source' utan 'line' gav
+                # "Invalid attribution: each attribution item needs an int
+                # line" — felet svaldes och roll-koncept skapades aldrig.
+                attribution=[{
+                    'source_ref': f'hr.employee,{emp.id}',
+                    'line': 1,
+                    'role': 'hr',
+                }],
                 owner_user_id=user.id,
                 generated_by='hr_indexer',
             )
@@ -695,13 +703,27 @@ class AIOkfConcept(models.Model):
 
     @api.model
     def _index_user_goals(self, user_id):
-        """Mål-indexerare: ai.personal.goal → OKF personal (mål)."""
+        """Mål-indexerare: ai.personal.goal → OKF personal (mål).
+
+        ⚠️ FYND 2026-11-05 (companion-memory-completeness 4.6): sökningen
+        filtrerade på `('active', '=', True)`, men `ai.personal.goal` har
+        INGET `active`-fält — den har `status` (proposed/accepted/active/
+        completed/cancelled) och `archived`. Sökningen kastade därför
+        `ValueError: Invalid field 'active'`, felet svaldes av
+        `_index_all_personal_sources`, och resultatet blev F1:s mätning
+        "goal_indexer = 0": L2-blocket för mål var alltid tomt.
+
+        Urvalet är nu de mål som ska synas i minnet: aktiva eller accepterade,
+        och inte arkiverade. `completed`/`cancelled` utesluts — de markeras
+        dessutom `deprecated` i OKF av `action_complete`/`action_cancel`.
+        """
         user = self.env['res.users'].browse(user_id)
         if not user.exists():
             return 0
         goals = self.env['ai.personal.goal'].search([
             ('user_id', '=', user.id),
-            ('active', '=', True),
+            ('status', 'in', ['active', 'accepted']),
+            ('archived', '=', False),
         ])
         count = 0
         for goal in goals:
@@ -715,8 +737,10 @@ class AIOkfConcept(models.Model):
                     summary=summary,
                     title=goal.name[:80],
                     source_ref=f'ai.personal.goal,{goal.id}',
+                    # Samma schema som hr_indexer: source_ref + int line.
                     attribution=[{
-                        'source': f'ai.personal.goal,{goal.id}',
+                        'source_ref': f'ai.personal.goal,{goal.id}',
+                        'line': 1,
                         'role': 'goal',
                     }],
                     owner_user_id=user.id,
