@@ -565,22 +565,44 @@ def okf_ensure_search_infrastructure(env):
             'okf_ensure_search_infrastructure måste köras efter tabellskapande'
         )
 
-    # 1. search_vector — GENERATED STORED över summary + title (svensk stemming)
+    # 1. search_vector — GENERATED STORED över summary + title + source_text
+    #
+    # `source_text` lades till 2026-11-05: fältet bär postens FAKTISKA
+    # innehåll (mailens brödtext, dokumentets text), medan `summary` är en
+    # deterministisk etikett på 1–2 rader. Utan source_text i vektorn var
+    # brödtexten osökbar trots att den lagrades — mätt på luke18: konceptet
+    # för ett mail innehöll ordet "förfallodatum" i `source_text`, men
+    # `_okf_search('förfallodatum')` gav noll träffar. Det gjorde hela
+    # mail-indexeringen meningslös för sitt syfte: "hitta mailet där det
+    # står".
+    #
+    # Kolumnen är GENERATED, så den kan inte ändras med ALTER utan att
+    # släppas och byggas om. Vi kontrollerar uttrycket och bygger om när
+    # source_text saknas i det — idempotent, och en befintlig vektor utan
+    # source_text uppgraderas vid första körningen.
     cr.execute("""
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'ai_okf_concept' AND column_name = 'search_vector'
+        SELECT column_name, generation_expression
+          FROM information_schema.columns
+         WHERE table_name = 'ai_okf_concept' AND column_name = 'search_vector'
     """)
-    if not cr.fetchone():
+    row = cr.fetchone()
+    has_source = bool(row and row[1] and 'source_text' in row[1])
+    if row and not has_source:
+        cr.execute('ALTER TABLE ai_okf_concept DROP COLUMN search_vector')
+        _logger.info('OKF: bygger om search_vector (source_text saknades)')
+        row = None
+    if not row:
         cr.execute("""
             ALTER TABLE ai_okf_concept
             ADD COLUMN search_vector tsvector
             GENERATED ALWAYS AS (
                 to_tsvector('swedish',
-                            coalesce(summary, '') || ' ' || coalesce(title, ''))
+                            coalesce(summary, '') || ' ' || coalesce(title, '')
+                            || ' ' || coalesce(source_text, ''))
             ) STORED
         """)
         _logger.info('OKF: skapade search_vector på ai_okf_concept'
-                     ' (svensk FTS över summary + title)')
+                     ' (svensk FTS över summary + title + source_text)')
 
     # 2. GIN-index för fulltext
     cr.execute("""

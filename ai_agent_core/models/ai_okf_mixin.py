@@ -693,6 +693,20 @@ class AIOkfMixin(models.AbstractModel):
     # Indexerarens ingång — EN väg, delad av cron och debug-knappen
     # ==================================================================
 
+    def _okf_is_ready(self):
+        """Är posten mogen att indexeras nu? Default: alltid.
+
+        TRE UTVALL, INTE TVÅ. `_okf_skip_reason()` svarar på "ska posten
+        avföras?" — men en post kan också vara "ännu inte mogen" (ett mail
+        som väntar på klassificering). Det läget kunde inte uttryckas:
+        `None` betyder "indexera", så en omogen post indexerades direkt och
+        kön tömdes innan den hade sitt innehåll.
+
+        Bryggor som har ett mognadsläge överrider denna. En post som inte är
+        redo BEHÅLLER sin `okf_dirty`-flagga och plockas upp nästa varv.
+        """
+        return True
+
     def _okf_skip_reason(self):
         """Varför posten inte ska indexeras — eller None.
 
@@ -948,21 +962,33 @@ class AIOkfMixin(models.AbstractModel):
             if concept and first is None:
                 first = concept
 
-        # Flaggan rensas EN gång, efter samtliga ägare och språk — ÄVEN när
-        # inget koncept skapades (tom text, eller posten avfördes). Anroparen
+        # Flaggan rensas EN gång, efter samtliga ägare och språk. Anroparen
         # äger rensningen just för att N ägare inte ska ge N rensningar (som
         # var och en kunde återtända flaggan).
         #
-        # FYND (2026-10-06): den första versionen rensade bara när
-        # `first is not None`. Det bröt två befintliga tester: en tom post
-        # blockerade kön för evigt ("tombstone: flaggan rensas ändå"), och
-        # cronen rapporterade 0 skrivna trots att den rensat. `_okf_skip_reason`
-        # och den tomma kroppen MÅSTE rensa — det var beteendet före ändringen.
+        # MEN INTE när posten är "oklassificerad": `_okf_skip_reason()` säger
+        # uttryckligen "oklassificerat → BEHÅLL flaggan, försök igen efter
+        # klassificering" (returnerar None, inte en orsak). Den här raden
+        # rensade ändå ovillkorligt, så ett oklassificerat mail tappades
+        # permanent ur kön — det blev aldrig indexerat, och ingenstans syntes
+        # att det hänt. Mätt på luke18 2026-11-05: tre ingesterade mail
+        # (status='new') försvann ur kön utan att ge koncept.
+        #
+        # Rensningen sker därför bara när posten antingen gav ett koncept,
+        # avfördes med en ORSAK (`skip`), eller har tom kropp. Ett tomt mail
+        # ska inte blockera kön för evigt ("tombstone"), och en avförd post
+        # ska inte heller försöka igen — men en post som väntar på
+        # klassificering ska ligga kvar.
         #
         # OBS: `_clear_okf_dirty` bor på MIXINEN (källposten) — inte på
         # `ai.okf.concept`. Att anropa den på det returnerade konceptet
         # kastar AttributeError (fångat av testet 2026-10-06).
-        self._clear_okf_dirty()
+        if first is not None or self._okf_skip_reason() or not (
+                self._okf_body_source() or '').strip() \
+                or not self._okf_is_ready():
+            # `_okf_is_ready()` False → rensningen sker INTE; posten väntar.
+            if self._okf_is_ready():
+                self._clear_okf_dirty()
         return first
 
     def _okf_index_record_one(self, lang=None, max_chars=None, session=None,
@@ -1001,6 +1027,15 @@ class AIOkfMixin(models.AbstractModel):
 
         body = self._okf_body_source() or ''
         skip = self._okf_skip_reason()
+
+        if not skip and not self._okf_is_ready():
+            # Mognar senare (t.ex. mail före klassificering) — behåll
+            # flaggan, rör inget. Utan detta indexerades posten med tom
+            # kategori, och kön tömdes innan innehållet fanns.
+            _logger.debug(
+                'OKF: %s,%s är inte mogen än — behåller flaggan',
+                self._name, self.id)
+            return None
 
         if skip:
             # "Tomt för alltid" — rensa så posten inte blockerar kön.
@@ -1460,8 +1495,21 @@ class AIOkfMixin(models.AbstractModel):
             self._okf_check_stall(model_name)
 
         for idx, model_name in enumerate(ordered):
-            if total >= cap:
-                break
+            # En PRIORITERAD modell får aldrig hoppas över för att taket
+            # redan är nått. `_okf_priority_indexable()` finns just för att
+            # en modell som driver en yta (sökfältet) inte ska svälta bakom
+            # ett arkiv — men `total >= cap: break` körde först, så låg den
+            # prioriterade modellen sist i ordningen fick den aldrig en
+            # plats. Mätt på luke18 2026-11-05: `res.partner` (145 dirty)
+            # åt hela taket och `user_mail_ai.mail` (position 11 av 12)
+            # indexerades aldrig, trots att den är prioriterad.
+            #
+            # Ordningen roterar per varv, så "sist" är inte permanent — men
+            # ett varv där den prioriterade modellen uteblir är ett varv för
+            # mycket. Prioriterade modeller får därför gå före taket.
+            is_priority = model_name in priority_share
+            if total >= cap and not is_priority:
+                continue
             consumed += 1
             # Egen andel + eventuell outnyttjad reserv från tidigare modeller.
             remaining = per_model + spare
@@ -1470,6 +1518,13 @@ class AIOkfMixin(models.AbstractModel):
             remaining = max(remaining, priority_share.get(model_name, 0))
             if remaining > cap - total:
                 remaining = cap - total
+            if is_priority:
+                # Den prioriterade modellen får sin andel ÄVEN om taket är
+                # nått — annars blir `remaining = cap - total = 0` och
+                # `search(limit=0)` hittar ingenting. Taket är ett mål för
+                # det totala antalet, inte ett tak som får svälta en
+                # prioriterad modell.
+                remaining = max(remaining, priority_share.get(model_name, 1))
             Model = self.env[model_name].sudo()
             dirty = Model.search(
                 [('okf_dirty', '=', True)], limit=remaining,
