@@ -40,6 +40,11 @@ from .trust import scan_untrusted, wrap_untrusted
 
 _logger = logging.getLogger(__name__)
 
+# Default för AgentConfig.max_rounds. Ligger som konstant så att
+# normaliseringen i __post_init__ och dataclassens fältdefault inte kan
+# glida isär.
+DEFAULT_MAX_ROUNDS = 20
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -53,7 +58,7 @@ class AgentConfig:
     system_prompt: str = ""
     temperature: float = 0.7
     max_tokens: int = 4096
-    max_rounds: int = 20  # max loop iterations per turn
+    max_rounds: int = DEFAULT_MAX_ROUNDS  # max loop iterations per turn
     max_context_tokens: int = 128_000  # trigger summarization at this threshold
     tool_timeout: float = 30.0  # seconds per tool execution
     llm_timeout: float = 240.0  # seconds per LLM call (research/supervisor lazy providers)
@@ -122,6 +127,38 @@ class AgentConfig:
     # `_build_loop` har fem returpunkter — en rad här täcker alla fem, och
     # en framtida sjätte kan inte glömma den.
     interrupt_handler: callable = None
+
+    def __post_init__(self):
+        """Gör konfigurationen körbar, oavsett vad anroparen skickade.
+
+        VARFÖR (fix-stream-max-rounds-none): ett `@dataclass`-fält med
+        default får `None` när argumentet skickas explicit — defaulten
+        gäller bara när argumentet utelämnas. `controllers/stream.py`
+        skickade `max_rounds=None` (med en kommentar som påstod att värdet
+        härleddes någon annanstans), och det första varvet kastade:
+
+            TypeError: '<' not supported between instances of 'int'
+            and 'NoneType'
+
+        i `while round_num < self.config.max_rounds`. Hela webbchatten
+        svarade "Anslutningen till AI-servern bröts" på varje fråga.
+
+        `_build_loop()` hade redan en sådan härledning, men den strömmande
+        vägen bygger looparna själv och glömde den. Att laga bara den
+        anropsplatsen lämnar skyddet på en plats — nästa nya körväg kan
+        glömma det igen. Normaliseringen ligger därför i konfigurationen:
+        kärnan ska inte kunna bringas i ett tillstånd där dess egen
+        loopvillkor är otypat.
+
+        Detta ERSÄTTER INTE `_build_loop`s härledning: den är semantisk
+        (härled ur medarbetarens max_iterations, fallback 8), medan detta är
+        en säkerhetsventil. Båda behövs.
+        """
+        if not self.max_rounds or self.max_rounds < 1:
+            _logger.warning(
+                'AgentConfig.max_rounds=%r är inte ett positivt heltal — '
+                'normaliserar till %s', self.max_rounds, DEFAULT_MAX_ROUNDS)
+            self.max_rounds = DEFAULT_MAX_ROUNDS
 
 
 # ---------------------------------------------------------------------------

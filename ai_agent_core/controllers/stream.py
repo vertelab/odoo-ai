@@ -708,6 +708,19 @@ class AIStreamController(http.Controller):
         # den inloggade användarens grupper (tool-access-groups): LLM:en ser
         # aldrig verktyg vars res.groups användaren saknar.
         gen_coworker_id = quest.id if quest and quest.exists() else None
+        # Max varv för den här körningen (fix-stream-max-rounds-none).
+        # Fångas här som ett plain värde eftersom generatorn körs efter
+        # request-teardown. Samma regel som `_build_loop` använder:
+        # medarbetarens `max_iterations`, fallback 8.
+        #
+        # VARFÖR INTE `None`: de tre AgentConfig-konstruktionerna i
+        # `_stream()` skickade tidigare `max_rounds=None` med kommentaren
+        # "härleds ur max_iterations" — men ingen härledning skedde, och
+        # `while round_num < self.config.max_rounds` kastade TypeError på
+        # första varvet. Hela webbchatten svarade "Anslutningen till
+        # AI-servern bröts".
+        gen_max_rounds = (quest.max_iterations or 8) \
+            if quest and quest.exists() else 8
         # explicit-agent-tools: ENDAST settings-default + explicita verktyg
         # (agent.tool_ids + coworker.tool_ids) — inga interna builtins per
         # default. Fångas som plain values (generatorn körs efter teardown).
@@ -919,10 +932,11 @@ class AIStreamController(http.Controller):
                                         config=AgentConfig(
                                             model=a['model'],
                                             system_prompt=system_prompt,
-                                            # None → härleds ur
-                                            # coworkerns max_iterations
-                                            # (init-type-execution-parity 5.1)
-                                            max_rounds=None,
+                                            # Härlett ur medarbetarens
+                                            # max_iterations (fallback 8),
+                                            # inte None — se gen_max_rounds
+                                            # (fix-stream-max-rounds-none).
+                                            max_rounds=gen_max_rounds,
                                             checkpoint_callback=_checkpoint,
                                             # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                             max_tool_result_chars=40000,
@@ -942,7 +956,7 @@ class AIStreamController(http.Controller):
                                 config=AgentConfig(
                                     model=model,
                                     system_prompt=system_prompt,
-                                    max_rounds=None,
+                                    max_rounds=gen_max_rounds,
                                     checkpoint_callback=_checkpoint,
                                 ),
                             )
@@ -951,9 +965,10 @@ class AIStreamController(http.Controller):
                                 config=AgentConfig(
                                     model=model,
                                     system_prompt=system_prompt,
-                                    # None → härleds ur max_iterations
-                                    # (init-type-execution-parity 5.1)
-                                    max_rounds=None,
+                                    # Härlett ur medarbetarens max_iterations
+                                    # (fallback 8) — inte None
+                                    # (fix-stream-max-rounds-none).
+                                    max_rounds=gen_max_rounds,
                                     checkpoint_callback=_checkpoint,
                                     # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                     max_tool_result_chars=40000,
