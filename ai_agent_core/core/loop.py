@@ -60,6 +60,18 @@ class AgentConfig:
     max_tokens: int = 4096
     max_rounds: int = DEFAULT_MAX_ROUNDS  # max loop iterations per turn
     max_context_tokens: int = 128_000  # trigger summarization at this threshold
+    # Tak för ANTAL meddelanden (chat-session-limits-and-names D1).
+    #
+    # VARFÖR ett eget tak och inte härlett ur tokens: verktygsrader är korta
+    # men många. Sambandet mellan tecken och antal är inte linjärt — 2 121
+    # korta rader kan ligga under tokenbudgeten men ändå nekas av providern.
+    # Mätt 2026-11-05: session 27753 skickade 2 121 meddelanden till Bifrost,
+    # som svarade `400 Bad Request`.
+    #
+    # 500 är mätt: p90 för sessioner är 277 rader, och de verktygstunga
+    # ligger på 488–500. Över det sammanfattas historiken (samma väg som
+    # tokenöverskridandet använder), i stället för att requesten nekas.
+    max_messages: int = 500
     tool_timeout: float = 30.0  # seconds per tool execution
     llm_timeout: float = 240.0  # seconds per LLM call (research/supervisor lazy providers)
     max_tool_result_chars: int = 8000  # truncate large tool results
@@ -1169,10 +1181,30 @@ class AgentLoop:
     # -- Context management (LOOP-004) --
 
     def _context_too_large(self, messages: list[Message]) -> bool:
-        """Check if estimated context exceeds the token budget."""
+        """Pröva historiken mot BÅDA taken: antal meddelanden och tokens.
+
+        VARFÖR två tak (chat-session-limits-and-names D1): providers nekar
+        för stora requests oavsett tokenantal. En historik med tusentals
+        korta verktygsrader kan ligga under tokenbudgeten men ändå avvisas
+        med `400 Bad Request` — mätt 2026-11-05 med 2 121 meddelanden.
+
+        Loggar vilket tak som slog till, så driftfelsökning ser skillnaden
+        mellan "för många meddelanden" och "för mycket text".
+        """
+        max_msgs = getattr(self.config, 'max_messages', 0) or 0
+        if max_msgs and len(messages) > max_msgs:
+            _logger.info(
+                'Context too large: %d meddelanden > taket %d — sammanfattar',
+                len(messages), max_msgs)
+            return True
         total_chars = sum(len(m.content or "") for m in messages)
         estimated_tokens = total_chars // 4  # rough: ~4 chars per token
-        return estimated_tokens > self.config.max_context_tokens
+        if estimated_tokens > self.config.max_context_tokens:
+            _logger.info(
+                'Context too large: ~%d tokens > budget %d — sammanfattar',
+                estimated_tokens, self.config.max_context_tokens)
+            return True
+        return False
 
     async def _summarize(self, messages: list[Message]) -> list[Message]:
         """Komprimera konversationshistoriken för att rymmas i kontextbudgeten.

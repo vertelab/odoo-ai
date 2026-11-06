@@ -806,7 +806,13 @@ class AICoworkerSession(models.Model):
             'pi_session_id': pi_session_id,
             'status': 'active',
             'init_type': 'openai_api',
-            'name': title or pi_session_id[:8],
+            # Fallback när prompt saknas eller inte ger ett namn
+            # (chat-session-limits-and-names D4): ett läsbart namn, inte ett
+            # uuid-fragment. `pi_session_id[:8]` gav trådnamn som `01a1ac59`
+            # — 1 305 sessioner i drift hade det. Ett id-baserat namn är bara
+            # sista utväg när det inte finns något att bygga ur.
+            'name': title or ('API-session ' + pi_session_id[:8]
+                              if pi_session_id else 'API-session'),
             'title_source': 'prompt' if title else False,
             'user_id': self.env.user.id,
         }
@@ -1326,13 +1332,61 @@ class AICoworkerSession(models.Model):
         line = line.replace('**', '').replace('__', '')
         line = line.strip().strip('"\'“”‘’')
         # Rubrik-prefix som "Syfte:" eller "Titel:" hör inte i namnet.
+        #
+        # OBS (chat-session-limits-and-names): listan måste omfatta
+        # eftermälets EGNA rubriker — `SUMMARY_HEADINGS`. Utan dem strippades
+        # inte `Syfte:` alls, och `Syfte` utan kolon blev ett godkänt namn.
+        _prefix_words = (
+            'titel', 'title', 'ämne', 'amne', 'subject', 'sammanfattning',
+            'syfte', 'utfall', 'beslut', 'fakta', 'artefakter')
         line = re.sub(
-            r'^(titel|title|ämne|amne|subject|sammanfattning)\s*:\s*',
+            r'^(%s)\s*:\s*' % '|'.join(_prefix_words),
             '', line, flags=re.IGNORECASE)
         line = re.sub(r'\s+', ' ', line).strip()
+        # Ett namn som BARA är ett rubrikord säger ingenting om sessionen
+        # (chat-session-limits-and-names D2). Eftermälet skriver `## Syfte`,
+        # och rubrikstrippningen ovan tar `##` men lämnar ordet kvar — vilket
+        # gav sessionsnamnet "Syfte". Returnera tomt: `_maybe_set_title`
+        # hanterar det och en starkare källa får sätta namnet i stället.
+        _headings = {h.lower() for h in self.SUMMARY_HEADINGS}
+        if line.rstrip(':').strip().lower() in _headings:
+            return ''
         if len(line) > max_chars:
             line = line[:max_chars].rstrip()
         return line
+
+    @api.model
+    def _title_from_summary(self, summary):
+        """Första meningsfulla meningen ur ett eftermäle (D3).
+
+        Eftermälet är strukturerat med fasta rubriker (`## Syfte`, `## Utfall`
+        …). Namnet ska beskriva sessionen, så vi hoppar rubriker, tomma rader
+        och rubrikord och tar första raden som bär innehåll.
+
+        Returnerar '' om inget användbart finns — `_maybe_set_title` hanterar
+        det och en starkare källa får sätta namnet.
+        """
+        if not summary:
+            return ''
+        headings = {h.lower() for h in self.SUMMARY_HEADINGS}
+        for raw in str(summary).splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            # Markdown-rubrik, listmarkör och fetstil bort.
+            line = re.sub(r'^#{1,6}\s*', '', line)
+            line = re.sub(r'^[-*•]\s+', '', line)
+            line = line.replace('**', '').replace('__', '').strip()
+            if not line:
+                continue
+            # Rubrikord (med eller utan kolon) hoppas över.
+            if line.rstrip(':').strip().lower() in headings:
+                continue
+            # En rad som bara är ett ord är oftast en etikett, inte en mening.
+            if len(line.split()) < 2:
+                continue
+            return line
+        return ''
 
     def _maybe_set_title(self, text, source='prompt', force=False):
         """Sätt sessionens namn om källan är starkare än nuvarande.
@@ -2147,7 +2201,14 @@ class AICoworkerSession(models.Model):
         # källan till ett namn — det finns först här, men det beskriver
         # HELA sessionen. `_maybe_set_title` rangordnar källorna, så ett
         # manuellt satt namn rörs aldrig.
-        self._maybe_set_title(summary, source='summary')
+        #
+        # VARFÖR en utplockad mening och inte hela eftermälet
+        # (chat-session-limits-and-names D3): eftermälet börjar alltid med
+        # en rubrik (`## Syfte`). `_clean_title` avvisar numera rubrikord, så
+        # att skicka hela texten hade alltid gett tomt. Att plocka ut första
+        # meningsfulla meningen bevarar källans värde.
+        self._maybe_set_title(
+            self._title_from_summary(summary), source='summary')
 
         # Bron till det personliga minnet (session-memory-bridge D2).
         # Eftermälet är den naturliga platsen: här finns både transcriptet

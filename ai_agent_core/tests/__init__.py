@@ -108,6 +108,7 @@ from . import test_webui_token_usage
 # SSE-generatorernas namnbindning (NameError i _cr_holder, 2026-10-11).
 # Filen MÅSTE importeras här — annars körs den aldrig. Det är samma fälla
 # som test_workspace och test_graph_executor ovan föll i.
+from . import test_context_limits_and_titles
 from . import test_stream_keepalive
 from . import test_stream_scope_bindings
 from . import test_explicit_agent_tools
