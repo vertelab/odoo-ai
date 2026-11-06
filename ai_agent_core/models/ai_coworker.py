@@ -8090,6 +8090,14 @@ class AICoworker(models.Model):
             _line_meta = self._line_cost_snapshot(
                 model_rec=ai_model, usage_reported=_usage_reported,
                 cached_tokens=_cached, finish_reason=_finish)
+            # Per-varv (webui-show-work-again 4.1). Loopen sätter dem på
+            # svaret; faller tillbaka på dess egen lista om svaret är äldre.
+            _rinputs = (getattr(response, 'round_inputs', None)
+                        or getattr(loop_obj, '_round_inputs', None) or [])
+            _line_meta['rounds'] = int(
+                getattr(response, 'rounds', 0) or len(_rinputs) or 0)
+            _line_meta['round_inputs'] = ','.join(
+                str(int(r or 0)) for r in _rinputs) or False
 
             # Reasoning + supervisor-/delegationsanalys (d): samla den
             # "gråa" tänketexten (reasoning_log) och rundornas narrering
@@ -8111,10 +8119,10 @@ class AICoworker(models.Model):
             # Normalisera tool_history till (namn, preview, tool_call_id) —
             # äldre poster har bara två värden (se tool_history_triples).
             from odoo.addons.ai_agent_core.core.loop import (
-                tool_history_triples)
+                tool_history_entries)
             from odoo.addons.ai_agent_core.controllers.stream import (
                 _openai_tool_call)
-            _th = tool_history_triples(
+            _th = tool_history_entries(
                 getattr(loop_obj, 'tool_history', None))
 
             self.env['ai.coworker.session.line'].create({
@@ -8127,7 +8135,10 @@ class AICoworker(models.Model):
                 'token_input': input_t,
                 'token_output': 0,
                 'sys_multiplier': sys_mult,
-                **_line_meta,
+                # `rounds` hör till TUREN, inte prompten — bara assistant-
+                # raden bär uppdelningen (webui-show-work-again 4.2).
+                **{k: v for k, v in _line_meta.items()
+                   if k not in ('rounds', 'round_inputs')},
             })
             self.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
@@ -8147,8 +8158,8 @@ class AICoworker(models.Model):
                 # tool-raderna kan paras och historiken replayas — annars 422
                 # hos strikta providers.
                 'tool_calls': json.dumps([
-                    _openai_tool_call(n, p, c)
-                    for n, p, c in _th],
+                    _openai_tool_call(n, p, c, a)
+                    for n, p, c, a in _th],
                     ensure_ascii=False),
                 **_line_meta,
             })
@@ -8157,7 +8168,7 @@ class AICoworker(models.Model):
             # Systemtoken-kostnad per tool-anrop (budget-hard-cap D6):
             # token_input = tool.sys_token_cost, multiplier=1.0 → compute
             # ger token_sys = sys_token_cost direkt.
-            for i, (t_name, t_preview, t_call_id) in enumerate(_th):
+            for i, (t_name, t_preview, t_call_id, t_args) in enumerate(_th):
                 tool_cost = 500  # default (ai.tool.sys_token_cost)
                 tool_rec_id = False
                 try:
@@ -8180,6 +8191,13 @@ class AICoworker(models.Model):
                     'tool_id': tool_rec_id or False,
                     'tool_call_id': t_call_id or False,
                     'content': t_preview,
+                    # Argumenten (webui-show-work-again 3.2): raden säger
+                    # annars att verktyget kördes men inte vad det gjorde.
+                    # Samma tak som `content` — en `odoo_write` med ett stort
+                    # fältvärde får inte bli större än resultatet.
+                    'tool_calls': (
+                        json.dumps(dict(t_args or {}), ensure_ascii=False)[:2000]
+                        or False),
                     'sequence': _base_seq + 2 + i,
                     'token_input': tool_cost,
                     'sys_multiplier': 1.0,

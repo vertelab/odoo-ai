@@ -120,6 +120,22 @@ class AICoworkerSessionLine(models.Model):
              '"missing field tool_call_id".')
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
+    # ── Per-varv-räkning (webui-show-work-again 4.1) ────────────────────
+    # En tur som gör flera verktygsrundor skickar HELA historiken igen vid
+    # varje varv, så `token_input` är en summa över varv — inte en enda
+    # prompt. Åtta rundor à ~13k ger ~104k, vilket ser orimligt ut som ett
+    # ensamt tal (mätt: session 27953, `token_input = 104 437`).
+    #
+    # Siffran är korrekt som debiteringsunderlag och rörs inte. Dessa två
+    # fält bär UPPDELNINGEN, så talet går att förstå: hur många varv turen
+    # gjorde och vad varje varv kostade i input.
+    rounds = fields.Integer('Varv', default=0,
+        help='Antal LLM-varv i turen. 1 = svarade direkt utan verktyg. '
+             'Varje varv skickar hela historiken igen, så token_input är '
+             'summan över dessa varv.')
+    round_inputs = fields.Text('Input per varv',
+        help='Kommaseparerade input-tokens per varv, i ordning. '
+             'Summan = token_input. Tom för rader skrivna före 2026-11-06.')
 
     # Systemtoken tracking
     model_real = fields.Char('Model Used',
@@ -283,6 +299,37 @@ class AICoworkerSessionLine(models.Model):
                 'Create a new line instead.' % sorted(blocked))
         return super().write(
             self._strip_nul(self._normalize_informative(vals)))
+
+    def _enrich_from_client(self, vals):
+        """Berika en server-skriven rad med klientens metadata.
+
+        Enda legitima vägen runt append-only-skyddet (webui-show-work-again
+        5.3): servern skriver turens rad först (content, reasoning, tokens),
+        och klientens POST får fylla på de fält servern inte hade —
+        `debug_info`, `source_urls`, `tool_calls`.
+
+        Skyddet finns för att INNEHÅLLET inte får skrivas om: `content`,
+        `role`, tokens. Den här metoden rör bara metadata, och bara fält som
+        är tomma på raden — den kan därför aldrig skriva över något servern
+        redan satt, och aldrig nolla något.
+
+        Anropas av `ai.coworker.session._save_client_response`. Använd den
+        inte för att ändra innehåll; då är `create()` rätt väg.
+        """
+        allowed = {'debug_info', 'source_urls', 'tool_calls'}
+        safe = {}
+        for fname, value in (vals or {}).items():
+            if fname not in allowed:
+                continue
+            if not value:
+                continue
+            if (getattr(self, fname) or '').strip():
+                continue  # serverns värde vinner — aldrig överskrivning
+            safe[fname] = value
+        if not safe:
+            return False
+        return super(AICoworkerSessionLine, self).write(
+            self._strip_nul(safe))
 
     def unlink(self):
         """Sessionsrader får inte raderas (append-only, granskningsbart)."""

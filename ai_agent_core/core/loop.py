@@ -305,6 +305,16 @@ class AgentLoop:
         aldrig kasta vidare fel — en trasig persistens ska inte fälla körningen
         som redan är klar.
         """
+        # Per-varv-räkningen fylls här — `_finish` är den enda returvägen ur
+        # `run()`, så ingen avslutsgren kan glömma den (webui-show-work-again
+        # 4.1). `round_inputs` samlas i loopen ovan; `rounds` härleds ur den.
+        try:
+            _rinputs = getattr(self, '_round_inputs', None) or []
+            if _rinputs and not getattr(response, 'round_inputs', None):
+                response.round_inputs = list(_rinputs)
+                response.rounds = len(_rinputs)
+        except Exception:
+            pass  # best-effort: räkningen får inte fälla avslutet
         cb = getattr(self.config, 'outcome_callback', None)
         if cb:
             try:
@@ -398,6 +408,12 @@ class AgentLoop:
         round_num = 0
         total_input_tokens = 0
         total_output_tokens = 0
+        # Per-varv-input (webui-show-work-again 4.1): varje varv skickar hela
+        # historiken igen, så total_input_tokens är en summa. `run()` är en
+        # annan körväg än `run_stream()` men har samma problem — utan
+        # uppdelningen ser en tur med åtta rundor ut som en enda enorm prompt.
+        round_inputs: list[int] = []
+        self._round_inputs = round_inputs
         start_time = time.time()
 
         while round_num < self.config.max_rounds:
@@ -527,6 +543,7 @@ class AgentLoop:
 
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
+            round_inputs.append(int(response.input_tokens or 0))
 
             round_elapsed = time.time() - round_start
 
@@ -976,8 +993,13 @@ class AgentLoop:
         # NATS executor routing
         if tool.executor == "nats":
             result = await self._execute_via_nats(tool, tool_call.arguments)
+            # Fjärde elementet = argumenten (webui-show-work-again 3.1).
+            # Utan dem går en tool-rad inte att granska i efterhand: raden
+            # säger att `odoo_search` kördes men inte vad den sökte på, och
+            # argumenten kan inte rekonstrueras ur resultatet.
             self.tool_history.append(
-                (tool_call.name, str(result)[:500], tool_call.id or ''))
+                (tool_call.name, str(result)[:500], tool_call.id or '',
+                 dict(tool_call.arguments or {})))
             self.tool_results.append(
                 (tool_call.name, dict(tool_call.arguments or {}), result))
             return self._frame_untrusted(tool, result)
@@ -1018,7 +1040,8 @@ class AgentLoop:
             result = execute_task.result()
             tool_elapsed = time.time() - tool_start
             self.tool_history.append(
-                (tool_call.name, str(result)[:500], tool_call.id or ''))
+                (tool_call.name, str(result)[:500], tool_call.id or '',
+                 dict(args or {})))
             self.tool_results.append(
                 (tool_call.name, dict(args or {}), result))
             _logger.debug(
@@ -1300,6 +1323,11 @@ class StreamingAgentLoop(AgentLoop):
             text_buffer = ""
             round_tokens: list[str] = []
             tool_calls_seen: list[dict] = []
+            # Per-varv-input (webui-show-work-again 4.1): varje varv skickar
+            # hela historiken igen, så `total_input_tokens` är en summa.
+            # Utan uppdelningen ser en tur med åtta rundor ut som en enda
+            # enorm prompt (mätt: 104 437 input-tokens, session 27953).
+            round_inputs: list[int] = []
 
             # Släpp transaktionen innan vi väntar på providern — strömmen kan
             # pågå i tiotals sekunder och låsen ska inte sitta under tiden.
@@ -1322,9 +1350,19 @@ class StreamingAgentLoop(AgentLoop):
 
                 elif event.type == "thinking":
                     # Modellens "gråa" tänketext (reasoning_content/reasoning)
-                    # — samla för att lagra på session-meddelandet.
+                    # — samla för att lagra på session-meddelandet OCH skicka
+                    # vidare så webbchatten kan visa den medan modellen tänker.
+                    #
+                    # Utan `yield` var grenen en återvändsgränd: texten hamnade
+                    # i `reasoning_log` men nådde aldrig klienten, så
+                    # `controllers/stream.py`s `thinking`-gren (som funnits
+                    # hela tiden) var död kod. Under modellens betänketid
+                    # fanns därför inget att visa alls — spinnern snurrade i
+                    # tystnad, vilket såg ut som att något gått fel
+                    # (webui-show-work-again).
                     if event.token:
                         self.reasoning_log.append(event.token)
+                    yield event
 
                 elif event.type == "tool_call_start":
                     tool_calls_seen.append({
@@ -1342,6 +1380,7 @@ class StreamingAgentLoop(AgentLoop):
                 elif event.type == "done":
                     total_input_tokens += event.input_tokens or 0
                     total_output_tokens += event.output_tokens or 0
+                    round_inputs.append(int(event.input_tokens or 0))
                     if tool_calls_seen:
                         # Rundans text var NARRERING (agentens resonemang) —
                         # sänd som debug, inte som svar till användaren.
@@ -1449,6 +1488,11 @@ class StreamingAgentLoop(AgentLoop):
                         # klienten bokför riktiga input/output-tokens.
                         event.input_tokens = total_input_tokens
                         event.output_tokens = total_output_tokens
+                        # Per-varv-uppdelningen (webui-show-work-again 4.1):
+                        # `total_input_tokens` är summan över varven, och
+                        # utan den här listan går talet inte att förstå.
+                        event.rounds = len(round_inputs) or 1
+                        event.round_inputs = list(round_inputs)
                         # Utfalls-persistens även på streaming-vägen (3.4):
                         # callbacken ser samma slutliga utfall som run().
                         self._finish(event)
@@ -1522,14 +1566,17 @@ class StreamingAgentLoop(AgentLoop):
         return sorted(urls)
 
 
-def tool_history_triples(history):
-    """Normalisera tool_history-poster till (name, preview, call_id).
+def tool_history_entries(history):
+    """Normalisera tool_history-poster till (name, preview, call_id, arguments).
 
-    tool_history bär sedan 2026-10-08 tre värden — (namn, preview,
-    tool_call_id) — eftersom OpenAI-formatet kräver att en tool-rad paras
-    med assistant-radens tool_calls[].id. Poster skrivna före ändringen (och
-    poster från tredjeparts-loopar) har bara två värden; de får en tom
-    call_id i stället för att krascha uppackningen.
+    tool_history bär sedan 2026-11-05 fyra värden — argumenten tillkom så att
+    en tool-rad ska gå att granska: raden säger annars att `odoo_search`
+    kördes men inte vad den sökte på, och argumenten kan inte rekonstrueras
+    ur resultatet (webui-show-work-again 3.1).
+
+    Bakåtkompatibel: poster med två eller tre värden (skrivna före ändringen,
+    eller av tredjeparts-loopar) får tomma fält i stället för att krascha
+    uppackningen — samma princip som när call_id infördes 2026-10-08.
 
     Använd denna i stället för att packa upp tuplen direkt.
     """
@@ -1540,5 +1587,15 @@ def tool_history_triples(history):
         name = entry[0]
         preview = entry[1] if len(entry) > 1 else ''
         call_id = entry[2] if len(entry) > 2 else ''
-        out.append((name, preview, call_id or ''))
+        arguments = entry[3] if len(entry) > 3 else {}
+        out.append((name, preview, call_id or '', arguments or {}))
     return out
+
+
+def tool_history_triples(history):
+    """Bakåtkompatibel vy: (name, preview, call_id).
+
+    Behålls för anropare som bara behöver de tre första fälten. Ny kod ska
+    använda `tool_history_entries` — den bär även argumenten.
+    """
+    return [(n, p, c) for (n, p, c, _a) in tool_history_entries(history)]

@@ -235,7 +235,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 @keyframes ai-spin{to{transform:rotate(360deg)}}
 
 /* Debug/resonemang + käll-lista (utfällbar) */
-.ai-debug,.ai-sources{margin-top:6px;font-size:12px;color:var(--text-muted)}
+.ai-debug,.ai-sources,.ai-tools{margin-top:6px;font-size:12px;color:var(--text-muted)}
+.ai-tools-body{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.tool-call-item{border-left:2px solid var(--border);padding-left:8px}
+.tool-call-name{font-weight:600}
+.tool-call-args{margin:2px 0 0;padding:4px 6px;background:rgba(127,127,127,0.08);border-radius:4px;white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:200px;overflow:auto}
 .ai-debug summary,.ai-sources summary{cursor:pointer;user-select:none;opacity:.85}
 .ai-debug-body{white-space:pre-wrap;background:rgba(128,128,128,.08);border-radius:6px;padding:6px 8px;margin-top:4px;max-height:200px;overflow:auto}
 .ai-sources-body{display:flex;flex-direction:column;gap:2px;margin-top:4px}
@@ -799,7 +803,38 @@ function selectThread(id,name){
                     var role=m.role||'assistant';
                     var cls=role==='user'?'message user':role==='system'?'message system':'message ai';
                     var d=document.createElement('div');d.className=cls;
-                    d.innerHTML=role==='user'?esc(m.content):addMessageActions(md2html(m.content));
+                    if(role==='user'){
+                        d.innerHTML=esc(m.content)
+                    }else{
+                        // Det sparade arbetet (webui-show-work-again 2.2):
+                        // resonemang, debug, verktygsanrop och källor fanns
+                        // på raden men renderades aldrig vid omladdning —
+                        // bara `content`. Sektionerna byggs med samma
+                        // `<details>`-mönster som live-vyn, hopfällda, och
+                        // bara när det finns något att visa.
+                        var html=addMessageActions(md2html(m.content));
+                        if(m.reasoning&&m.reasoning.trim()){
+                            html+='<details class="ai-debug"><summary>🧠 Resonemang</summary>'
+                                +'<div class="ai-debug-body">'+esc(m.reasoning)+'</div></details>'
+                        }
+                        if(m.debug_info&&m.debug_info.trim()){
+                            html+='<details class="ai-debug"><summary>🔍 Debug</summary>'
+                                +'<div class="ai-debug-body">'+esc(m.debug_info)+'</div></details>'
+                        }
+                        if(m.tool_calls&&String(m.tool_calls).trim()){
+                            html+=renderToolCalls(m.tool_calls)
+                        }
+                        if(m.source_urls&&String(m.source_urls).trim()){
+                            var urls=String(m.source_urls).split('\n').filter(function(u){return u.trim()});
+                            if(urls.length){
+                                html+='<details class="ai-sources"><summary>🔗 källor ('+urls.length+')</summary>'
+                                    +'<div class="ai-sources-body">'
+                                    +urls.map(function(u){return '<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')
+                                    +'</div></details>'
+                            }
+                        }
+                        d.innerHTML=html
+                    }
                     msgs.appendChild(d)
                 }
             });
@@ -1029,6 +1064,43 @@ function addMessageActions(htmlContent){
     return actions+htmlContent;
 }
 
+/**
+ * Rendera en turs verktygsanrop som en hopfälld sektion (webui-show-work-again).
+ *
+ * Anropen hör till MEDDELANDET, inte till konversationen: `tool`-rader är
+ * protokolldata, inte innehåll. Att göra dem till egna bubblor gör åtta
+ * verktygsanrop till åtta svar och bryter läsningen av samtalet.
+ *
+ * `raw` är assistant-radens `tool_calls` — en JSON-sträng med OpenAI-format
+ * (`[{"id":..,"function":{"name":..,"arguments":..}}]`) eller, för tool-rader,
+ * argumenten direkt. Vi tål båda och faller tillbaka på rå text om JSON:en
+ * inte går att tolka (hellre läsbart än tomt).
+ */
+function renderToolCalls(raw){
+    var items=[];
+    try{
+        var parsed=typeof raw==='string'?JSON.parse(raw):raw;
+        if(Array.isArray(parsed)){items=parsed}
+        else if(parsed&&typeof parsed==='object'){items=[parsed]}
+    }catch(e){items=[]}
+    var count=items.length||1;
+    var body='';
+    if(items.length){
+        body=items.map(function(tc){
+            var fn=(tc&&tc.function)||{};
+            var name=fn.name||tc.name||'verktyg';
+            var args=fn.arguments!==undefined?fn.arguments:tc.arguments;
+            var argsTxt=typeof args==='string'?args:JSON.stringify(args,null,1);
+            return '<div class="tool-call-item"><span class="tool-call-name">🔧 '+esc(name)+'</span>'
+                +'<pre class="tool-call-args">'+esc(argsTxt||'(inga argument)')+'</pre></div>'
+        }).join('')
+    }else{
+        body='<pre class="tool-call-args">'+esc(String(raw))+'</pre>'
+    }
+    return '<details class="ai-tools"><summary>🔧 '+count+' verktygsanrop</summary>'
+        +'<div class="ai-tools-body">'+body+'</div></details>'
+}
+
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
 
 // ── Sessionsvisning för tokens/kostnad (restore-webui-token-usage 4.x) ──
@@ -1065,10 +1137,13 @@ function renderUsage(usage){
         // 3.2): gränssnittet är en avläsning av förbrukning, inte ett
         // fakturaunderlag. Att säga "Debitering" påstår att en faktura
         // utfärdats, vilket UI:t inte kan veta.
+        // Bara talet. Antalet omätta rader visades tidigare som ett
+        // suffix ("1 234 tokens (3 rader omätt)") — det är en intern
+        // upplysning om datakvaliteten, inte något användaren kan agera
+        // på, och det påverkar inte talet framför. Fältet finns kvar i
+        // `usage`-blocket för den som behöver det (webui-token-display-trim).
         billing.textContent=
             Number(usage.token_sys||0).toLocaleString('sv-SE')+' tokens';
-        if(unmeasured)billing.textContent+=' ('+unmeasured+' rad'+
-            (unmeasured===1?'':'er')+' omätt)';
         // Kostnad visas bara när den finns — 0 USD är inte "gratis", det är
         // "ingen prisuppgift på raderna".
         if(usage.cost_usd>0){
@@ -1207,6 +1282,15 @@ function handleStreamEvent(e){
             if(currentSpinnerEl)currentSpinnerEl.style.display='none';updateTokenInfo();break;
         case'debug':currentDebugText+=(e.token||'');
             if(currentDebugEl){currentDebugEl.style.display='';currentDebugEl.querySelector('.ai-debug-body').textContent=currentDebugText}
+            break;
+        // Modellens resonemang medan den tänker (webui-show-work-again 1.2).
+        // Servern skickade `thinking` hela tiden, men loopen yieldade den
+        // aldrig — så den här grenen fanns inte och texten nådde aldrig fram.
+        // Nu fyller den samma hopfällda sektion som narreringen (debug);
+        // sektionen är `<details>` utan `open`, så den tränger inte undan
+        // svaret. `e.token` kan vara tom — då rör vi inget.
+        case'thinking':if(e.token){currentDebugText+=e.token;
+            if(currentDebugEl){currentDebugEl.style.display='';currentDebugEl.querySelector('.ai-debug-body').textContent=currentDebugText}}
             break;
         case'source':if(e.token&&currentSources.indexOf(e.token)<0)currentSources.push(e.token);
             if(currentSourcesEl){currentSourcesEl.style.display='';var sb=currentSourcesEl.querySelector('.ai-sources-body');sb.innerHTML=currentSources.map(function(u){return'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')}

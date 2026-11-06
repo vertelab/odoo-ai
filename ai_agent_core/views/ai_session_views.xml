@@ -252,6 +252,7 @@
                 <field name="skill_id" optional="hide"/>
                 <field name="model_real" optional="hide"/>
                 <field name="reasoning" optional="hide"/>
+                <field name="rounds" optional="hide"/>
                 <field name="token_input" optional="show" sum="1"/>
                 <field name="token_output" optional="show" sum="1"/>
                 <field name="token_sys" optional="show" sum="1"/>
@@ -286,6 +287,15 @@
                             <field name="tool_name" readonly="1"/>
                             <field name="token_input" readonly="1"/>
                             <field name="token_output" readonly="1"/>
+                            <!-- Per-varv (webui-show-work-again 4.2):
+                                 `token_input` är summan över varven — en tur
+                                 med åtta verktygsrundor skickar hela
+                                 historiken igen varje gång. Utan dessa två
+                                 ser 104 437 ut som en enda enorm prompt. -->
+                            <field name="rounds" readonly="1"
+                                   invisible="not rounds"/>
+                            <field name="round_inputs" readonly="1"
+                                   invisible="not round_inputs"/>
                         </group>
                     </group>
                     <notebook>
@@ -303,6 +313,24 @@
                         <page string="Källor" name="sources"
                               invisible="not source_urls">
                             <field name="source_urls" readonly="1"/>
+                        </page>
+                        <!-- Verktygsanropet (webui-show-work-again 3.4):
+                             `tool_calls` fanns som fält men visades ingenstans,
+                             så en tool-rad gick inte att granska i backend —
+                             den sade att verktyget kördes men inte med vilka
+                             argument. Samma mönster som flikarna ovan:
+                             `invisible` när fältet är tomt, så en
+                             assistant-rad utan verktyg inte får en tom flik. -->
+                        <page string="Verktygsanrop" name="tool_calls"
+                              invisible="not tool_calls">
+                            <group>
+                                <field name="tool_name" readonly="1"/>
+                                <field name="tool_call_id" readonly="1"/>
+                            </group>
+                            <separator string="Argument"/>
+                            <field name="tool_calls" readonly="1"/>
+                            <separator string="Resultat"/>
+                            <field name="content" readonly="1"/>
                         </page>
                     </notebook>
                 </sheet>

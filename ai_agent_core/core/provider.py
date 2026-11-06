@@ -207,6 +207,11 @@ class ChatResponse:
     #   {'agent': <str/name>, 'model': <str/model_real>, 'input_tokens': int,
     #    'output_tokens': int}
     agent_usage: list = field(default_factory=list)
+    # Per-varv-räkning (webui-show-work-again 4.1). `input_tokens` är summan
+    # över varven — varje verktygsrunda skickar hela historiken igen. Dessa
+    # bär uppdelningen så en summa på sex siffror går att förstå.
+    rounds: int = 0
+    round_inputs: list = field(default_factory=list)
 
 
 @dataclass
@@ -235,6 +240,13 @@ class TokenEvent:
     # ska kunna visa väntan utan att lägga något till svaret.
     attempt: int = 0
     reason: str = ""
+    # Per-varv-räkning (webui-show-work-again 4.1). En tur som gör flera
+    # verktygsrundor skickar hela historiken igen vid varje varv, så
+    # `input_tokens` på done är en SUMMA över varven — inte en enda prompt.
+    # `rounds` är antalet varv, `round_inputs` varje varvs input i ordning.
+    # Sätts på det slutgiltiga done-eventet av StreamingAgentLoop.
+    rounds: int = 0
+    round_inputs: list = None
 
 
 class ProviderError(Exception):

@@ -821,7 +821,15 @@ class AIStreamController(http.Controller):
             # den även när ett fel inträffar innan strömmen ens startat
             # (2026-10-12: state sattes först på rad ~752 och ett avbrott
             # dessförinnan gav NameError i finally).
-            state = {'loop_obj': None}
+            # Käll- och debugsamlare på SERVERN (webui-show-work-again 5.1).
+            # De sparades tidigare bara via klientens POST — stängdes fliken
+            # eller blev svaret tomt tappades de, och en misslyckad tur gick
+            # inte att granska i efterhand. Servern är garanten, samma
+            # princip som web-ui-stream-turn-persistens 2.1 införde för
+            # själva svarstexten.
+            state = {'loop_obj': None,
+                     'sources': [],
+                     'debug_text': []}
             # Keepalive (webui-stream-feedback 4.1): när inget event sänts på
             # KEEPALIVE_THRESHOLD sekunder skickas ett livstecken. Utan det
             # ger klienten upp under en lång verktygskörning och visar
@@ -1021,6 +1029,13 @@ class AIStreamController(http.Controller):
                                 data["token"] = event.token
                             elif event.type in ("debug", "source", "tool_progress"):
                                 data["token"] = event.token
+                                # Samla på serversidan så raden får dem även
+                                # utan klientens POST (5.1).
+                                if event.type == "source" and event.token:
+                                    if event.token not in state['sources']:
+                                        state['sources'].append(event.token)
+                                elif event.type == "debug" and event.token:
+                                    state['debug_text'].append(event.token)
                             elif event.type == "needs_approval":
                                 # Ett nekande från grinden (init-type-execution-
                                 # parity 3.3). Klienten måste få veta VARFÖR
@@ -1069,6 +1084,13 @@ class AIStreamController(http.Controller):
                                     # svar, och den bokför på en annan rad.
                                     state['input_tokens'] = data["input_tokens"]
                                     state['output_tokens'] = data["output_tokens"]
+                                    # Per-varv-uppdelning (webui-show-work-again
+                                    # 4.1): input_tokens är summan över varv.
+                                    # Utan den här får raden ett sexsiffrigt
+                                    # tal utan förklaring.
+                                    state['rounds'] = getattr(event, 'rounds', 0) or 0
+                                    state['round_inputs'] = list(
+                                        getattr(event, 'round_inputs', None) or [])
                                     # TokenEvent bär ingen cached/model — de
                                     # fylls av _finalize_stream_turn via
                                     # _persist_stream_answer (modell ur
@@ -1742,7 +1764,16 @@ class AIStreamController(http.Controller):
                 "content": l.content or '',
                 "tool_name": l.tool_name,
                 "debug_info": l.debug_info or '',
+                # `reasoning` sparades redan på raden men utelämnades i svaret,
+                # så en omladdad tråd tappade modellens tänketext
+                # (webui-show-work-again 2.1). Klienten får allt sparat
+                # arbete i ett svar — samma skäl som `usage`-blocket.
+                "reasoning": l.reasoning or '',
                 "tool_calls": l.tool_calls or '',
+                # Källorna sparades på raden (source_urls, en URL per rad)
+                # men nådde aldrig svaret — klienten kunde därför inte
+                # rendera dem vid omladdning (webui-show-work-again).
+                "source_urls": l.source_urls or '',
                 "model_real": l.model_real or '',
                 "token_input": l.token_input or 0,
                 "token_output": l.token_output or 0,
@@ -2705,7 +2736,7 @@ async def _collect(agen):
     return result
 
 
-def _openai_tool_call(name, preview, call_id):
+def _openai_tool_call(name, preview, call_id, arguments=None):
     """Bygg ett OpenAI-format tool_call för assistant-radens tool_calls.
 
     OpenAI-formatet kräver {'id', 'type': 'function', 'function': {'name',
@@ -2721,13 +2752,18 @@ def _openai_tool_call(name, preview, call_id):
         cid = 'call_%s_%s' % (
             re.sub(r'[^A-Za-z0-9_]', '_', str(name or 'tool')),
             abs(hash((name, str(preview)[:80]))) % 100000)
+    # Argumenten är det som gör raden granskningsbar (webui-show-work-again
+    # 3.1). Tidigare bara `preview` — radens resultat — vilket inte säger vad
+    # verktyget anropades med. `preview` behålls som fält så historiken
+    # fortfarande är läsbar för modellen.
+    args = dict(arguments or {})
+    args['preview'] = str(preview)[:200]
     return {
         'id': cid,
         'type': 'function',
         'function': {
             'name': str(name or ''),
-            'arguments': json.dumps(
-                {'preview': str(preview)[:200]}, ensure_ascii=False),
+            'arguments': json.dumps(args, ensure_ascii=False),
         },
     }
 
@@ -2769,8 +2805,8 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
     """
     if not session_id or not loop_obj:
         return
-    from odoo.addons.ai_agent_core.core.loop import tool_history_triples
-    history = tool_history_triples(
+    from odoo.addons.ai_agent_core.core.loop import tool_history_entries
+    history = tool_history_entries(
         getattr(loop_obj, 'tool_history', None))
     if not history:
         return
@@ -2786,7 +2822,7 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
                       if l.tool_name and not l.tool_call_id}
     base_seq = _next_session_sequence(env, session.id)
     written = 0
-    for (t_name, t_preview, t_call_id) in history:
+    for (t_name, t_preview, t_call_id, t_args) in history:
         if t_call_id and t_call_id in existing_ids:
             continue
         if not t_call_id and t_name in existing_names:
@@ -2799,12 +2835,20 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
                 tool_cost = tool_rec.sys_token_cost
         except Exception:
             pass  # best-effort: tyst fallback — se etiketteringsregeln
+        # Argumenten sparas så raden går att granska (webui-show-work-again
+        # 3.2). Samma tak som `content` (2000 tecken): en `odoo_write` med
+        # ett stort fältvärde får inte bli större än resultatet.
+        try:
+            _args_json = json.dumps(dict(t_args or {}), ensure_ascii=False)
+        except (TypeError, ValueError):
+            _args_json = ''
         env['ai.coworker.session.line'].sudo().create({
             'session_id': session.id,
             'role': 'tool',
             'tool_name': t_name,
             'tool_call_id': t_call_id or False,
             'content': str(t_preview)[:2000],
+            'tool_calls': _args_json[:2000] or False,
             'sequence': base_seq + written,
             'token_input': tool_cost,
             'sys_multiplier': 1.0,
@@ -2825,9 +2869,45 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
 _NO_ANSWER_MARKER = '(inget svar)'
 
 
+def _tool_calls_json(loop_obj):
+    """Verktygsanropen för en tur som OpenAI-format JSON (webui-show-work-again 5.1).
+
+    Bygger `[{"id":.., "type":"function", "function":{"name":..,"arguments":..}}]`
+    ur `loop_obj.tool_history`, så assistant-raden bär dem även när klientens
+    POST aldrig anländer. Samma form som `_save_client_response` tar emot, så
+    historiken kan replayas och trådvyn kan rendera anropen.
+
+    Returnerar '' när turen inte anropade något verktyg.
+    """
+    if not loop_obj:
+        return ''
+    try:
+        from odoo.addons.ai_agent_core.core.loop import tool_history_entries
+        entries = tool_history_entries(
+            getattr(loop_obj, 'tool_history', None))
+    except Exception:
+        return ''
+    out = []
+    for (name, _preview, call_id, arguments) in entries:
+        if not name:
+            continue
+        try:
+            args = json.dumps(dict(arguments or {}), ensure_ascii=False)
+        except (TypeError, ValueError):
+            args = '{}'
+        out.append({
+            'id': call_id or '',
+            'type': 'function',
+            'function': {'name': name, 'arguments': args},
+        })
+    return json.dumps(out, ensure_ascii=False) if out else ''
+
+
 def _persist_stream_answer(env, session_id, answer, reasoning='',
                            finish_reason='', error='', token_input=0,
-                           token_output=0, model_real='', cached_tokens=0):
+                           token_output=0, model_real='', cached_tokens=0,
+                           rounds=0, round_inputs=None,
+                           source_urls='', debug_info='', tool_calls=''):
     """Persistera turens avslutande assistantsvar server-side.
 
     Servern är garanten (web-ui-stream-turn-persistens 2.1): klienten kan
@@ -2897,6 +2977,18 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
             'sys_multiplier': sys_mult,
             'usage_reported': usage_reported,
             'cached_tokens': int(cached_tokens or 0),
+            # Per-varv (webui-show-work-again 4.1). `token_input` ovan är
+            # summan och rörs inte — dessa två förklarar den.
+            'rounds': int(rounds or 0),
+            'round_inputs': ','.join(
+                str(int(r or 0)) for r in (round_inputs or [])) or False,
+            # Arbetet (webui-show-work-again 5.1): källor, debug-text och
+            # verktygsanrop skrevs tidigare bara av klientens POST. Nu skriver
+            # servern dem — annars tappas de när fliken stängs eller svaret
+            # blir tomt, och en misslyckad tur går inte att granska.
+            'source_urls': (source_urls or '').strip() or False,
+            'debug_info': (debug_info or '').strip() or False,
+            'tool_calls': (tool_calls or '').strip() or False,
         }
         # Prisögonblickbild (utfall-och-tokenmatning 4.1–4.4): frys
         # modellens priser vid radens skapande så en historisk rad visar
@@ -3002,6 +3094,11 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
                     # såg mätt ut trots att providern rapporterat siffror.
                     token_input=state.get('input_tokens', 0) or 0,
                     token_output=state.get('output_tokens', 0) or 0,
+                    rounds=state.get('rounds', 0) or 0,
+                    round_inputs=state.get('round_inputs') or [],
+                    source_urls='\n'.join(state.get('sources') or []),
+                    debug_info=''.join(state.get('debug_text') or []),
+                    tool_calls=_tool_calls_json(state.get('loop_obj')),
                     model_real=state.get('model_real', '') or '',
                     cached_tokens=state.get('cached_tokens', 0) or 0,
                 )

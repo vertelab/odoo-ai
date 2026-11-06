@@ -1137,6 +1137,52 @@ class AICoworkerSession(models.Model):
         if (role == 'assistant' and last and last.role == 'assistant'
                 and (last.content or '') == (content or '')):
             return Line.browse(0)
+        # Serverns rad vinner när DEN redan skrivit turens assistantsvar
+        # (webui-show-work-again 5.3). Sedan `_persist_stream_answer` började
+        # skriva källor, debug och verktygsanrop (5.1) är serverns rad den
+        # fullständiga — klientens POST är en berikning som ofta kommer med
+        # ett annat `content` (t.ex. tomt svar mot `(inget svar)`) och därför
+        # INTE fångas av jämförelsen ovan. Utan den här grinden blev det en
+        # andra assistant-rad för samma tur: arbetet dubblerat, och trådvyn
+        # visade två svar.
+        #
+        # MEN grinden får inte svälja ett GENUINT annat svar: `_save_client_
+        # response` används även för att appenda ett nyare svar (test 6.3 i
+        # webui-token-display). Skillnaden är turens EGEN POST kontra en
+        # separat post: klientens POST för SAMMA tur skickar serverns `content`
+        # eller en tom sträng (den POST:ar bara berikningen), medan ett annat
+        # svar har eget innehåll som skiljer sig från serverns rad.
+        #
+        # Regeln: berika bara när POST:ens `content` är tomt eller ryms i
+        # serverns rad. Annars är det ett nytt svar och ska appendas.
+        _server_content = (last.content or '').strip() if (
+            last and last.role == 'assistant') else ''
+        _post_content = (content or '').strip()
+        _same_turn = (not _post_content) or (
+            bool(_server_content) and (
+                _post_content == _server_content
+                or _post_content in _server_content
+                or _server_content in _post_content))
+        if (role == 'assistant' and last and last.role == 'assistant'
+                and last.usage_reported and _same_turn):
+            updates = {}
+            # Berika bara tomma fält — skriv aldrig över med tomt.
+            for fname, value in (
+                    ('debug_info', debug_info),
+                    ('source_urls', source_urls),
+                    ('tool_calls', tool_calls)):
+                if value and not (getattr(last, fname) or '').strip():
+                    updates[fname] = value
+            if updates:
+                try:
+                    # `write()` nekar metadatafälten (append-only-skyddet,
+                    # _IMMUTABLE_FIELDS). `_enrich_from_client` är den enda
+                    # legitima vägen: den rör bara tomma metadatafält och
+                    # kan aldrig skriva över serverns värden.
+                    last.sudo()._enrich_from_client(updates)
+                except Exception:
+                    pass  # best-effort: berikningen får inte fälla turen
+            return Line.browse(0)
         # Servern äger bokföringen: en redan mätt assistant-rad får inte
         # skrivas om med klientens (potentiellt dubbelräknade) siffror.
         if (role == 'assistant' and last and last.role == 'assistant'
