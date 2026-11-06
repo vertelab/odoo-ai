@@ -618,6 +618,18 @@ class AIOpenAPIController(http.Controller):
                                             },
                                         }],
                                     })
+                                elif event.type == "retry":
+                                    # provider-transient-retry D5: keep-alive
+                                    # utan innehåll. Pi (och andra OpenAI-
+                                    # klienter) har egna tidsgränser och kan
+                                    # tolka tystnad som avbrott — en chunk med
+                                    # tom delta visar att körningen lever.
+                                    # `_chunk({})` lägger inget till svaret.
+                                    _logger.info(
+                                        'provider retry %s (%s) — streamen lever',
+                                        getattr(event, 'attempt', 0),
+                                        getattr(event, 'reason', ''))
+                                    yield _chunk({})
                                 elif event.type == "done":
                                     finish = event.finish_reason or ('tool_calls' if saw_tool_call else 'stop')
                         except AgentLoopPaused as pause:
@@ -672,8 +684,25 @@ class AIOpenAPIController(http.Controller):
                         pass  # best-effort: tyst fallback — se etiketteringsregeln
                     loop.close()
             except Exception as e:
-                _logger.error('OpenAI API stream error: %s', e, exc_info=True)
-                yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
+                # provider-transient-retry 6.3: ett uttömt retry ska nå
+                # OpenAI-klienten som ett felobjekt med typ och kod — inte
+                # som en bruten anslutning. Pi läser `error.type`/`error.code`.
+                from odoo.addons.ai_agent_core.core.provider import (
+                    ProviderRetriesExhausted)
+                if isinstance(e, ProviderRetriesExhausted):
+                    _logger.warning(
+                        'provider gav upp efter %s försök (%s) — OpenAI-vägen',
+                        e.attempts, e.last_reason)
+                    _err_payload = {"error": {
+                        "message": str(e),
+                        "type": "provider_retries_exhausted",
+                        "code": e.last_reason or "error",
+                        "attempts": e.attempts,
+                    }}
+                    yield f'data: {json.dumps(_err_payload)}\n\n'
+                else:
+                    _logger.error('OpenAI API stream error: %s', e, exc_info=True)
+                    yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
                 yield 'data: [DONE]\n\n'
 
         return Response(

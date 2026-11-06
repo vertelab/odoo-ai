@@ -465,7 +465,7 @@ def _parse_retry_after(value) -> Optional[float]:
     try:
         return max(0.0, float(text))
     except (TypeError, ValueError):
-        pass  # inte ett antal sekunder — prova HTTP-datum nedan
+        pass  # fallback: inte ett antal sekunder — prova HTTP-datum nedan
     try:
         when = parsedate_to_datetime(text)
         if when.tzinfo is None:
@@ -534,7 +534,7 @@ def classify_transient(status_code: int, body_text: str = '',
     try:
         code = int(status_code or 0)
     except (TypeError, ValueError):
-        code = 0
+        code = 0  # fallback: icke-numerisk status är inte en HTTP-status
 
     retry_after = None
     if headers is not None:
@@ -666,7 +666,7 @@ class AIProvider:
         try:
             _raw = 3 if retry_count is None else int(retry_count)
         except (TypeError, ValueError):
-            _raw = 3
+            _raw = 3  # fallback: ett icke-numeriskt värde → default
         self.retry_count = max(1, min(MAX_RETRY_ATTEMPTS, _raw))
         self._client: Optional[httpx.AsyncClient] = None
 

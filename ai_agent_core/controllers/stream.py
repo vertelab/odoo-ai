@@ -1295,7 +1295,19 @@ class AIStreamController(http.Controller):
                         _logger.warning(
                             'event loop close failed', exc_info=True)
             except Exception as e:
-                _logger.error("SSE stream error: %s", e, exc_info=True)
+                # provider-transient-retry 6.2: ett uttömt retry ska nå
+                # användaren som ett BEGRIPLIGT fel — inte som ett brutet
+                # anslutningsfel. Felet bär antal försök och sista orsak, så
+                # "rate limit, 3 försök" går att skilja från "modellen finns
+                # inte".
+                from odoo.addons.ai_agent_core.core.provider import (
+                    ProviderRetriesExhausted)
+                if isinstance(e, ProviderRetriesExhausted):
+                    _logger.warning(
+                        'provider gav upp efter %s försök (%s) — streamen '
+                        'avslutas med fel', e.attempts, e.last_reason)
+                else:
+                    _logger.error("SSE stream error: %s", e, exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
         return request.make_response(
