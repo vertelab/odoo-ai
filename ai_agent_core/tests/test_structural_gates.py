@@ -1013,6 +1013,40 @@ LANGUAGE_DATA_KEYS = {
     ),
 }
 
+#: Literaler som är DATA, inte UI-text: regex som ska matcha svenska
+#: användar-/LLM-svar, fältnamn i domäner, translittereringstabeller. Att
+#: översätta dem ändrar beteende — de undantas per fil och delsträng, med
+#: skrivet skäl. En post som inte längre matchar något fallerar grinden.
+LANGUAGE_DATA_LITERALS = {
+    'models/ai_coworker.py': [
+        ('Allmän',
+         'Legacy record name compared against to rename the seeded default '
+         'coworker. It is a stored value, not a label — translating it would '
+         'stop the migration matching.'),
+        ("'Ä'",
+         'ASCII transliteration table for HTTP headers: the keys are the '
+         'data (å/ä/ö -> a/a/o).'),
+        ('beställare_ref',
+         'Field name used in a domain and in a record dict. Renaming it '
+         'would break the domain, not translate a label.'),
+        ('beställare_trust',
+         'Field name passed into a task record. Data, not UI text.'),
+        ('@[a-z',
+         'Question normaliser: a character class that strips @mentions. The '
+         'Swedish letters are the point — they must match Swedish input.'),
+        ('[^a-z',
+         'Question normaliser: strips punctuation but keeps Swedish letters, '
+         'so two Swedish questions compare equal.'),
+        ('bra fråga',
+         'Narration regex: matches Swedish filler phrases in an LLM answer '
+         '("bra fråga", "låt mig", "jag har"). Translating the pattern '
+         'would stop it matching the answers it exists to clean.'),
+        ('Notering',
+         'Meta-note regex: strips a trailing "Notering:"/"OBS:" block from '
+         'an answer. The Swedish word is the needle, not a label.'),
+    ],
+}
+
 
 def _swedish_in_strings(path, source, tree):
     """Returnerar ``[(lineno, text)]`` för svenska kodliteraler (ej docstrings)."""
@@ -1080,6 +1114,9 @@ def _scan_swedish(root):
         data_keys = LANGUAGE_DATA_KEYS.get(rel, ())
         if data_keys:
             hits = [h for h in hits if not any(k in h[1] for k in data_keys)]
+        data_literals = [needle for needle, _reason in LANGUAGE_DATA_LITERALS.get(rel, [])]
+        if data_literals:
+            hits = [h for h in hits if not any(n in h[1] for n in data_literals)]
         if hits:
             found[rel] = len(hits)
     return found
@@ -1190,6 +1227,30 @@ class StructuralGateLanguage(TransactionCase):
             stale,
             'XML-baslinjen ligger över verkligheten — sänk taket:\n  ' + '\n  '.join(stale),
         )
+
+    def test_language_data_literals_have_reasons(self):
+        """En data-literal utan skäl går inte att skilja från en glömd sträng."""
+        missing = [
+            f'{rel}: {needle}'
+            for rel, entries in LANGUAGE_DATA_LITERALS.items()
+            for needle, reason in entries
+            if not (reason or '').strip()
+        ]
+        self.assertFalse(missing, 'Data-literaler utan motivering:\n  ' + '\n  '.join(missing))
+
+    def test_language_data_literals_match_something(self):
+        """En data-literal som inte längre träffar något döljer en riktig sträng."""
+        stale = []
+        for rel, entries in LANGUAGE_DATA_LITERALS.items():
+            path = MODULE_ROOT / rel
+            if not path.is_file():
+                stale.append(f'{rel}: filen finns inte')
+                continue
+            text = path.read_text(encoding='utf-8')
+            for needle, _reason in entries:
+                if needle not in text:
+                    stale.append(f'{rel}: {needle!r} matchar inget')
+        self.assertFalse(stale, 'Föråldrade data-literaler:\n  ' + '\n  '.join(stale))
 
     def test_language_exemptions_have_reasons(self):
         """Ett undantag utan skäl är oanträffbart vid granskning."""

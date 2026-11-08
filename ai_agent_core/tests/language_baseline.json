@@ -1,6 +1,6 @@
 {
  "_comment": "Swedish source budget for ai_agent_core. code = Swedish string literals (AST, docstrings excluded) in non-exempt files. doc = Swedish docstrings, tracked so the debt is visible but not enforced. The ceiling only ratchets down: test_baseline_does_not_claim_more_than_reality fails when a recorded ceiling sits above the real count.",
- "_measured": "2026-11-08",
+ "_measured": "2026-11-08 (after ai_coworker.py labels)",
  "_source_rev": "071c88d4",
  "files": {
   "controllers/openai_api.py": {
@@ -120,7 +120,7 @@
    "doc": 4
   },
   "models/ai_coworker.py": {
-   "code": 351,
+   "code": 7,
    "doc": 159
   },
   "models/ai_coworker_error.py": {
@@ -384,5 +384,9 @@
    "errors": 776
   },
   "note": "The 16 failures / 776 errors are PRE-EXISTING: the same numbers come out on a clean HEAD without the language gate (verified 2026-11-08). The gate adds 6 passing tests and no new failures. Errors are dominated by environment issues (HTTP port, duplicate-key fixtures, _embedding_provider assertion on ai.provider)."
+ },
+ "_data_literals": {
+  "models/ai_coworker.py": 7,
+  "note": "Remaining Swedish literals are DATA: transliteration table, field names in domains, and regexes that must match Swedish LLM answers. Exempt with a written reason in LANGUAGE_DATA_LITERALS."
  }
 }
