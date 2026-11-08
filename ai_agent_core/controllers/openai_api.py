@@ -333,25 +333,18 @@ class AIOpenAPIController(http.Controller):
             block = (
                 '\n\n## Kostnadskontext\n'
                 'Aktuell kontext: '
-                f'{chr(44).join(cc) if cc else "ingen (saknas)"}'
-                f'. Bekräftad: {"ja" if confirmed else "nej"}.\n'
+                f'{chr(44).join(cc) if cc else "none (missing)"}'
+                f'. Confirmed: {"yes" if confirmed else "no"}.\n'
             )
             if not confirmed:
                 block += (
-                    'Alla sessioner är kostnadsbärande arbete. Om '
-                    'kostnadskontext saknas: ställ frågan nedan till '
-                    'användaren, EN gång per session.\n'
-                    + (f'Fråga: "{question}"\n' if question else
-                       'Fråga: "Vilket projekt gäller detta arbete? '
-                       '(eller kund om projekt saknas)"\n')
-                    + 'När användaren svarat: bekräfta att kostnaden '
-                      'belastar projektet/kunden och anropa '
-                      'cost_context_set (kolla först med cost_context_get). '
-                      'Ställ ALDRIG om frågan när cost_context_confirmed '
-                      'är satt.\n'
+                    'All sessions are billable work. If cost context is missing: ask the user the question below, ONCE per session.\n'
+                    + (f'Question: "{question}"\n' if question else
+                       'Question: "Which project does this work belong to? (or customer if there is no project)"\n')
+                    + 'Once the user has answered: confirm that the cost is charged to the project/customer and call cost_context_set (check with cost_context_get first). NEVER ask the question again when cost_context_confirmed is set.\n'
                 )
             else:
-                block += 'Fråga inte om kostnadskontext igen.\n'
+                block += 'Do not ask about cost context again.\n'
             return block
         except Exception as e:
             _logger.warning('cost-context injection failed: %s', e)
@@ -548,7 +541,7 @@ class AIOpenAPIController(http.Controller):
                         provider, pmodel = ProviderFactory.from_coworker(
                             gen_env['ai.coworker'].browse(_coworker_id))
                         if not provider:
-                            yield f'data: {json.dumps({"error": {"message": "Ingen AI-leverantör konfigurerad för denna medarbetare"}})}\n\n'
+                            yield f'data: {json.dumps({"error": {"message": "No AI provider configured for this coworker"}})}\n\n'
                             yield 'data: [DONE]\n\n'
                             return
 
@@ -691,7 +684,7 @@ class AIOpenAPIController(http.Controller):
                     ProviderRetriesExhausted)
                 if isinstance(e, ProviderRetriesExhausted):
                     _logger.warning(
-                        'provider gav upp efter %s försök (%s) — OpenAI-vägen',
+                        'provider gave up after %s attempts (%s) — the OpenAI path',
                         e.attempts, e.last_reason)
                     _err_payload = {"error": {
                         "message": str(e),

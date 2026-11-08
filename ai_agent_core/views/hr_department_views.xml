@@ -27,7 +27,7 @@
                 </button>
             </div>
             <field name="manager_id" position="after">
-                <field name="ai_manager_id" placeholder="Välj AI-chef..."
+                <field name="ai_manager_id" placeholder="Choose AI Manager..."
                     options="{'no_create': True}"/>
             </field>
             <field name="name" position="after">
@@ -46,7 +46,7 @@
                 <group string="Odoo Mind-kontext">
                     <field name="artifact_type_ids" widget="many2many_tags"
                            options="{'no_create': True}"
-                           help="Avdelningens intressen — coworkerns company-scope-injektion filtreras på dessa."/>
+                           help="The department interests — the coworker company-scope injection is filtered on these."/>
                     <field name="health_reason" readonly="1"/>
                 </group>
             </xpath>
@@ -60,7 +60,7 @@
                            help="AI-medarbetare i avdelningen."/>
                     <field name="employee_ids" widget="many2many_tags_avatar"
                            options="{'visibleItemsLimit': 10}"
-                           help="Mänskliga medarbetare i avdelningen."/>
+                           help="Human employees in the department."/>
                 </group>
             </xpath>
         </field>

@@ -33,13 +33,13 @@
             <form string="PARA Container">
                 <header>
                     <button name="action_accept_suggestion" type="object"
-                            string="Godkänn (HITL)" class="btn-success"
+                            string="Approve (HITL)" class="btn-success"
                             invisible="state != 'suggested'"/>
                     <button name="action_reject_suggestion" type="object"
                             string="Avvisa" class="btn-danger"
                             invisible="state != 'suggested'"/>
                     <button name="action_close_project" type="object"
-                            string="Stäng projekt (lessons learned)"
+                            string="Close project (lessons learned)"
                             class="btn-secondary"
                             invisible="kind != 'project'"/>
                 </header>

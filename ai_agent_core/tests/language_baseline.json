@@ -4,11 +4,11 @@
  "_source_rev": "071c88d4",
  "files": {
   "controllers/openai_api.py": {
-   "code": 8,
+   "code": 0,
    "doc": 6
   },
   "controllers/stream.py": {
-   "code": 59,
+   "code": 0,
    "doc": 56
   },
   "core/channel.py": {
@@ -84,11 +84,11 @@
    "doc": 12
   },
   "fields/pg_vector.py": {
-   "code": 1,
+   "code": 0,
    "doc": 5
   },
   "hooks.py": {
-   "code": 21,
+   "code": 2,
    "doc": 9
   },
   "http_guard.py": {
@@ -320,7 +320,7 @@
    "doc": 5
   },
   "wizards/ai_onboarding_wizard.py": {
-   "code": 7,
+   "code": 0,
    "doc": 6
   }
  },
@@ -336,30 +336,7 @@
   ]
  },
  "_data_keys_note": "Swedish field names in the sv_SE view-translation guard are DATA (keys that must map to English), not UI text. Exempt by key.",
- "xml": {
-  "views/ai_coworker_error_views.xml": 2,
-  "views/ai_coworker_hitl_views.xml": 8,
-  "views/ai_coworker_init_type_views.xml": 1,
-  "views/ai_coworker_views.xml": 33,
-  "views/ai_lineage_views.xml": 2,
-  "views/ai_model_views.xml": 1,
-  "views/ai_monthly_summary_views.xml": 2,
-  "views/ai_okf_concept_views.xml": 3,
-  "views/ai_okf_dashboard_views.xml": 8,
-  "views/ai_okf_record_views.xml": 3,
-  "views/ai_onboarding_wizard_views.xml": 3,
-  "views/ai_personal_goal_views.xml": 12,
-  "views/ai_session_object_views.xml": 2,
-  "views/ai_session_views.xml": 13,
-  "views/ai_skill_views.xml": 3,
-  "views/ai_tool_views.xml": 1,
-  "views/hr_department_views.xml": 3,
-  "views/hr_employee_views.xml": 1,
-  "views/mail_test_wizard_views.xml": 4,
-  "views/res_config_settings_views.xml": 19,
-  "views/workspace_activity_views.xml": 10,
-  "views/workspace_para_views.xml": 2
- },
+ "xml": {},
  "_xml_note": "Swedish text in UI-rendering XML attributes (string/help/placeholder/confirm), per file. Same ratchet as the code count: a file may not grow.",
  "_sv_po": {
   "measured": "2026-11-08",

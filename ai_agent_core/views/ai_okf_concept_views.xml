@@ -124,9 +124,9 @@
                      är två frågor — och company-scope-koncept (33 012 i
                      drift) har ingen användare alls, så de hamnar i "(inget)"
                      men syns. -->
-                <filter name="group_owner_user" string="Ägare (användare)" context="{'group_by':'owner_user_id'}"/>
-                <filter name="group_source_user" string="Källa (användare)" context="{'group_by':'source_user_id'}"/>
-                <filter name="group_owner_coworker" string="Ägare (medarbetare)" context="{'group_by':'owner_coworker_id'}"/>
+                <filter name="group_owner_user" string="Owner (user)" context="{'group_by':'owner_user_id'}"/>
+                <filter name="group_source_user" string="Source (user)" context="{'group_by':'source_user_id'}"/>
+                <filter name="group_owner_coworker" string="Owner (coworker)" context="{'group_by':'owner_coworker_id'}"/>
                 <separator/>
                 <filter name="archived" string="Archived" domain="[('archived','=',True)]"/>
                 <filter name="not_archived" string="Not Archived" domain="[('archived','=',False)]"/>

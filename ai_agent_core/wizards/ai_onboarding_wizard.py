@@ -31,15 +31,15 @@ class AIOnboardingWizard(models.TransientModel):
         ('done', 'Done'),
     ], default='questions')
 
-    current_question = fields.Text('Fråga', readonly=True)
+    current_question = fields.Text('Question', readonly=True)
     current_question_id = fields.Char('Question ID', readonly=True)
     question_options = fields.Text('Alternativ', readonly=True)
     answer = fields.Char('Svar')
-    question_index = fields.Integer('Fråga', readonly=True)
+    question_index = fields.Integer('Question', readonly=True)
     total_questions = fields.Integer('Totalt', readonly=True)
 
     # Proposal
-    proposal_text = fields.Text('Förslag', readonly=True)
+    proposal_text = fields.Text('Suggestion', readonly=True)
     adjustment = fields.Text('Justeringar')
 
     # Result
@@ -74,7 +74,7 @@ class AIOnboardingWizard(models.TransientModel):
         modules = onboarding.detected_modules or {}
         res['detected_modules_text'] = '\n'.join(
             f'• {m}: {d.get("description", "")}'
-            for m, d in modules.items()) or 'Inga kända moduler'
+            for m, d in modules.items()) or 'No known modules'
         res['website_summary'] = (onboarding.website_summary or '')[:500]
 
         if onboarding.state in ('draft', 'scanning'):
@@ -106,7 +106,7 @@ class AIOnboardingWizard(models.TransientModel):
         modules = onboarding.detected_modules or {}
         self.detected_modules_text = '\n'.join(
             f'• {m}: {d.get("description", "")}'
-            for m, d in modules.items()) or 'Inga kända moduler'
+            for m, d in modules.items()) or 'No known modules'
         self.website_summary = (onboarding.website_summary or '')[:500]
 
         if onboarding.state == 'proposal':
@@ -154,7 +154,7 @@ class AIOnboardingWizard(models.TransientModel):
             lines.append(f'\n• {dept.get("name")}:')
             for cw in dept.get('coworkers', []):
                 lines.append(f'    🤖 {cw.get("name")} — {cw.get("description", "")}')
-        lines.append('\n🥅 Mål:')
+        lines.append('\n🥅 Goals:')
         for goal in proposal.get('company_goals', []):
             lines.append(f'• {goal.get("name")}')
         text = '\n'.join(lines)
@@ -164,10 +164,10 @@ class AIOnboardingWizard(models.TransientModel):
 
     def _build_created_summary(self, onboarding):
         return (
-            f'✅ {len(onboarding.created_department_ids)} avdelningar\n'
-            f'✅ {len(onboarding.created_coworker_ids)} AI-medarbetare\n'
-            f'✅ {len(onboarding.created_goal_ids)} mål\n'
-            f'✅ {len(onboarding.created_task_ids)} uppgifter'
+            f'✅ {len(onboarding.created_department_ids)} departments\n'
+            f'✅ {len(onboarding.created_coworker_ids)} AI coworkers\n'
+            f'✅ {len(onboarding.created_goal_ids)} goals\n'
+            f'✅ {len(onboarding.created_task_ids)} tasks'
         )
 
     # ════════════════════════════════════════════

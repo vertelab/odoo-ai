@@ -159,7 +159,7 @@
                     </div>
                     <group>
                         <field name="description"
-                               placeholder="syfte / när / när inte / exempel / output / guardrail"/>
+                               placeholder="purpose / when / when not / example / output / guardrail"/>
                         <field name="member_ids" widget="many2many_tags"/>
                     </group>
                 </sheet>

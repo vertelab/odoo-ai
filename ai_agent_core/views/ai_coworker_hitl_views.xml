@@ -28,10 +28,10 @@
             <form string="HITL-request">
                 <header>
                     <button name="action_approve" type="object"
-                            string="Godkänn" class="oe_highlight"
+                            string="Approve" class="oe_highlight"
                             invisible="state != 'asked'"/>
                     <button name="action_reject" type="object"
-                            string="Avslå"
+                            string="Reject"
                             invisible="state != 'asked'"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="asked,approved,rejected,expired"/>
@@ -42,7 +42,7 @@
                             <field name="coworker_id"/>
                             <field name="session_id" readonly="1"
                                    options="{'no_open': False}"/>
-                            <field name="user_id" string="Godkännare"/>
+                            <field name="user_id" string="Approver"/>
                             <field name="action_type"/>
                             <field name="object_type"/>
                             <field name="risk_level"/>
@@ -55,7 +55,7 @@
                                    invisible="standing_rule == False"/>
                         </group>
                     </group>
-                    <group string="Förfrågan">
+                    <group string="Request">
                         <field name="request_summary" readonly="1"/>
                         <field name="context" readonly="1"/>
                         <field name="decision" placeholder="Beslut/kommentar…"/>
@@ -76,13 +76,13 @@
                 <field name="session_id"/>
                 <field name="action_type"/>
                 <field name="user_id"/>
-                <filter name="asked" string="Öppna"
+                <filter name="asked" string="Open"
                         domain="[('state', '=', 'asked')]"/>
-                <filter name="approved" string="Godkända"
+                <filter name="approved" string="Approved"
                         domain="[('state', '=', 'approved')]"/>
                 <filter name="rejected" string="Avslagna"
                         domain="[('state', '=', 'rejected')]"/>
-                <filter name="proposals" string="Auto-förslag"
+                <filter name="proposals" string="Auto Suggestion"
                         domain="[('is_auto_proposal', '=', True)]"/>
                 <filter name="has_session" string="Med session"
                         domain="[('session_id', '!=', False)]"/>
@@ -91,7 +91,7 @@
                             context="{'group_by': 'state'}"/>
                     <filter name="g_risk" string="Risk" domain="[]"
                             context="{'group_by': 'risk_level'}"/>
-                    <filter name="g_action" string="Åtgärdstyp" domain="[]"
+                    <filter name="g_action" string="Action Type" domain="[]"
                             context="{'group_by': 'action_type'}"/>
                     <filter name="g_session" string="Session" domain="[]"
                             context="{'group_by': 'session_id'}"/>

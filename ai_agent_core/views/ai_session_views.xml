@@ -28,9 +28,9 @@
                      borttagbar avgränsning, aldrig ett tak i domänen.
                      Namnet `this_month` MÅSTE matcha `search_default_this_month`
                      i action_get_sessions; ett stavfel ger tyst ofiltrerad lista. -->
-                <filter name="this_month" string="Denna månad"
+                <filter name="this_month" string="This Month"
                         domain="[('create_date','&gt;=', context_today() - relativedelta(day=1, hour=0, minute=0, second=0))]"/>
-                <filter name="last_month" string="Förra månaden"
+                <filter name="last_month" string="Last Month"
                         domain="[('create_date','&gt;=', context_today() - relativedelta(months=1, day=1, hour=0, minute=0, second=0)),('create_date','&lt;', context_today() - relativedelta(day=1, hour=0, minute=0, second=0))]"/>
                 <!-- OBS: använder INTE .weekday()/.replace() i domäner — de kraschar
                      i Odoo-webklientens domän-evaluator (fnValue is not a function).
@@ -47,7 +47,7 @@
                             context="{'group_by':'create_date'}"/>
                     <!-- Månadsgruppering: den billigaste vägen till "hur såg
                          augusti ut?" (coworker-session-smart-button D5). -->
-                    <filter name="group_by_month" string="Månad"
+                    <filter name="group_by_month" string="Month"
                             context="{'group_by':'create_date:month'}"/>
                     <filter name="group_status" string="Status"
                             context="{'group_by':'status'}"/>
@@ -56,7 +56,7 @@
                     <!-- Sessionens användare är grupperbar (sessions-specen):
                          en grupp per användare, användarlösa sessioner hamnar i
                          en synlig "(inget)"-grupp. user_id är indexerat. -->
-                    <filter name="group_user" string="Användare"
+                    <filter name="group_user" string="User"
                             context="{'group_by':'user_id'}"/>
                     <filter name="group_ended" string="Ended"
                             context="{'group_by':'end_date'}"/>
@@ -141,7 +141,7 @@
                         <button name="action_abort_external" type="object"
                                 class="oe_stat_button" icon="fa-stop-circle"
                                 invisible="external_pid == 0"
-                                confirm="Avbryt den externa körningen (SIGTERM → SIGKILL)?">
+                                confirm="Abort the external run (SIGTERM → SIGKILL)?">
                             <div class="o_stat_info">
                                 <span class="o_stat_value">Avbryt</span>
                                 <span class="o_stat_text">extern körning</span>
@@ -149,7 +149,7 @@
                         </button>
                     </div>
                     <div class="oe_title">
-                        <h1><field name="name" placeholder="Trådnamn..."/></h1>
+                        <h1><field name="name" placeholder="Thread name..."/></h1>
                     </div>
                     <group>
                         <group>
@@ -159,7 +159,7 @@
                             <field name="init_type" readonly="1"/>
                             <field name="company_id" readonly="1"/>
                             <field name="ai_task_id" readonly="1"/>
-                            <field name="user_rating" placeholder="Bedöm svaret…"/>
+                            <field name="user_rating" placeholder="Rate the answer…"/>
                         </group>
                         <group>
                             <field name="create_date" readonly="1"/>
@@ -188,7 +188,7 @@
                     <!-- Extern körning (external-agent-runtime D10): mätpunkten.
                          Tröskeln för samtidighet är empirisk och sätts inte nu —
                          men profilen ska kunna avläsas när frågan uppstår. -->
-                    <group string="Extern körning" invisible="external_pid == 0">
+                    <group string="External Run" invisible="external_pid == 0">
                         <field name="external_pid" readonly="1"/>
                         <field name="external_port" readonly="1"/>
                         <field name="external_started_at" readonly="1"/>
@@ -309,10 +309,10 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="Innehåll" name="content">
+                        <page string="Content" name="content">
                             <field name="content" readonly="1"/>
                         </page>
-                        <page string="Tänkande (reasoning)" name="reasoning"
+                        <page string="Reasoning" name="reasoning"
                               invisible="not reasoning">
                             <field name="reasoning" readonly="1"/>
                         </page>
@@ -320,7 +320,7 @@
                               invisible="not debug_info">
                             <field name="debug_info" readonly="1"/>
                         </page>
-                        <page string="Källor" name="sources"
+                        <page string="Sources" name="sources"
                               invisible="not source_urls">
                             <field name="source_urls" readonly="1"/>
                         </page>
@@ -369,7 +369,7 @@
                         domain="[('create_date','&gt;=',context_today())]"/>
                 <filter name="this_week" string="Denna vecka (7d)"
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=7))]"/>
-                <filter name="this_month" string="Denna månad (30d)"
+                <filter name="this_month" string="This Month (30d)"
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=30))]"/>
                 <separator/>
                 <group expand="0" string="Gruppera efter">
@@ -383,7 +383,7 @@
                             context="{'group_by':'model_real'}"/>
                     <filter name="group_tool" string="Verktyg"
                             context="{'group_by':'tool_id'}"/>
-                    <filter name="group_session" string="Tråd"
+                    <filter name="group_session" string="Thread"
                             context="{'group_by':'session_id'}"/>
                 </group>
             </search>

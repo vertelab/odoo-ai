@@ -20,7 +20,7 @@
                             <field name="company_concept_count" string="🏢 Company-scope"/>
                             <field name="personal_concept_count" string="👤 Personal-scope"/>
                             <field name="coworker_concept_count" string="🤖 Coworker-scope"/>
-                            <field name="dirty_count" string="Dirty (väntar)"/>
+                            <field name="dirty_count" string="Dirty (waiting)"/>
                         </group>
                     </group>
 
@@ -28,21 +28,21 @@
                         <field name="cron_status" readonly="1" class="font-monospace small"/>
                     </group>
 
-                    <group string="Indexeringskö">
+                    <group string="Indexing Queue">
                         <field name="queue_status" readonly="1" nolabel="1"
                                class="font-monospace small"/>
                     </group>
 
                     <notebook>
                         <page name="categories" string="Kategorier">
-                            <group string="Hälsa per kategori (artefakttyp)">
+                            <group string="Health per category (artifact type)">
                                 <field name="line_ids" nolabel="1">
                                     <list>
                                         <field name="health" widget="badge"
                                                decoration-success="health == 'green'"
                                                decoration-warning="health == 'yellow'"
                                                decoration-danger="health == 'red'"
-                                               string="Hälsa"/>
+                                               string="Health"/>
                                         <field name="name" string="Kategori"/>
                                         <field name="kind"/>
                                         <field name="concept_count"/>
@@ -60,14 +60,14 @@
                                         <button name="action_index_all" type="object"
                                                 string="Allt" class="btn-secondary"/>
                                         <button name="action_index_month" type="object"
-                                                string="Månad" class="btn-secondary"/>
+                                                string="Month" class="btn-secondary"/>
                                         <button name="action_index_today" type="object"
                                                 string="Idag" class="btn-secondary"/>
                                     </list>
                                 </field>
                             </group>
                         </page>
-                        <page name="manual_runs" string="Manuella körningar (globalt)">
+                        <page name="manual_runs" string="Manual runs (global)">
                             <group>
                                 <div class="row">
                                     <div class="col-6">
@@ -77,12 +77,12 @@
                                     </div>
                                     <div class="col-6">
                                         <button name="action_index_month" type="object"
-                                                string="📅 Indexera ändrade denna månad"
+                                                string="📅 Index changed this month"
                                                 class="btn-secondary btn-block mb-2"/>
                                     </div>
                                     <div class="col-6">
                                         <button name="action_index_today" type="object"
-                                                string="⏱ Indexera ändrade idag"
+                                                string="⏱ Index changed today"
                                                 class="btn-secondary btn-block mb-2"/>
                                     </div>
                                     <div class="col-12 mt-2">

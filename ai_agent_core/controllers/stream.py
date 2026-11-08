@@ -60,9 +60,7 @@ except Exception as _qia_err:  # noqa: BLE001 — vid tidig import kan
     # controllers-paketet. Men utfallet måste synas: utan loggen blev A5
     # (TypeError → 500 i stället för 403) osynligt.
     _logger.warning(
-        'Kunde inte importera _quest_is_accessible (%s: %s) — '
-        'åtkomstkontrollen för quests är AVSTÄNGD tills modulen är '
-        'fulladdat. /ai/stream svarar 403 för quest-bundna sessioner.',
+        'Could not import _quest_is_accessible (%s: %s) — the quest access check is OFF until the module is fully loaded. /ai/stream answers 403 for quest-bound sessions.',
         type(_qia_err).__name__, _qia_err)
     _quest_is_accessible = None
 
@@ -230,7 +228,7 @@ def _require_session_owner(session_id):
         return session, None
 
     _logger.warning(
-        'Ägarkontroll nekad: uid %s försökte nå session %s som ägs av uid %s',
+        'Owner check denied: uid %s tried to reach session %s owned by uid %s',
         user.id, session.id, session.user_id.id)
     return None, Response(
         json.dumps({'error': 'Forbidden'}),
@@ -331,9 +329,7 @@ class AIStreamController(http.Controller):
                     'default-medarbetare — nekar anropet')
                 return Response(
                     json.dumps({
-                        "error": "Ingen AI-medarbetare vald. Ange "
-                                 "coworker_id, eller sätt en Default AI "
-                                 "Coworker i Inställningar → AI Agents."
+                        "error": "No AI Coworker selected. Pass coworker_id, or set a Default AI Coworker in Settings → AI Agents."
                     }),
                     status=400,
                     content_type='application/json',
@@ -353,8 +349,7 @@ class AIStreamController(http.Controller):
                     # ut som en serverkrasch. Fail-closed: neka med orsak.
                     if _quest_is_accessible is None:
                         _logger.error(
-                            '/ai/stream: _quest_is_accessible är None '
-                            '(importfel) — nekar anropet')
+                            '/ai/stream: _quest_is_accessible is None (import error) — denying the call')
                         return Response(
                             json.dumps({"error": "Quest access check unavailable"}),
                             status=403,
@@ -910,9 +905,9 @@ class AIStreamController(http.Controller):
                                 gen_coworker_id)
                             yield ("data: " + json.dumps({
                                 'type': 'error',
-                                'message': ('Ingen AI-leverantör konfigurerad '
-                                            'för denna medarbetare. Kontrollera '
-                                            'agentens modell eller '
+                                'message': ('No AI provider configured '
+                                            'for this coworker. Check the agent '
+                                            'model or '
                                             'ai_agent_core.default_model_id.'),
                             }) + "\n\n")
                             return
@@ -1326,8 +1321,7 @@ class AIStreamController(http.Controller):
                     ProviderRetriesExhausted)
                 if isinstance(e, ProviderRetriesExhausted):
                     _logger.warning(
-                        'provider gav upp efter %s försök (%s) — streamen '
-                        'avslutas med fel', e.attempts, e.last_reason)
+                        'provider gave up after %s attempts (%s) — the stream ends with an error', e.attempts, e.last_reason)
                 else:
                     _logger.error("SSE stream error: %s", e, exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -1399,7 +1393,7 @@ class AIStreamController(http.Controller):
             )
 
         default_qid = str(default_quest.id) if default_quest else ''
-        default_qname = escape(default_quest.name) if default_quest else 'Allmän assistent'
+        default_qname = escape(default_quest.name) if default_quest else 'General Assistant'
 
         # Load user's threads (most recent 50)
         thread_items = ''
@@ -1409,7 +1403,7 @@ class AIStreamController(http.Controller):
                 ('active', '=', True),
             ], order='write_date desc', limit=50)
             for s in sessions:
-                name = s.name or 'Tråd'
+                name = s.name or 'Thread'
                 thread_items += (
                     f'<div class="thread-item" data-id="{s.id}" data-name="{escape(name)}">'
                     f'<span class="thread-icon">📝</span>'
@@ -1482,7 +1476,7 @@ class AIStreamController(http.Controller):
                 user_groups = set(request.env.user.groups_id.ids)
                 if not (user_groups & set(skill.group_ids.ids)):
                     _logger.warning(
-                        'skill_get nekad: uid %s saknar grupp för skill %s',
+                        'skill_get denied: uid %s lacks the group for skill %s',
                         request.env.user.id, skill.id)
                     return Response(json.dumps({'error': 'Forbidden'}),
                                   status=403,
@@ -1649,7 +1643,7 @@ class AIStreamController(http.Controller):
         return Response(json.dumps({
             "threads": [{
                 "id": s.id,
-                "name": s.name or 'Tråd',
+                "name": s.name or 'Thread',
                 "coworker_id": s.coworker_id.id if s.coworker_id else None,
                 "skill_id": s.skill_id.id if s.skill_id else None,
                 "last_activity": str(s.write_date) if s.write_date else None,
@@ -1671,7 +1665,7 @@ class AIStreamController(http.Controller):
         user = request.env.user
         # Parse JSON body for type='http' POST
         body = json.loads(request.httprequest.data or '{}')
-        name = body.get('name', 'Ny tråd')
+        name = body.get('name', 'New Thread')
         # Clean name: remove newlines, collapse spaces, trim, limit length
         name = ' '.join(str(name).split())[:50]
         coworker_id = body.get('coworker_id') or body.get('quest_id')
@@ -2004,7 +1998,7 @@ class AIStreamController(http.Controller):
         return Response(json.dumps({
             "threads": [{
                 "id": s.id,
-                "name": s.name or 'Tråd',
+                "name": s.name or 'Thread',
                 "last_activity": str(s.write_date) if s.write_date else None,
             } for s in sessions]
         }), content_type='application/json')
@@ -2101,13 +2095,12 @@ class AIStreamController(http.Controller):
         # vem som helst bränna en coworker's budget genom att gissa ett id.
         if _quest_is_accessible is None:
             _logger.error(
-                'powerbox_run: _quest_is_accessible är None (importfel) — '
-                'nekar anropet i stället för att köra oskyddat')
+                'powerbox_run: _quest_is_accessible is None (import error) — denying the call instead of running unprotected')
             return Response(json.dumps({"error": "Forbidden"}),
                           content_type='application/json', status=403)
         if not _quest_is_accessible(quest, request.env.user):
             _logger.warning(
-                'powerbox_run nekad: uid %s saknar åtkomst till coworker %s',
+                'powerbox_run denied: uid %s has no access to coworker %s',
                 request.env.user.id, quest.id)
             return Response(json.dumps({"error": "Forbidden"}),
                           content_type='application/json', status=403)
@@ -2159,8 +2152,7 @@ class AIStreamController(http.Controller):
             own = user.personal_coworker_id
             if not candidate.exists() or not own or candidate.id != own.id:
                 _logger.warning(
-                    '/learn nekad: uid %s försökte skriva till coworker %s '
-                    '(egen companion: %s)',
+                    '/learn denied: uid %s tried to write to coworker %s (own companion: %s)',
                     user.id, coworker_id, own.id if own else None)
                 return Response(json.dumps({
                     "error": "You can only teach your own companion"
@@ -2182,7 +2174,7 @@ class AIStreamController(http.Controller):
 
         # Determine what to update based on learning content
         learning_lower = learning.lower()
-        if any(kw in learning_lower for kw in ('föredrar', 'prefer', 'gillar', 'like', 'korta svar', 'short answer', 'stil', 'style')):
+        if any(kw in learning_lower for kw in ('prefers', 'prefer', 'gillar', 'like', 'korta svar', 'short answer', 'stil', 'style')):
             identity.style = (identity.style or '') + f'\n- {learning}'
             field_updated = 'style'
         elif any(kw in learning_lower for kw in ('jobbar med', 'work with', 'arbetar', 'fokus', 'focus', 'domain')):
@@ -2240,7 +2232,7 @@ class AIStreamController(http.Controller):
                 session._set_record_context(
                     request.env[model].browse(int(res_id)))
                 return {'success': True, 'count': 1}
-            return {'success': False, 'error': 'res_id eller res_ids krävs'}
+            return {'success': False, 'error': 'res_id or res_ids is required'}
         except Exception as e:
             _logger.warning('record_context: misslyckades: %s', e)
             return {'success': False, 'error': str(e)}
@@ -2305,7 +2297,7 @@ class AIStreamController(http.Controller):
             if not (user.id == request.env.ref('base.user_admin').id
                     or user.has_group('base.group_system')):
                 _logger.warning(
-                    'memory_archive nekad: uid %s mot sessionslöst minne %s',
+                    'memory_archive denied: uid %s against sessionless memory %s',
                     user.id, memory.id)
                 return Response(json.dumps({"error": "Forbidden"}),
                               status=403, content_type='application/json')
@@ -2322,7 +2314,7 @@ class AIStreamController(http.Controller):
         coworker_id = body.get('coworker_id')
         guidance_text = body.get('guidance', '')
         if not guidance_text.strip():
-            return Response(json.dumps({"error": "Tom förbättringstext"}),
+            return Response(json.dumps({"error": "Empty improvement text"}),
                           content_type='application/json', status=400)
         quest = request.env['ai.coworker'].sudo().browse(int(coworker_id)) if coworker_id else None
         if not quest or not quest.exists():
@@ -2331,7 +2323,7 @@ class AIStreamController(http.Controller):
         is_admin = user.has_group('base.group_system')
         is_owner = quest.user_id and quest.user_id.id == user.id
         if not (is_admin or is_owner):
-            return Response(json.dumps({"error": "Saknar rättighet"}),
+            return Response(json.dumps({"error": "Missing permission"}),
                           content_type='application/json', status=403)
         memory = request.env['ai.memory'].sudo().create({
             'name': f'Forbattring: {guidance_text[:80]}',
@@ -2485,7 +2477,7 @@ def _start_title_thread(session):
         session._maybe_update_title_async()
     except Exception as _title_err:  # noqa: BLE001 — får aldrig fälla en körning
         _logger.warning(
-            'Titel-uppdatering misslyckades för session %s: %s',
+            'Title update failed for session %s: %s',
             getattr(session, 'id', '?'), _title_err)
 
 
@@ -2502,7 +2494,7 @@ def _start_title_thread(session):
 # villkor som stream-vägen redan lever under.
 
 APPROVAL_TIMEOUT = 60.0
-"""Tid ett /tools/run-anrop väntar på ett mänskligt svar (sekunder)."""
+"""Time a /tools/run call waits for a human answer (seconds)."""
 
 
 def _approval_key(sess):
@@ -2582,7 +2574,7 @@ async def _wait_for_approval(handler, request_id, timeout=None):
 def _log_approval(sess, tool_name, request_id, args):
     """Logga ett godkännande — utan argumentvärden (4.2)."""
     _logger.info(
-        'tools/run GODKÄNT: tool=%s session=%s request=%s user=%s arg_keys=%s',
+        'tools/run APPROVED: tool=%s session=%s request=%s user=%s arg_keys=%s',
         tool_name, getattr(sess, 'id', 0), request_id,
         getattr(request.env.user, 'id', 0) if request else '-',
         sorted(args.keys()) if isinstance(args, dict) else [])
@@ -2661,7 +2653,7 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
         ], limit=20)
         if memories:
             items = [f"- {m.content}" for m in memories]
-            parts.append("## Lärt om denna quest\n" + "\n".join(items))
+            parts.append("## Learned about this coworker\n" + "\n".join(items))
     except Exception as e:
         _logger.warning('quest-memory (consolidated) misslyckades: %s', e)
 
@@ -3157,8 +3149,7 @@ def _persist_session_with_retry(cr, env, sess, response_text, input_t,
                 pass  # best-effort: tyst fallback — se etiketteringsregeln
             if attempt >= max_attempts - 1:
                 _logger.warning(
-                    'session %s: persist misslyckades även efter retries '
-                    '(serialization) — svaret levererades men loggades inte',
+                    'session %s: persist failed even after retries (serialization) — the answer was delivered but not logged',
                     sess.id if sess else '?')
                 return False
             time.sleep(0.15 * (attempt + 1))
@@ -3209,8 +3200,7 @@ def _drain_tasks_with_timeout(loop, timeout=5.0):
         return True
     except (asyncio.TimeoutError, TimeoutError):
         _logger.warning(
-            'efter-strömmens uppstädning överskred %.1fs — avbryter '
-            '(%d task(s) kvar); turen är redan persisterad',
+            'post-stream cleanup exceeded %.1fs — aborting (%d task(s) left); the turn is already persisted',
             timeout, len(tasks))
         for t in tasks:
             try:
@@ -3219,7 +3209,7 @@ def _drain_tasks_with_timeout(loop, timeout=5.0):
                 pass  # best-effort: tyst fallback — se etiketteringsregeln
         return False
     except Exception as e:
-        _logger.warning('efter-strömmens uppstädning misslyckades: %s', e)
+        _logger.warning('post-stream cleanup failed: %s', e)
         return False
 
 
@@ -3267,9 +3257,9 @@ def _extract_text(filename: str, content: bytes) -> str:
             reader = PyPDF2.PdfReader(io.BytesIO(content))
             return '\n'.join(p.extract_text() or '' for p in reader.pages)
         except ImportError:
-            return f"[PDF kräver PyPDF2 — {len(content)} bytes]"
+            return f"[PDF requires PyPDF2 — {len(content)} bytes]"
         except Exception as e:
-            return f"[PDF-fel: {e}]"
+            return f"[PDF error: {e}]"
 
     # Word .docx
     elif ext == 'docx':
@@ -3278,7 +3268,7 @@ def _extract_text(filename: str, content: bytes) -> str:
             doc = docx.Document(io.BytesIO(content))
             return '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
         except ImportError:
-            return f"[DOCX kräver python-docx — {len(content)} bytes]"
+            return f"[DOCX requires python-docx — {len(content)} bytes]"
         except Exception as e:
             return f"[DOCX-fel: {e}]"
 
@@ -3297,7 +3287,7 @@ def _extract_text(filename: str, content: bytes) -> str:
                         text.append(row_text)
             return '\n'.join(text)
         except ImportError:
-            return f"[XLSX kräver openpyxl — {len(content)} bytes]"
+            return f"[XLSX requires openpyxl — {len(content)} bytes]"
         except Exception as e:
             return f"[XLSX-fel: {e}]"
 
@@ -3316,7 +3306,7 @@ def _extract_text(filename: str, content: bytes) -> str:
                                 text.append(para.text)
             return '\n'.join(text)
         except ImportError:
-            return f"[PPTX kräver python-pptx — {len(content)} bytes]"
+            return f"[PPTX requires python-pptx — {len(content)} bytes]"
         except Exception as e:
             return f"[PPTX-fel: {e}]"
 
@@ -3361,18 +3351,18 @@ def _extract_text(filename: str, content: bytes) -> str:
                 os.unlink(tmp_out_path)
                 return text
             os.unlink(tmp_in_path)
-            return f"[LibreOffice misslyckades för {filename}]"
+            return f"[LibreOffice failed for {filename}]"
         except FileNotFoundError:
-            return f"[LibreOffice ej installerat — {filename} kan ej läsas]"
+            return f"[LibreOffice not installed — {filename} cannot be read]"
         except Exception as e:
-            return f"[{ext.upper()}-fel: {e}]"
+            return f"[{ext.upper()} error: {e}]"
 
     # Fallback: try UTF-8
     else:
         try:
             return content.decode('utf-8')
         except Exception:
-            return f"[Binär fil: {filename} ({len(content)} bytes) — formatet '{ext}' stöds ej]"
+            return f"[Binary file: {filename} ({len(content)} bytes) — the format '{ext}' is not supported]"
 
 
 def _chunk_text(text: str, max_chars: int = 2000) -> list:
@@ -3567,8 +3557,7 @@ class PICallbackController(http.Controller):
         if session.user_id.id == uid:
             return True
         _logger.warning(
-            'Callback-nekad: API-nyckel för uid %s mot session %s som ägs '
-            'av uid %s', uid, session.id, session.user_id.id)
+            'Callback denied: API key for uid %s against session %s owned by uid %s', uid, session.id, session.user_id.id)
         return False
 
     @http.route('/pi/task/<int:task_id>', type='http', auth='public',
@@ -3808,8 +3797,7 @@ class AIOpenAIAPI(http.Controller):
                 winner = min(previous, q.id)
                 loser = max(previous, q.id)
                 _logger.warning(
-                    "Två aktiva coworkers med openai_api delar name %r: "
-                    "id %s annonseras, id %s utelämnas",
+                    "Two active coworkers with openai_api share the name %r: id %s is announced, id %s is omitted",
                     model_id, winner, loser)
                 if q.id > previous:
                     continue
@@ -4139,7 +4127,7 @@ class AIOpenAIAPI(http.Controller):
             return self._json_error('Session not found', 'invalid_request_error', 404)
         if session.user_id != request.env.user:
             return self._json_error(
-                'Sessionen tillhör en annan användare.',
+                'The session belongs to another user.',
                 'permission_error', 403)
 
         lines = session.session_line_ids.sorted('sequence')
@@ -4183,7 +4171,7 @@ class AIOpenAIAPI(http.Controller):
             return self._json_error('Session not found', 'invalid_request_error', 404)
         if session.user_id != request.env.user:
             return self._json_error(
-                'Handover sker inom samma användare.',
+                'Handover happens within the same user.',
                 'permission_error', 403)
         pi_session_id = (body.get('pi_session_id') or '').strip()
         try:
@@ -4192,7 +4180,7 @@ class AIOpenAIAPI(http.Controller):
             return self._json_error(str(exc), 'invalid_request_error', 400)
         if not ok:
             return self._json_error(
-                'Sessionen ägs redan av en annan Pi (låset kunde inte tas).',
+                'The session is already owned by another Pi (the lock could not be taken).',
                 'conflict_error', 409)
         return Response(json.dumps({
             'session_id': session.id,
@@ -4351,13 +4339,12 @@ class AIOpenAIAPI(http.Controller):
                     ._extract_pi_session_marker(*marker_texts)
                 if pi_session_id:
                     _logger.info(
-                        'pi_session_id saknades i body — hittade markör i '
-                        'meddelandet: %s', pi_session_id)
+                        'pi_session_id was missing from the body — found a marker in the message: %s', pi_session_id)
             except Exception as e:
                 # Best-effort: markören är en extra transport. Ett fel här
                 # får inte fälla requesten (t.ex. kompakterings-anrop).
                 _logger.warning(
-                    'pi_session_id-markör kunde inte extraheras: %s', e)
+                    'the pi_session_id marker could not be extracted: %s', e)
                 pi_session_id = ''
 
         return self._run_coworker_chat(
@@ -4475,7 +4462,7 @@ class AIOpenAIAPI(http.Controller):
             (['disk', 'minne', 'memory', 'load', 'cpu', 'i/o'], [
                 'salt_disk_usage', 'salt_memory_usage', 'salt_system_load',
                 'salt_process_list']),
-            (['service', 'tjänst', 'systemd', 'restart', 'nere', 'down'], [
+            (['service', 'service', 'systemd', 'restart', 'nere', 'down'], [
                 'salt_service_status', 'salt_service_restart',
                 'salt_journal_errors']),
             (['postgres', 'replication', 'database', 'databas', 'pg_'], [
@@ -4490,7 +4477,7 @@ class AIOpenAIAPI(http.Controller):
                 'zabbix_get_alerts', 'zabbix_get_problems',
                 'zabbix_get_triggers', 'zabbix_get_host',
                 'zabbix_get_item']),
-            (['wazuh', 'cve', 'säkerhet', 'security', 'correlat'], [
+            (['wazuh', 'cve', 'security', 'security', 'correlat'], [
                 'wazuh_agent_status', 'wazuh_recent_alerts',
                 'wazuh_cve_list']),
             (['minion', 'pillar', 'grain', 'highstate'], [
@@ -4668,7 +4655,7 @@ class AIOpenAIAPI(http.Controller):
                 _logger.info('supervisor skill-select: %d/%d skills (%s)',
                              len(_chosen), len(skill_recs),
                              ','.join(s.name or '?' for s in _chosen)[:200])
-                skill_ctx = '\n\n## Skills (följ dessa vid behov)\n' + '\n'.join(
+                skill_ctx = '\n\n## Skills (follow these when needed)\n' + '\n'.join(
                     f'### {s.name}\n{s.recipe_text or s.description or ""}'
                     for s in _chosen)
                 system_prompt = (system_prompt or '') + skill_ctx
@@ -4698,8 +4685,7 @@ class AIOpenAIAPI(http.Controller):
                 return sess
             except Exception as e:
                 _logger.warning(
-                    'session find-or-create misslyckades (fortsätter utan '
-                    'session): %s', e)
+                    'session find-or-create failed (continuing without a session): %s', e)
                 return env['ai.coworker.session'].browse(0)
 
         def _cost_context_prompt_block(sess):
@@ -4746,24 +4732,17 @@ class AIOpenAIAPI(http.Controller):
                     '\n\n## Kostnadskontext\n'
                     'Aktuell kontext: '
                     f'{chr(44).join(cc) if cc else "ingen (saknas)"}'
-                    f'. Bekräftad: {"ja" if confirmed else "nej"}.\n'
+                    f'. Confirmed: {"yes" if confirmed else "no"}.\n'
                 )
                 if not confirmed:
                     block += (
-                        'Alla sessioner är kostnadsbärande arbete. Om '
-                        'kostnadskontext saknas: ställ frågan nedan till '
-                        'användaren, EN gång per session.\n'
-                        + (f'Fråga: "{question}"\n' if question else
-                           'Fråga: "Vilket projekt gäller detta arbete? '
-                           '(eller kund om projekt saknas)"\n')
-                        + 'När användaren svarat: bekräfta att kostnaden '
-                          'belastar projektet/kunden och anropa '
-                          'cost_context_set (kolla först med '
-                          'cost_context_get). Ställ ALDRIG om frågan när '
-                          'cost_context_confirmed är satt.\n'
+                        'All sessions are billable work. If cost context is missing: ask the user the question below, ONCE per session.\n'
+                        + (f'Question: "{question}"\n' if question else
+                           'Question: "Which project does this work belong to? (or customer if there is no project)"\n')
+                        + 'Once the user has answered: confirm that the cost is charged to the project/customer and call cost_context_set (check with cost_context_get first). NEVER ask the question again when cost_context_confirmed is set.\n'
                     )
                 else:
-                    block += 'Fråga inte om kostnadskontext igen.\n'
+                    block += 'Do not ask about cost context again.\n'
                 return block
             except Exception as e:
                 # Kostnadskontext-injektion-stream 3.1: felet får inte tyst
@@ -4917,9 +4896,7 @@ class AIOpenAIAPI(http.Controller):
                 provider, provider_model = resolve_coworker_or_default(quest)
                 if provider is None:
                     raise ValueError(
-                        'Ingen AI-leverantör konfigurerad för medarbetaren. '
-                        'Kontrollera agentens modell eller '
-                        'ai_agent_core.default_model_id.')
+                        'No AI provider configured for the coworker. Check the agent model or ai_agent_core.default_model_id.')
                 # OBS: ProviderFactory returnerar (provider, ai.model-record),
                 # INTE modellnamn. Använd model_name (sträng) för provider.chat.
                 gen_model = model_name
@@ -4943,8 +4920,7 @@ class AIOpenAIAPI(http.Controller):
                     max_tokens = _model_budget or 16384
                 elif _model_budget and max_tokens > _model_budget:
                     _logger.info(
-                        'max_tokens %s överstiger modellens max_output_tokens '
-                        '%s — klampar till modellens budget',
+                        'max_tokens %s exceeds the model max_output_tokens %s — clamping to the model budget',
                         max_tokens, _model_budget)
                     max_tokens = _model_budget
 
@@ -5083,8 +5059,7 @@ class AIOpenAIAPI(http.Controller):
                 max_tokens = _model_budget or 16384
             elif _model_budget and max_tokens > _model_budget:
                 _logger.info(
-                    'max_tokens %s överstiger modellens max_output_tokens '
-                    '%s — klampar till modellens budget (streaming)',
+                    'max_tokens %s exceeds the model max_output_tokens %s — clamping to the model budget (streaming)',
                     max_tokens, _model_budget)
                 max_tokens = _model_budget
 
@@ -5166,7 +5141,7 @@ class AIOpenAIAPI(http.Controller):
                         _gen_cr.commit()
                     except Exception:
                         _logger.warning(
-                            'kunde inte committa före stream', exc_info=True)
+                            'could not commit before the stream', exc_info=True)
 
                     # HYBRID: REN streaming-generering — Pi:s messages +
                     # tools skickas oförändrade; tool_calls emitteras till Pi.
@@ -5391,7 +5366,7 @@ class AIOpenAIAPI(http.Controller):
                             _item = _chunk_q.get(timeout=300)
                         except _queue.Empty:
                             _logger.error(
-                                'stream timeout: ingen chunk på 300s')
+                                'stream timeout: no chunk for 300s')
                             break
                         if _item is _SENTINEL:
                             break
@@ -5422,7 +5397,7 @@ class AIOpenAIAPI(http.Controller):
                             _gen_cr.commit()
                         except Exception:
                             _logger.warning(
-                                'kunde inte committa före persist',
+                                'could not commit before persist',
                                 exc_info=True)
                         _sess = _gen_env['ai.coworker.session'].browse(
                             _sess_id)
@@ -5734,7 +5709,7 @@ class AIOpenAIAPI(http.Controller):
                     quest.sudo()._apply_standing_rules(_permissions)
                 except Exception:
                     _logger.warning(
-                        'kunde inte läsa stående regler för coworker %s',
+                        'could not read the standing rules for coworker %s',
                         getattr(quest, 'name', '?'), exc_info=True)
                 # `auto_allow_tools` prövas BARA i CUSTOM-läget (AUTO
                 # släpper igenom allt ändå). Två fall måste båda sluta i

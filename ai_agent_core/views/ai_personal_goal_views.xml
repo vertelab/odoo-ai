@@ -23,14 +23,14 @@
         <field name="name">ai.personal.goal.form</field>
         <field name="model">ai.personal.goal</field>
         <field name="arch" type="xml">
-            <form string="Personligt mål">
+            <form string="Personal Goal">
                 <header>
                     <field name="status" widget="statusbar"
                            statusbar_visible="proposed,accepted,active,completed"/>
                     <button name="action_accept" type="object" string="Acceptera"
                             class="btn-success"
                             invisible="status != 'proposed'"/>
-                    <button name="action_complete" type="object" string="Slutför"
+                    <button name="action_complete" type="object" string="Complete"
                             class="btn-success"
                             invisible="status != 'active'"/>
                     <button name="action_cancel" type="object" string="Avbryt"
@@ -56,15 +56,15 @@
                     <group string="SMART-kriterier">
                         <group>
                             <field name="specific" string="Specifik"
-                                   placeholder="Vad exakt vill du uppnå?"/>
-                            <field name="measurable" string="Mätbar"
-                                   placeholder="Hur mäts framsteg?"/>
-                            <field name="achievable" string="Genomförbar"
-                                   placeholder="Är målet realistiskt?"/>
+                                   placeholder="What exactly do you want to achieve?"/>
+                            <field name="measurable" string="Measurable"
+                                   placeholder="How is progress measured?"/>
+                            <field name="achievable" string="Feasible"
+                                   placeholder="Is the goal realistic?"/>
                         </group>
                         <group>
                             <field name="relevant" string="Relevant"
-                                   placeholder="Varför spelar detta roll?"/>
+                                   placeholder="Why does this matter?"/>
                             <field name="time_bound" string="Tidsatt (deadline)"/>
                             <field name="description" string="Beskrivning"/>
                         </group>
@@ -99,15 +99,15 @@
         <field name="name">ai.personal.goal.search</field>
         <field name="model">ai.personal.goal</field>
         <field name="arch" type="xml">
-            <search string="Personliga Mål">
+            <search string="Personal Goals">
                 <field name="name"/>
                 <field name="user_id"/>
                 <field name="category"/>
-                <filter name="proposed" string="AI-föreslagna" domain="[('status','=','proposed')]"/>
+                <filter name="proposed" string="AI-proposed" domain="[('status','=','proposed')]"/>
                 <filter name="active" string="Aktiva" domain="[('status','=','active')]"/>
-                <filter name="completed" string="Slutförda" domain="[('status','=','completed')]"/>
+                <filter name="completed" string="Completed" domain="[('status','=','completed')]"/>
                 <separator/>
-                <filter name="my_goals" string="Mina mål"
+                <filter name="my_goals" string="My Goals"
                         domain="[('user_id','=',uid)]"/>
             </search>
         </field>

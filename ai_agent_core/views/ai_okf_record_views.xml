@@ -40,7 +40,7 @@
                     </group>
 
                     <notebook>
-                        <page string="Sammanfattning (söks och embeddas)"
+                        <page string="Summary (searched and embedded)"
                               name="summary">
                             <field name="okf_summary" readonly="1"
                                    nolabel="1"/>
@@ -52,11 +52,11 @@
                 </sheet>
                 <footer>
                     <button name="action_okf_index_now" type="object"
-                            string="Kör indexering nu" class="btn-primary"
+                            string="Run indexing now" class="btn-primary"
                             invisible="not okf_dirty"/>
                     <button name="action_okf_show_concepts" type="object"
                             string="Visa koncepten"/>
-                    <button string="Stäng" class="btn-secondary"
+                    <button string="Close" class="btn-secondary"
                             special="cancel"/>
                 </footer>
             </form>

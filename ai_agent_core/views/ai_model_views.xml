@@ -285,7 +285,7 @@
                             </group>
                         </page>
                         <page string="Usage" name="usage">
-                            <group string="Användning">
+                            <group string="Usage">
                                 <field name="llm_count" readonly="1"/>
                                 <field name="session_line_count" readonly="1"/>
                             </group>

@@ -23,7 +23,7 @@
                             </div>
                             <div class="well well-sm mb8 p-2 bg-light rounded">
                                 <field name="company_mission" readonly="1"
-                                       placeholder="Ingen mission satt ännu..."
+                                       placeholder="No mission set yet..."
                                        class="d-inline"/>
                             </div>
                             <div class="d-flex align-items-center gap-2">
@@ -31,7 +31,7 @@
                                         string="✏️ Redigera" class="oe_link"/>
                                 <span class="text-muted small mx-2">|</span>
                                 <button type="object" name="action_suggest_mission"
-                                        string="💡 Skapa förslag från webben"
+                                        string="💡 Create suggestions from the web"
                                         class="oe_link"/>
                                 <span class="text-muted small ms-3">
                                     Senast: <field name="company_mission_last_review" class="d-inline"/>
@@ -47,7 +47,7 @@
                             </div>
                             <div class="well well-sm mb8 p-2 bg-light rounded">
                                 <field name="company_values" readonly="1"
-                                       placeholder="Inga values satta ännu..."
+                                       placeholder="No values set yet..."
                                        class="d-inline"/>
                             </div>
                             <div class="d-flex align-items-center gap-2">
@@ -55,7 +55,7 @@
                                         string="✏️ Redigera" class="oe_link"/>
                                 <span class="text-muted small mx-2">|</span>
                                 <button type="object" name="action_suggest_values"
-                                        string="💡 Skapa förslag från webben"
+                                        string="💡 Create suggestions from the web"
                                         class="oe_link"/>
                                 <span class="text-muted small ms-3">
                                     Senast: <field name="company_values_last_review" class="d-inline"/>
@@ -123,7 +123,7 @@
                         <setting id="personal_memory_settings" title="Personal Memory">
                             <div class="d-flex align-items-center gap-3">
                                 <field name="personal_memory_learning_enabled"/>
-                                <label for="personal_memory_learning_enabled" string="Lär från Discuss"/>
+                                <label for="personal_memory_learning_enabled" string="Learn from Discuss"/>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
                                 <field name="personal_memory_auto_nudge"/>
@@ -165,7 +165,7 @@
                         </setting>
 
                         <setting id="okf_budget_settings" title="Embedding-budget (OKF)"
-                                 help="Kostnaden belastar den coworker som utför indexeringen (session_line_count/started_mtokens).">
+                                 help="The cost is charged to the coworker that performs the indexing (session_line_count/started_mtokens).">
                             <div class="d-flex align-items-center gap-3">
                                 <label for="company_memory_coworker_id" string="Company-minne indexeras av"/>
                                 <field name="company_memory_coworker_id"/>
@@ -177,31 +177,31 @@
                         </setting>
 
                         <setting id="okf_dept_health_settings" title="Avdelningshälsa-trösklar (OKF)"
-                                 help="Gränsvärdena för röd/gul/grön avdelningshälsa — inte hårdkodade.">
+                                 help="The thresholds for red/yellow/green department health — not hardcoded.">
                             <div class="d-flex align-items-center gap-3">
                                 <label for="health_heartbeat_stale_days" string="Heartbeat stale efter"/>
                                 <field name="health_heartbeat_stale_days" class="d-inline"/>
                                 <span>dagar</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <label for="health_active_ratio" string="Grön kräver ≥"/>
+                                <label for="health_active_ratio" string="Green requires ≥"/>
                                 <field name="health_active_ratio" class="d-inline"/>
                                 <span>% heartbeatar</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <label for="health_no_session_days" string="Gul/röd utan session efter"/>
+                                <label for="health_no_session_days" string="Yellow/red without a session after"/>
                                 <field name="health_no_session_days" class="d-inline"/>
                                 <span>dagar</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <label for="health_zero_tokens_days" string="Röd vid 0 tokens efter"/>
+                                <label for="health_zero_tokens_days" string="Red at 0 tokens after"/>
                                 <field name="health_zero_tokens_days" class="d-inline"/>
                                 <span>dagar</span>
                             </div>
                         </setting>
 
                         <setting id="okf_catalog_settings" title="OKF-katalog (artefakttyper, resolvers, koncept)"
-                                 help="Status för det registrerbara artefakt-lagret — öppna listorna för att hantera.">
+                                 help="Status of the registrable artifact layer — open the lists to manage.">
                             <div class="d-flex align-items-center gap-3">
                                 <field name="okf_artifact_type_count" class="d-inline"/>
                                 <span>artefakttyper</span>
@@ -232,7 +232,7 @@
                              AI Coworker) — inte en lös provider eller modell.
                              Se models/res_config_settings.py för motivering. -->
                         <setting id="ai_google_api_key" title="Google API Key"
-                                 help="För YouTube-/Google-baserade AI-verktyg. Tomt → fallback till GOOGLE_API_KEY.">
+                                 help="For YouTube/Google-based AI tools. Empty → falls back to GOOGLE_API_KEY.">
                             <field name="ai_google_api_key" widget="password"/>
                         </setting>
                     </block>
@@ -274,7 +274,7 @@
                             <field name="ai_agent_default_identity_id"/>
                         </setting>
                         <setting id="agent_default_coworker" title="Default AI Coworker"
-                                 help="AI-medarbetaren som förväljs i webbchatten och används av onboarding när ingen annan är vald. Gäller per bolag.">
+                                 help="The AI Coworker preselected in the web chat and used by onboarding when no other is chosen. Per company.">
                             <!-- Förklaring i klartext (design D7). Syns utan
                                  hover med flit: mekanismen är osynlig tills
                                  den går fel, och den som felsöker läser inte
@@ -304,7 +304,7 @@
                         </setting>
                         <setting id="agent_default_tools"
                                  title="Default Tools (nya agenter)"
-                                 help="Vilka verktyg nya agenter får när de skapas utan explicita verktyg. Builtin-verktyg (describe_model, odoo_search m.fl.) syns här efter moduluppdatering.">
+                                 help="Which tools new agents get when created without explicit tools. Builtin tools (describe_model, odoo_search and others) appear here after a module update.">
                             <field name="ai_default_tool_ids" widget="many2many_tags"
                                    options="{'no_create_edit': True}"/>
                         </setting>
@@ -315,16 +315,16 @@
                          ════════════════════════════════════════════ -->
                     <!-- ════════════════════════════════ Heartbeat Settings ════════════════════════════════ -->
                     <block title="Heartbeat">
-                        <setting id="heartbeat_enabled" help="Slå på/av heartbeat för alla coworkers">
+                        <setting id="heartbeat_enabled" help="Turn heartbeat on/off for all coworkers">
                             <field name="heartbeat_enabled"/>
                         </setting>
-                        <setting id="heartbeat_interval" help="Hur ofta coworkers vaknar och kollar läget">
+                        <setting id="heartbeat_interval" help="How often coworkers wake and check in">
                             <field name="heartbeat_interval"/>
                         </setting>
-                        <setting id="heartbeat_max_tasks_per_tick" help="Antalstak: högst så här många uppgifter delas ut per tick">
+                        <setting id="heartbeat_max_tasks_per_tick" help="Count cap: at most this many tasks are handed out per tick">
                             <field name="heartbeat_max_tasks_per_tick"/>
                         </setting>
-                        <setting id="heartbeat_max_seconds_per_tick" help="Tidsgräns: sluta dela ut uppgifter efter så här många sekunder (300 = tickens 5-minutersfönster)">
+                        <setting id="heartbeat_max_seconds_per_tick" help="Time limit: stop handing out tasks after this many seconds (300 = the tick 5-minute window)">
                             <field name="heartbeat_max_seconds_per_tick"/>
                         </setting>
                     </block>
@@ -343,7 +343,7 @@
                                         <field name="cron_failure_count" readonly="1"/>
                                         <field name="cron_code" readonly="1"/>
                                         <button name="action_run_now" type="object"
-                                                string="Kör nu" icon="fa-play"/>
+                                                string="Run now" icon="fa-play"/>
                                     </group>
                                 </form>
                                 <list>

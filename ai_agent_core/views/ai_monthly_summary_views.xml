@@ -65,12 +65,12 @@
             <search>
                 <field name="coworker_id"/>
                 <field name="month"/>
-                <filter string="Denna månad" name="this_month"
+                <filter string="This Month" name="this_month"
                         domain="[('month', '=', context_today().strftime('%Y-%m'))]"/>
                 <separator/>
                 <group expand="0" string="Group By">
                     <filter string="Medarbetare" name="group_quest" context="{'group_by':'coworker_id'}"/>
-                    <filter string="Månad" name="group_month" context="{'group_by':'month'}"/>
+                    <filter string="Month" name="group_month" context="{'group_by':'month'}"/>
                 </group>
             </search>
         </field>

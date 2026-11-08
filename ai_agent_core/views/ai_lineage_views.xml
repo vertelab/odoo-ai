@@ -6,7 +6,7 @@
         <field name="arch" type="xml">
             <list string="AI Lineage">
                 <field name="kind"/>
-                <field name="from_ref" string="Från"/>
+                <field name="from_ref" string="From"/>
                 <field name="to_ref" string="Till"/>
                 <field name="note" optional="hide"/>
                 <field name="create_date" string="Skapad"/>
@@ -22,7 +22,7 @@
                 <group>
                     <group>
                         <field name="kind"/>
-                        <field name="from_ref" string="Från"/>
+                        <field name="from_ref" string="From"/>
                         <field name="to_ref" string="Till"/>
                     </group>
                     <group>

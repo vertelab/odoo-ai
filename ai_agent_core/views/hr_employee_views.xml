@@ -58,7 +58,7 @@
                         </group>
                         <group>
                             <button name="%(action_ai_coworker)d" type="action"
-                                string="Öppna i AI-coworker"
+                                string="Open in AI Coworker"
                                 class="btn-info"
                                 context="{'res_id': ai_coworker_id}"/>
                         </group>

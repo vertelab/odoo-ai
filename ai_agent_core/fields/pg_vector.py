@@ -26,9 +26,7 @@ try:
 except ImportError:
     Vector = None
     _logger.warning(
-        'pgvector python-paket saknas — vektorer skrivs som literaler. '
-        'Installera med: pip install pgvector (och lägg den i '
-        'external_dependencies).')
+        'The pgvector python package is missing — vectors are written as literals. Install with: pip install pgvector (and add it to external_dependencies).')
 
 
 def register_vector_adapter(cr):
