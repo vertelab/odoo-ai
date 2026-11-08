@@ -296,6 +296,16 @@
                                    invisible="not rounds"/>
                             <field name="round_inputs" readonly="1"
                                    invisible="not round_inputs"/>
+                            <!-- Tidsmätning per tur (kanalprestanda):
+                                 `invisible` när värdet är 0, så en synkron
+                                 kanal (0 = ej tillämpligt) inte visar tre
+                                 nollor som ser ut som en mätning. -->
+                            <field name="first_token_seconds" readonly="1"
+                                   invisible="not first_token_seconds"/>
+                            <field name="longest_gap_seconds" readonly="1"
+                                   invisible="not longest_gap_seconds"/>
+                            <field name="stream_seconds" readonly="1"
+                                   invisible="not stream_seconds"/>
                         </group>
                     </group>
                     <notebook>
