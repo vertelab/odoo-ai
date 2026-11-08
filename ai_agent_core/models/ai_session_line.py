@@ -58,7 +58,7 @@ class AICoworkerSessionLine(models.Model):
     _sql_constraints = [
         ('session_sequence_uniq',
          'UNIQUE(session_id, sequence)',
-         'Sekvensen måste vara unik inom en session.'),
+         'The sequence must be unique within a session.'),
     ]
 
     session_id = fields.Many2one(
@@ -71,20 +71,21 @@ class AICoworkerSessionLine(models.Model):
     # (`session_ids.session_line_ids`) vilket tvingar Odoo att materialisera
     # varje rad som ORM-objekt innan compute ens börjar.
     coworker_id = fields.Many2one(
-        'ai.coworker', string='AI Medarbetare',
+        'ai.coworker', string='AI Coworker',
         related='session_id.coworker_id', store=True, index=True)
     # Vilken agent/roll/skill/tool som producerade denna rad — för spårning
     # per agent & modell samt smartknappar från ai.agent/ai.tool/ai.skill.
     agent_id = fields.Many2one('ai.agent', string='Agent', index=True,
-        help='Den agent som producerade denna meddelanderad. Fylls vid '
-             'multi-agent-delegering (Väg A) och enkel-assistentrader där '
-             'agenten är känd.')
+        help='The agent that produced this message line. Filled on '
+             'multi-agent delegation (path A) and on single-assistant lines '
+             'where the agent is known.')
     skill_id = fields.Many2one('ai.skill', string='Skill', index=True,
-        help='Den skill som byggdes/testades i denna meddelanderad (där det '
-             'är känt, t.ex. från agentens skill eller en skill-sessionskontext).')
+        help='The skill that was built or tested on this message line, where '
+             'that is known (e.g. from the agent skill or a skill session '
+             'context).')
     tool_id = fields.Many2one('ai.tool', string='Tool', index=True,
-        help='Verktyget som anropades (för tool-rader). Fylls från '
-             'tool_name mot ai.tool så att ai.tool kan lista sina meddelanden.')
+        help='The tool that was called (on tool lines). Filled from tool_name '
+             'against ai.tool so that ai.tool can list its messages.')
     sequence = fields.Integer('Order', default=10)
     role = fields.Selection([
         ('user', 'User'),
@@ -98,26 +99,26 @@ class AICoworkerSessionLine(models.Model):
     # sessionens alla rader (mätt: 34 866 rader i en session).
     content_hash = fields.Char(
         'Content Hash', size=32, index=True, readonly=True,
-        help='md5 av role|tool_call_id|content. Används för att dedupa '
-             'Pi-poster — samma post ska bara ge en rad per session.')
+        help='md5 of role|tool_call_id|content. Used to dedupe Pi posts — the '
+             'same post must yield only one line per session.')
     content = fields.Text('Message Content')
     reasoning = fields.Text('Reasoning',
-        help='Modellens "gråa" tänketext (reasoning_content/reasoning) som '
-             'produsierades före detta meddelande; för granskning utan att det '
-             'visas i svaret.')
-    debug_info = fields.Text('Debug/Resonemang',
-        help='Agentens resonemang/narrering (visas inte i svaret till '
-             'användaren, men sparas här för granskning).')
-    source_urls = fields.Text('Käll-URL:er',
-        help='URL:er som agenten använde (en per rad).')
+        help='The model reasoning text (reasoning_content/reasoning) produced '
+             'before this message; kept for review without being shown in '
+             'the answer.')
+    debug_info = fields.Text('Debug/Reasoning',
+        help='The agent reasoning/narration (not shown in the answer to the '
+             'user, but stored here for review).')
+    source_urls = fields.Text('Source URLs',
+        help='URLs the agent used (one per line).')
     tool_calls = fields.Text('Tool Calls (JSON)')
     tool_name = fields.Char('Tool Name')
     tool_call_id = fields.Char('Tool Call ID', index=True,
-        help='OpenAI:s tool_call_id för tool-rader. Parade med assistant-'
-             'radens tool_calls[].id så att historiken kan skickas tillbaka '
-             'till providern i giltigt format. Utan detta avvisar strikta '
-             'providers (t.ex. deepseek) hela anropet med 422 '
-             '"missing field tool_call_id".')
+        help="OpenAI's tool_call_id for tool lines. Paired with the assistant "
+             "line's tool_calls[].id so the history can be sent back to the "
+             'provider in a valid format. Without it, strict providers (e.g. '
+             'deepseek) reject the whole call with 422 "missing field '
+             'tool_call_id".')
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
     # ── Per-varv-räkning (webui-show-work-again 4.1) ────────────────────
@@ -129,24 +130,24 @@ class AICoworkerSessionLine(models.Model):
     # Siffran är korrekt som debiteringsunderlag och rörs inte. Dessa två
     # fält bär UPPDELNINGEN, så talet går att förstå: hur många varv turen
     # gjorde och vad varje varv kostade i input.
-    rounds = fields.Integer('Varv', default=0,
-        help='Antal LLM-varv i turen. 1 = svarade direkt utan verktyg. '
-             'Varje varv skickar hela historiken igen, så token_input är '
-             'summan över dessa varv.')
+    rounds = fields.Integer('Rounds', default=0,
+        help='Number of LLM rounds in the turn. 1 = answered directly without '
+             'tools. Each round resends the whole history, so token_input is '
+             'the sum over those rounds.')
     round_inputs = fields.Text('Input per varv',
-        help='Kommaseparerade input-tokens per varv, i ordning. '
-             'Summan = token_input. Tom för rader skrivna före 2026-11-06.')
+        help='Comma-separated input tokens per round, in order. The sum equals '
+             'token_input. Empty for lines written before 2026-11-06.')
 
     # Systemtoken tracking
     model_real = fields.Char('Model Used',
         help='The actual model name returned by the provider (e.g. claude-sonnet-4-20250514)')
-    sys_multiplier = fields.Float('Systemtoken-multiplikator', default=1.0,
+    sys_multiplier = fields.Float('System Token Multiplier', default=1.0,
         help='Multiplier from ai.model at the time this line was created')
     token_sys = fields.Integer('Systemtokens', compute='_compute_token_sys', store=True,
-        help='DEBITERINGSGRUND: (token_input + token_output) × sys_multiplier. '
-             'Inkluderar Vertel-marginalen — detta är vad kunden debiteras, '
-             'INTE en kostnad. Faktisk kostnad i USD ligger på radens '
-             'cost_usd (utfall-och-tokenmatning). De två slås aldrig ihop.')
+        help='BILLING BASIS: (token_input + token_output) x sys_multiplier. '
+             'Includes the Vertel margin — this is what the customer is '
+             'charged, NOT a cost. The actual cost in USD sits on the line '
+             'cost_usd. The two are never merged.')
 
     # ── Utfall per rad (utfall-och-tokenmatning) ────────────────────────
     # Radens eget utfall. `TokenEvent`/`ChatResponse` bär redan
@@ -168,11 +169,11 @@ class AICoworkerSessionLine(models.Model):
         ('interrupted', 'Interrupted'),
         ('new_session', 'New Session'),
     ], string='Finish Reason',
-        help='Varför denna rads tur/steg slutade. Samma vokabulär som '
-             'sessionens finish_reason.')
+        help='Why this line turn/step ended. Same vocabulary as the session '
+             'finish_reason.')
     interrupted = fields.Boolean('Interrupted', default=False,
-        help='True när turen avbröts mitt i en ström och det levererade '
-             'prefixet bevarades.')
+        help='True when the turn was interrupted mid-stream and the delivered '
+             'prefix was preserved.')
 
     # ── Kostnad och osäkerhet (utfall-och-tokenmatning) ────────────────
     # Ögonblicksbilder från ai.model vid radens skapande — samma mönster
@@ -183,15 +184,16 @@ class AICoworkerSessionLine(models.Model):
     cost_output_1k = fields.Float('Output Cost per 1K', digits=(12, 8),
         help='Modellens output-pris per 1K tokens vid radens skapande.')
     cached_tokens = fields.Integer('Cached Tokens', default=0,
-        help='Antal input-tokens som var cache-träffar (billigare).')
+        help='Number of input tokens that were cache hits (cheaper).')
     usage_reported = fields.Boolean('Usage Reported', default=True,
-        help='False när providern inte rapporterade token-usage. Skiljer '
-             '"inga tokens" från "vi vet inte" — en omätt rad får inte se '
-             'gratis ut.')
+        help='False when the provider did not report token usage. Separates '
+             '"no tokens" from "we do not know" — an unmeasured line must not '
+             'look free.')
     cost_usd = fields.Float('Cost (USD)', compute='_compute_cost_usd',
         store=True, digits=(16, 8),
-        help='Faktisk kostnad i USD: (in − cached)/1000 × cost_input_1k '
-             '+ ut/1000 × cost_output_1k. Omätt (0) när usage_reported=False.')
+        help='Actual cost in USD: (in - cached)/1000 x cost_input_1k '
+             '+ out/1000 x cost_output_1k. Unmeasured (0) when '
+             'usage_reported=False.')
 
     @api.depends('token_input', 'token_output', 'cached_tokens',
                  'cost_input_1k', 'cost_output_1k', 'usage_reported')
@@ -218,7 +220,8 @@ class AICoworkerSessionLine(models.Model):
     # Migration 18.0.1.335 backfillar dem; create()/write() normaliserar
     # None → False så inget nytt NULL kan uppstå.
     informative = fields.Boolean('Informative', default=False, index=True,
-        help='True = raden är spårbarhet men räknas INTE i budget/burn rate.')
+        help='True = the line is traceability but is NOT counted in the budget '
+             'or burn rate.')
 
     @api.depends('token_input', 'token_output', 'sys_multiplier')
     def _compute_token_sys(self):
