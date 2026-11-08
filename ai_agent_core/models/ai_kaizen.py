@@ -45,8 +45,7 @@ class AIKaizenReport(models.Model):
     # 0.0 = ingen mätning — inte "noll rätt".
     eval_accuracy_trend = fields.Float(
         'Eval Accuracy', digits=(5, 4),
-        help='Accuracy från det senaste eval-runnet för medarbetaren. '
-             '0.0 betyder att inget run finns, inte att alla fall föll.')
+        help='Accuracy from the coworker latest eval run. 0.0 means no run exists, not that every case failed.')
 
     # Status
     status = fields.Selection([
@@ -219,8 +218,7 @@ class AIKaizenReport(models.Model):
 
         # Spårbarhet (task 3.3): logga varje cross-user-läsning.
         _logger.info(
-            'Kaizen cross-user-läsning: coworker=%s vecka %s..%s — '
-            '%d sessioner från %d användare',
+            'Kaizen cross-user read: coworker=%s week %s..%s — %d sessions from %d users',
             quest.name, week_start, week_end, len(sessions),
             len(set(sessions.mapped('user_id').ids)))
 
@@ -278,9 +276,9 @@ class AIKaizenReport(models.Model):
                 findings.append({
                     'severity': 'high',
                     'category': 'error',
-                    'finding': f"{data['error_count']} av {data['session_count']} sessioner ({pct:.0f}%) hade fel",
-                    'recommendation': f"Granska felorsakerna. Vanliga orsaker: timeout, tool crash, LLM refuse. "
-                                     f"Överväg att lägga till felhantering eller justera timeout.",
+                    'finding': f"{data['error_count']} of {data['session_count']} sessions ({pct:.0f}%) had errors",
+                    'recommendation': f"Review the error causes. Common causes: timeout, tool crash, LLM refusal. "
+                                     f"Consider adding error handling or adjusting the timeout.",
                     'evidence': f"Errors: {data['error_count']}/{data['session_count']} sessions",
                 })
 
@@ -288,18 +286,17 @@ class AIKaizenReport(models.Model):
             findings.append({
                 'severity': 'medium',
                 'category': 'cost',
-                'finding': f"Systemtoken-förbrukningen ökade med {data['cost_trend']:.0f}% jämfört med förra veckan",
-                'recommendation': "Överväg att byta till en billigare modell för rutinuppgifter, "
-                                 "eller sätta ett månadstak.",
-                'evidence': f"Denna vecka: {data['total_sys_tokens']:,} tokens. Trend: +{data['cost_trend']:.0f}%",
+                'finding': f"System token usage increased by {data['cost_trend']:.0f}% compared with last week",
+                'recommendation': "Consider switching to a cheaper model for routine tasks, or setting a monthly cap.",
+                'evidence': f"This week: {data['total_sys_tokens']:,} tokens. Trend: +{data['cost_trend']:.0f}%",
             })
 
         if data['feedback_count'] > 0:
             findings.append({
                 'severity': 'low',
                 'category': 'feedback',
-                'finding': f"{data['feedback_count']} förbättringsförslag mottogs denna vecka",
-                'recommendation': "Granska förbättringsförslagen och uppdatera questens beskrivning eller skills.",
+                'finding': f"{data['feedback_count']} improvement suggestions were received this week",
+                'recommendation': "Review the improvement suggestions and update the coworker description or skills.",
                 'evidence': f"Feedback count: {data['feedback_count']}",
             })
 
@@ -315,12 +312,10 @@ class AIKaizenReport(models.Model):
                     'severity': 'medium',
                     'category': 'performance',
                     'finding': (
-                        f"Eval-accuracy sjönk från {previous:.0%} till "
+                        f"Eval accuracy dropped from {previous:.0%} to "
                         f"{report.eval_accuracy_trend:.0%}"),
                     'recommendation': (
-                        'Granska de fall som föll i det senaste eval-runnet '
-                        'och åtgärda orsaken innan nästa vecka — annars '
-                        'mäter vi bara att det blev sämre.'),
+                        'Review the cases that failed in the latest eval run and fix the cause before next week — otherwise we only measure that it got worse.'),
                     'evidence': (
                         f"previous_accuracy={previous:.4f}, "
                         f"current_accuracy={report.eval_accuracy_trend:.4f}"),
@@ -333,11 +328,9 @@ class AIKaizenReport(models.Model):
             findings.append({
                 'severity': 'medium',
                 'category': 'outcome',
-                'finding': (f"{data['max_rounds_rate']*100:.0f}% av sessionerna "
-                            f"nådde max_rounds utan att bli klara"),
-                'recommendation': ("Förenkla uppgiften eller höj max_iterations. "
-                                   "Upprepade max_rounds betyder att loopen ger "
-                                   "upp, inte att modellen är färdig."),
+                'finding': (f"{data['max_rounds_rate']*100:.0f}% of the sessions "
+                            f"hit max_rounds without finishing"),
+                'recommendation': ("Simplify the task or raise max_iterations. Repeated max_rounds means the loop gives up, not that the model finished."),
                 'evidence': f"max_rounds_rate={data['max_rounds_rate']:.2f}",
             })
 
@@ -347,8 +340,7 @@ class AIKaizenReport(models.Model):
                 'category': 'outcome',
                 'finding': (f"{data['length_rate']*100:.0f}% av sessionerna "
                             f"trunkerades av modellens max_tokens"),
-                'recommendation': ("Höj modellens max_tokens eller be om kortare "
-                                   "svar. Trunkering tappar slutet på svaret."),
+                'recommendation': ("Raise the model max_tokens or ask for shorter answers. Truncation loses the end of the answer."),
                 'evidence': f"length_rate={data['length_rate']:.2f}",
             })
 
@@ -356,10 +348,9 @@ class AIKaizenReport(models.Model):
             findings.append({
                 'severity': 'low',
                 'category': 'cost',
-                'finding': (f"{data['usage_unreported']} rader saknade "
-                            f"token-usage — kostnaden är omätt"),
-                'recommendation': ("Kontrollera providerns usage-rapportering. "
-                                   "Omätt är inte gratis."),
+                'finding': (f"{data['usage_unreported']} lines had no "
+                            f"token usage — the cost is unmeasured"),
+                'recommendation': ("Check the provider usage reporting. Unmeasured is not free."),
                 'evidence': f"usage_unreported={data['usage_unreported']}",
             })
 
@@ -391,7 +382,7 @@ class AIKaizenReport(models.Model):
             metrics = json.loads(raw)
         except (TypeError, ValueError):
             _logger.warning(
-                'Kaizen: ai_agent_core.retention_metrics är inte JSON: %r',
+                'Kaizen: ai_agent_core.retention_metrics is not JSON: %r',
                 raw)
             return None
         history = metrics.get('history') or []
@@ -405,13 +396,10 @@ class AIKaizenReport(models.Model):
             'severity': 'high',
             'category': 'error',
             'finding': (
-                f"Retention-eftersläpningen växer: {previous} → {current} "
-                f"förfallna koncept som ännu inte arkiverats"),
+                f"The retention backlog is growing: {previous} → {current} "
+                f"expired concepts not yet archived"),
             'recommendation': (
-                'Kontrollera att ai_retention_enforce körs. Ett växande '
-                'antal förfallna koncept betyder att arkiverings-cronen '
-                'inte verkställer retentionen — och då är gallringsfristen '
-                'återigen bara en deklaration.'),
+                'Check that ai_retention_enforce runs. A growing number of expired concepts means the archiving cron is not enforcing retention — and then the purge deadline is once again only a declaration.'),
             'evidence': (
                 f"previous_overdue={previous}, current_overdue={current}, "
                 f"runs={len(history)}"),
@@ -456,19 +444,15 @@ class AIKaizenReport(models.Model):
         # Heuristics: propose recipe additions based on finding category
         if 'fel' in ftext or 'error' in ftext:
             suggested_recipe += (
-                '\n\n## Felhantering\n'
-                '- Vid misslyckad delegation, försök en annan specialist eller återgå till användaren.\n'
-                '- Logga fel för kaizen-analys.'
+                '\n\n## Error handling\n- On a failed delegation, try another specialist or return to the user.\n- Log errors for kaizen analysis.'
             )
             notes = f"Lade till felhantering: {finding.get('finding', '')[:200]}"
         elif 'kostnad' in ftext or 'cost' in ftext or 'token' in ftext:
             suggested_recipe += (
-                '\n\n## Kostnadseffektivitet\n'
-                '- Delegera endast när specialisten tillför värde; annars svara direkt.\n'
-                '- Begränsa kontext per delegation.'
+                '\n\n## Cost efficiency\n- Delegate only when the specialist adds value; otherwise answer directly.\n- Limit the context per delegation.'
             )
             notes = f"Lade till kostnadsoptimering: {finding.get('finding', '')[:200]}"
-        elif 'feedback' in ftext or 'förbättring' in ftext:
+        elif 'feedback' in ftext or 'improvement' in ftext:
             notes = f"Feedback att beakta: {finding.get('finding', '')[:200]}"
 
         if suggested_recipe != skill.recipe_text:
@@ -476,8 +460,8 @@ class AIKaizenReport(models.Model):
                 'report_id': self.id,
                 'severity': 'low',
                 'category': 'skill_gap',
-                'finding': f"Föreslår förbättring av orchestration-skill '{skill.name}'",
-                'recommendation': 'Granska och applicera förslaget på skillen.',
+                'finding': f"Suggests an improvement to the orchestration skill '{skill.name}'",
+                'recommendation': 'Review and apply the suggestion to the skill.',
                 'evidence': finding.get('evidence', ''),
                 'skill_suggestion': json.dumps({
                     'skill_id': skill.id,
@@ -495,11 +479,11 @@ class AIKaizenReport(models.Model):
             f"📊 **Kaizen-rapport: {quest_name}**",
             f"Vecka {self.week_start.isoformat()} — {self.week_end.isoformat()}",
             "",
-            "## 📈 Översikt",
+            "## 📈 Overview",
             f"- {self.session_count} sessioner",
             f"- {self.total_sys_tokens:,} systemtokens",
             f"- {self.error_count} fel",
-            f"- {self.feedback_count} förbättringsförslag",
+            f"- {self.feedback_count} improvement suggestions",
         ]
 
         if self.session_trend:
@@ -546,7 +530,7 @@ class AIKaizenReport(models.Model):
                         f"{detail}")
 
         if not findings:
-            lines.append("\n✅ Inga anmärkningar denna vecka.")
+            lines.append("\n✅ No remarks this week.")
 
         return '\n'.join(lines)
 
@@ -559,7 +543,7 @@ class AIKaizenFinding(models.Model):
     report_id = fields.Many2one('ai.kaizen.report', required=True,
                                  ondelete='cascade', string='Report')
     severity = fields.Selection([
-        ('low', '💡 Förslag'),
+        ('low', '💡 Suggestion'),
         ('medium', '⚠️ Varning'),
         ('high', '🔴 Kritisk'),
     ], required=True, default='low')
@@ -589,16 +573,13 @@ class AIKaizenFinding(models.Model):
     # appliceringen — bättre tomt än fel (proposal, Risk).
     applied_at = fields.Datetime(
         'Applied At', readonly=True,
-        help='När förslaget applicerades på skillen. Mätpunkten som '
-             'verifieringen jämför före och efter.')
+        help='When the suggestion was applied to the skill. The measurement point the verification compares before and after.')
     verification = fields.Selection([
         ('improved', 'Improved'),
         ('unchanged', 'Unchanged'),
         ('worse', 'Worse'),
     ], string='Verification',
-        help='Utfallet av åtgärden, mätt som eval-accuracy före och efter '
-             'applied_at. Tomt = ingen körning har skett efter '
-             'appliceringen ännu.')
+        help='The outcome of the action, measured as eval accuracy before and after applied_at. Empty = no run has happened since the application yet.')
     verification_evidence = fields.Text(
         'Verification Evidence',
         help='T.ex. "accuracy 0.62 → 0.81". Skrivs samtidigt som '
@@ -764,11 +745,10 @@ class AIKaizenFinding(models.Model):
             'severity': 'high',
             'category': 'performance',
             'finding': (
-                'Åtgärden gjorde det sämre: eval-accuracy föll efter att '
-                f'fyndet applicerades ({evidence})'),
+                'The action made it worse: eval accuracy dropped after the '
+                f'finding was applied ({evidence})'),
             'recommendation': (
-                'Återställ eller ompröva ändringen. Ett applicerat förslag '
-                'som sänker accuracy är en regression, inte en förbättring.'),
+                'Revert or reconsider the change. An applied suggestion that lowers accuracy is a regression, not an improvement.'),
             'evidence': (
                 f'original_finding={self.id}: {self.finding[:200]} | '
                 f'{evidence}'),
@@ -789,7 +769,7 @@ def _render_onboard_section(candidates):
 
     lines = [
         "",
-        "## 🆕 Upptäckta möjligheter (ONBOARD)",
+        "## 🆕 Opportunities found (ONBOARD)",
     ]
     for c in candidates:
         icon = {

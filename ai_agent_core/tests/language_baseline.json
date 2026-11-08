@@ -128,11 +128,11 @@
    "doc": 1
   },
   "models/ai_coworker_hitl.py": {
-   "code": 26,
+   "code": 0,
    "doc": 16
   },
   "models/ai_coworker_init_type.py": {
-   "code": 35,
+   "code": 0,
    "doc": 8
   },
   "models/ai_eval.py": {
@@ -148,7 +148,7 @@
    "doc": 1
   },
   "models/ai_kaizen.py": {
-   "code": 33,
+   "code": 0,
    "doc": 6
   },
   "models/ai_lineage.py": {
@@ -208,7 +208,7 @@
    "doc": 0
   },
   "models/ai_onboarding.py": {
-   "code": 29,
+   "code": 0,
    "doc": 18
   },
   "models/ai_org_bridge.py": {
@@ -240,7 +240,7 @@
    "doc": 18
   },
   "models/ai_provider.py": {
-   "code": 22,
+   "code": 0,
    "doc": 37
   },
   "models/ai_search_source.py": {
@@ -304,7 +304,7 @@
    "doc": 2
   },
   "models/res_config_settings.py": {
-   "code": 25,
+   "code": 0,
    "doc": 5
   },
   "models/res_users.py": {
@@ -388,5 +388,6 @@
  "_data_literals": {
   "models/ai_coworker.py": 7,
   "note": "Remaining Swedish literals are DATA: transliteration table, field names in domains, and regexes that must match Swedish LLM answers. Exempt with a written reason in LANGUAGE_DATA_LITERALS."
- }
+ },
+ "_contracts_note": "tests/language_contracts.json was re-snapshotted 2026-11-08 after ac42d816 (\"[FIX] views: tree -> list\") added first_token_seconds, longest_gap_seconds and stream_seconds to views/ai_session_views.xml. That is another author view change, not a translation. From here on, any contract diff is a translation regression."
 }

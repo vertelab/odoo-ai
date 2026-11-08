@@ -31,46 +31,44 @@ class AICoworkerHITL(models.Model):
         'ai.coworker', string='AI Medarbetare', required=True,
         ondelete='cascade', index=True)
     user_id = fields.Many2one(
-        'res.users', string='Godkännare', required=True,
+        'res.users', string='Approver', required=True,
         ondelete='cascade', index=True)
     session_id = fields.Many2one(
         'ai.coworker.session', string='Session', required=True,
         ondelete='cascade', index=True,
-        help='Körningen som begärde godkännandet. Obligatorisk — en '
-             'HITL-request utan session är en herrelös förfrågan som '
-             'ingen kan härleda till ett arbete.')
+        help='The run that requested the approval. Required — a HITL request without a session is an orphan request nobody can trace to a piece of work.')
     state = fields.Selection([
-        ('asked', 'Frågad'),
-        ('approved', 'Godkänd'),
+        ('asked', 'Asked'),
+        ('approved', 'Approved'),
         ('rejected', 'Avslagen'),
-        ('expired', 'Utgången'),
+        ('expired', 'Expired'),
     ], string='Status', default='asked', index=True)
     risk_level = fields.Selection([
         ('safe', 'Safe'),
-        ('high', 'Hög risk'),
+        ('high', 'High Risk'),
         ('destructive', 'Destruktiv'),
-    ], string='Risknivå', default='high')
+    ], string='Risk Level', default='high')
     action_type = fields.Char(
-        string='Åtgärdstyp', required=True, index=True,
+        string='Action Type', required=True, index=True,
         help='T.ex. promote_mail, send_reply, social_publish.')
     object_type = fields.Char(
         string='Objekttyp', index=True,
-        help='Härleds ur context.model — används av trust-ladder.')
+        help='Derived from context.model — used by the trust ladder.')
     context_hash = fields.Char(
         string='Kontext-hash', index=True,
-        help='md5(action_type + context) — dubblettskydd för öppna requests.')
-    request_summary = fields.Text(string='Förfrågan', required=True)
+        help='md5(action_type + context) — duplicate guard for open requests.')
+    request_summary = fields.Text(string='Request', required=True)
     context = fields.Text(
         string='Kontext (JSON)', readonly=True,
-        help='Payload: model/res_id/förslag — endast godkännare/admin ser.')
+        help='Payload: model/res_id/suggestion — only the approver/admin sees it.')
     mail_activity_id = fields.Many2one(
         'mail.activity', string='Aktivitet', readonly=True)
     decision = fields.Text(string='Beslut')
     decided_at = fields.Datetime(string='Beslutat')
     decided_by = fields.Many2one('res.users', string='Beslutat av')
     is_auto_proposal = fields.Boolean(
-        string='Auto-förslag', default=False, index=True,
-        help='Trust-ladder: fråga om automatisering.')
+        string='Auto Suggestion', default=False, index=True,
+        help='Trust ladder: ask about automation.')
     standing_rule = fields.Text(
         string='Standing rule (JSON)', readonly=True)
 
@@ -83,8 +81,7 @@ class AICoworkerHITL(models.Model):
         if not (user.has_group('base.group_system')
                 or user.id == self.user_id.id):
             raise AccessError(
-                'Endast godkännaren eller admin kan besluta om denna '
-                'HITL-request.')
+                'Only the approver or an admin can decide this HITL request.')
 
     # ── Livscykel ────────────────────────────────────────────────────
 
@@ -176,7 +173,7 @@ class AICoworkerHITL(models.Model):
         self.ensure_one()
         try:
             self.message_post(
-                body=('HITL-begäran: <b>%s</b> — %s'
+                body=('HITL request: <b>%s</b> — %s'
                       % (self.action_type, self.request_summary)),
                 message_type='notification',
                 partner_ids=[self.user_id.partner_id.id])
@@ -191,7 +188,7 @@ class AICoworkerHITL(models.Model):
             self.env['web.pwa.push']._push_user_notification(
                 self.user_id,
                 title='HITL: %s' % (self.coworker_id.name or 'AI-medarbetare'),
-                body=self.request_summary or 'Väntar på ditt godkännande',
+                body=self.request_summary or 'Waiting for your approval',
                 url='/odoo/ai.coworker.hitl/%s' % self.id)
         except Exception as e:
             _logger.warning('HITL push failed: %s', e)
@@ -260,8 +257,7 @@ class AICoworkerHITL(models.Model):
             'action_type': 'auto_proposal',
             'object_type': self.object_type or '',
             'request_summary': (
-                'Vill du att jag gör "%s" för %s automatiskt nästa gång? '
-                'Du har godkänt %d liknande.' % (
+                'Do you want me to do "%s" for %s automatically next time? You have approved %d similar.' % (
                     self.action_type,
                     self.object_type or 'denna typ',
                     count)),
@@ -307,10 +303,10 @@ class AICoworkerHITLMixin(models.Model):
     hitl_ids = fields.One2many(
         'ai.coworker.hitl', 'coworker_id',
         string='HITL-requests',
-        help='HITL-requests som begärts av denna AI-medarbetare.')
+        help='HITL requests made by this AI Coworker.')
     hitl_open_count = fields.Integer(
-        string='Öppna HITL', compute='_compute_hitl_open_count',
-        help='Antal öppna (asked) HITL-requests för denna AI-medarbetare.')
+        string='Open HITL', compute='_compute_hitl_open_count',
+        help='Number of open (asked) HITL requests for this AI Coworker.')
 
     @api.depends('hitl_ids.state')
     def _compute_hitl_open_count(self):
@@ -343,10 +339,7 @@ class AICoworkerHITLMixin(models.Model):
             sess_id = self.env.context.get('ai_lineage_session_id') or 0
         if not sess_id:
             raise ValidationError(
-                'HITL-request kan inte skapas utan en session. Körningen '
-                'saknar ai.coworker.session i context (förväntade '
-                '_ai_context_id eller ai_lineage_session_id). Detta är en '
-                'bugg i anroparen — inte ett tillstånd att gissa runt.')
+                'A HITL request cannot be created without a session. The run has no ai.coworker.session in context (expected _ai_context_id or ai_lineage_session_id). This is a bug in the caller — not a state to guess around.')
         sess = Sess.browse(int(sess_id)).exists()
         if not sess:
             raise ValidationError(
@@ -428,10 +421,10 @@ class ResUsersHITL(models.Model):
 
     hitl_approval_ids = fields.One2many(
         'ai.coworker.hitl', 'user_id',
-        string='HITL-godkännanden',
-        help='HITL-requests där användaren är godkännare.')
+        string='HITL Approvals',
+        help='HITL requests where the user is the approver.')
     hitl_approver_count = fields.Integer(
-        string='HITL-godkännanden',
+        string='HITL Approvals',
         compute='_compute_hitl_approver_count')
 
     @api.depends('hitl_approval_ids.state')
@@ -445,7 +438,7 @@ class ResUsersHITL(models.Model):
         self.ensure_one()
         return {
             'type': 'ir.actions.act_window',
-            'name': 'Mina HITL-godkännanden',
+            'name': 'My HITL Approvals',
             'res_model': 'ai.coworker.hitl',
             'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],

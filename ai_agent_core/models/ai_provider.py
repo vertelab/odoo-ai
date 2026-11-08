@@ -51,8 +51,7 @@ class AIProvider(models.Model):
         for rec in self:
             if rec.api_key and any(c in rec.api_key for c in '\r\n'):
                 raise ValidationError(
-                    'API-nyckeln får inte innehålla radbrytningar — '
-                    'klistra bara in själva nyckeln.'
+                    'The API key must not contain line breaks — paste only the key itself.'
                 )
 
 
@@ -72,7 +71,7 @@ class AIProvider(models.Model):
     # Ingen pillar/env-koppling: api_key ligger på recordet, fylls i via UI.
     is_bifrost = fields.Boolean(
         'Bifrost-gateway',
-        help='Använd X-Virtual-Key-headern (Bifrost LLM Gateway).',
+        help='Use the X-Virtual-Key header (Bifrost LLM Gateway).',
         default=False,
     )
     api_style = fields.Selection([
@@ -87,8 +86,7 @@ class AIProvider(models.Model):
     # `x-bf-dim-*`-headers (krav 3.1).
     bifrost_dim_template = fields.Char(
         'Bifrost dimension-mall',
-        help='Mall för x-bf-dim-*-headers, t.ex. "coworker={coworker};'
-             'agent={agent};init={init}". Tomt = inga dimension-headers.',
+        help='Template for the x-bf-dim-* headers, e.g. "coworker={coworker};agent={agent};init={init}". Empty = no dimension headers.',
     )
 
     # Status
@@ -126,10 +124,9 @@ class AIProvider(models.Model):
     # under processens livstid och nollställs vid omstart, vilket är rätt
     # — en omstart är ett naturligt tillfälle att pröva igen.
     unavailable_until = fields.Datetime(
-        'Otillgänglig till', compute='_compute_unavailable_until',
+        'Unavailable Until', compute='_compute_unavailable_until',
         store=False,
-        help='Tidpunkt då en breaker-period löper ut. Tom = providern är '
-             'inte bortkopplad.')
+        help='When a breaker period expires. Empty = the provider is not disconnected.')
 
     # OBS: ingen @api.depends — Odoo tillåter inte att en compute beror på
     # `id` ('Compute method cannot depend on field id'). Fältet är
@@ -165,8 +162,7 @@ class AIProvider(models.Model):
             seconds=self.BREAKER_SECONDS)
         _BREAKER_TABLE[self.id] = until
         _logger.warning(
-            'Gateway-avslag från %s (HTTP %s%s) — providern bortkopplad '
-            'till %s. Inga nya anrop görs under perioden.',
+            'Gateway rejection from %s (HTTP %s%s) — the provider is disconnected until %s. No new calls are made during the period.',
             self.name, status_code or '?',
             (' — %s' % reason) if reason else '', until)
         return until
@@ -309,7 +305,7 @@ class AIProvider(models.Model):
                 'auto_sync': True,
                 'status': 'confirmed',
             })
-            _logger.info('Provider skapad från config: %s (%s)', provider.name, endpoint)
+            _logger.info('Provider created from config: %s (%s)', provider.name, endpoint)
             return provider, True
         vals = {}
         if provider.api_key != api_key:
@@ -408,8 +404,7 @@ class AIProvider(models.Model):
         self.ensure_one()
         if self._breaker_active():
             raise UserError(_(
-                'Providern %s är tillfälligt bortkopplad efter ett '
-                'gateway-avslag. Försök igen om en stund.') % self.name)
+                'Provider %s is temporarily disconnected after a gateway rejection. Try again in a while.') % self.name)
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
         if self.provider_type == 'bifrost':
@@ -445,8 +440,8 @@ class AIProvider(models.Model):
                 reason = self._rejection_reason(e)
                 self._breaker_trip(e.code, reason)
                 _logger.warning(
-                    'Gateway-avslag vid modellimport från %s: HTTP %s — %s',
-                    self.name, e.code, reason or 'okänd orsak')
+                    'Gateway rejection during model import from %s: HTTP %s — %s',
+                    self.name, e.code, reason or 'unknown reason')
             _logger.error("Failed to fetch models from %s: %s", self.name, e)
             raise UserError(_('Failed to fetch models: %s') % str(e))
         except Exception as e:
@@ -512,8 +507,8 @@ class AIProvider(models.Model):
                 reason = self._rejection_reason(e)
                 self._breaker_trip(e.code, reason)
                 _logger.warning(
-                    'Gateway-avslag vid /v1/config för %s: HTTP %s — %s',
-                    self.name, e.code, reason or 'okänd orsak')
+                    'Gateway rejection at /v1/config for %s: HTTP %s — %s',
+                    self.name, e.code, reason or 'unknown reason')
             _logger.debug("No /v1/config catalog for %s: %s", self.name, e)
             self._catalog_cache_set('config_map', {})
             return {}
@@ -631,12 +626,12 @@ class AIProvider(models.Model):
             if e.code in (402, 403, 404):
                 self._breaker_trip(e.code, reason)
             _logger.warning(
-                'Katalog-hämtning misslyckades för %s: HTTP %s — %s',
+                'Catalog fetch failed for %s: HTTP %s — %s',
                 self.name, e.code, reason or str(e))
             return None, False
         except Exception as e:
             _logger.info(
-                'Katalog-hämtning misslyckades för %s: %s', self.name, e)
+                'Catalog fetch failed for %s: %s', self.name, e)
             return None, False
         else:
             self._breaker_clear()
@@ -695,7 +690,7 @@ class AIProvider(models.Model):
             drift = p._catalog_drift()
             if not drift['checked']:
                 _logger.info(
-                    'Driftkontroll: katalogen för %s kunde inte hämtas.',
+                    'Operational check: the catalog for %s could not be fetched.',
                     p.name)
                 continue
             if drift['missing_in_catalog']:
@@ -1001,20 +996,15 @@ class AIProvider(models.Model):
     can_embed = fields.Boolean(
         'Kan skapa embeddings',
         default=False,
-        help='Providern får användas för att skapa vektorer. Sätts på den '
-             'provider vars /embeddings faktiskt svarar (verifierat, inte '
-             'antaget).',
+        help='The provider may be used to create vectors. Set on the provider whose /embeddings actually answers (verified, not assumed).',
     )
     embedding_model = fields.Char(
         'Embedding-modell',
-        help='Modell-id som skickas till providern. Måste vara ett explicit '
-             'modell-id — Bifrost avvisar generativa kombomodeller med '
-             '"Generative combos cannot be used for embeddings".',
+        help='Model id sent to the provider. Must be an explicit model id — Bifrost rejects generative combo models with "Generative combos cannot be used for embeddings".',
     )
     embedding_dim = fields.Integer(
         'Embedding-dimension',
-        help='Dimensionen providern returnerar. Måste matcha kolumnen '
-             'ai_okf_concept.embedding = vector(1024).',
+        help='The dimension the provider returns. Must match the column ai_okf_concept.embedding = vector(1024).',
     )
 
     @api.model
@@ -1155,8 +1145,7 @@ class AIProvider(models.Model):
                 last_error = e
                 if attempt < attempts:
                     _logger.info(
-                        'Embedding: försök %s/%s misslyckades (%s) — '
-                        'försöker igen', attempt, attempts, str(e)[:120])
+                        'Embedding: attempt %s/%s failed (%s) — retrying', attempt, attempts, str(e)[:120])
                     time.sleep(self._embedding_retry_delay(attempt))
 
         raise last_error
@@ -1285,8 +1274,7 @@ class AIProvider(models.Model):
         url = self._embedding_endpoint()
         if not url:
             _logger.warning(
-                'Embedding: provider %s saknar base_url — kan inte skapa '
-                'vektorer (semantisk sökning körs inte)', self.name)
+                'Embedding: provider %s has no base_url — cannot create vectors (semantic search does not run)', self.name)
             return None
 
         model = self._effective_embedding_model(model)
@@ -1349,8 +1337,7 @@ class AIProvider(models.Model):
                           key=lambda d: d.get('index', 0))
             if len(rows) != len(inputs):
                 _logger.warning(
-                    'Embedding (batch): fick %s vektorer för %s texter '
-                    '(provider=%s) — alla avvisas (hellre tomt än felkopplat)',
+                    'Embedding (batch): got %s vectors for %s texts (provider=%s) — all rejected (empty rather than mismatched)',
                     len(rows), len(inputs), self.name)
                 return [None] * len(inputs)
             return [self._validate_embedding(r.get('embedding'), model, dim)
@@ -1382,9 +1369,7 @@ class AIProvider(models.Model):
             return None
         if len(values) != dim:
             _logger.warning(
-                'Embedding: fel dimension — fick %s, förväntade %s '
-                '(provider=%s, modell=%s). Vektorn avvisas; konceptet sparas '
-                'utan embedding.',
+                'Embedding: wrong dimension — got %s, expected %s (provider=%s, model=%s). The vector is rejected; the concept is saved without an embedding.',
                 len(values), dim, self.name, model)
             return None
         return values

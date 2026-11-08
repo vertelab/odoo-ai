@@ -68,23 +68,19 @@ class AICoworkerInitType(models.Model):
     # (readonly=False) för bakåtkompatibilitet.
     ai_record_injection_enabled = fields.Boolean(
         'Enable Record Context', default=True,
-        help='Injicera den record (eller markering) användaren har öppen i '
-             'systemprompten.')
+        help='Inject the record (or selection) the user has open into the system prompt.')
     ai_record_max_fields = fields.Integer(
         'Max Context Fields', default=100,
-        help='Högsta antal fält per record vid serialisering.')
+        help='Maximum number of fields per record when serialising.')
     ai_record_include_chatter = fields.Boolean(
         'Include Chatter History', default=True,
-        help='Inkludera recordens chatter-historik. För en MARKERING '
-             '(list-vy) är chatter avstängt som default — 35 records x 20 '
-             'meddelanden spränger prompten.')
+        help='Include the record chatter history. For a SELECTION (list view) chatter is off by default — 35 records x 20 messages blows up the prompt.')
     ai_record_chatter_limit = fields.Integer(
         'Chatter Message Limit', default=20,
-        help='Högsta antal chatter-meddelanden (de senaste).')
+        help='Maximum number of chatter messages (the latest).')
     ai_record_max_records = fields.Integer(
         'Max Records', default=20,
-        help='Högsta antal records vid en list-vy-markering. Överskridandet '
-             'rapporteras explicit i prompten — det tystas aldrig.')
+        help='Maximum number of records on a list view selection. Exceeding it is reported explicitly in the prompt — it is never silenced.')
 
     # ── channel specific ──
     channel_ids = fields.Many2many('discuss.channel', 'ai_coworker_init_type_channel_rel',
@@ -113,21 +109,19 @@ class AICoworkerInitType(models.Model):
 
     # ── mail trigger-settings (inspirerat av Watch/base_trigger) ──
     mail_action = fields.Selection([
-        ('reply', 'Svara på mailet'),
+        ('reply', 'Reply to the email'),
         ('create_record', 'Skapa/uppdatera record'),
         ('process', 'Processera med skills'),
-        ('invoice_ai', 'Leverantörsfaktura (AI)'),
-    ], string='Mail-åtgärd', default='reply',
-        help='Vad som sker när ett mail anländer till aliaset. process/invoice_ai '             'kör medarbetaren med mail+bilaga och låter dess skills styra.')
-    mail_reply_delay = fields.Integer('Svarsdröjsmål (min)', default=0,
-        help='0 = svara direkt. >0 = svaret postas efter dröjsmålet '
-             '(körs av cron).')
-    mail_target_model_id = fields.Many2one('ir.model', string='Målmodell',
-        help='För create_record: modellen som ska skapas/uppdateras.')
+        ('invoice_ai', 'Vendor Bill (AI)'),
+    ], string='Mail Action', default='reply',
+        help='What happens when an email arrives at the alias. process/invoice_ai runs the coworker with the mail and attachment and lets its skills steer.')
+    mail_reply_delay = fields.Integer('Reply Delay (min)', default=0,
+        help='0 = answer immediately. >0 = the answer is posted after the delay (run by cron).')
+    mail_target_model_id = fields.Many2one('ir.model', string='Target Model',
+        help='For create_record: the model to create/update.')
     mail_find_partner = fields.Boolean(
-        'Hitta/skapa res.partner från avsändare', default=True,
-        help='Leverantörsfaktura: sök upp avsändarens res.partner och skapa '
-             'om den saknas.')
+        'Find/create res.partner from sender', default=True,
+        help='Vendor bill: look up the sender res.partner and create it if missing.')
     # ── cron specific ──
     cron_id = fields.Many2one('ir.cron', string='Scheduled Action',
         ondelete='cascade')
@@ -140,9 +134,7 @@ class AICoworkerInitType(models.Model):
     # `description` hör i systemprompten (vad coworkern ÄR), inte här (vad
     # den ska göra) — att blanda dem var dagens problem.
     job_prompt = fields.Text('Job Prompt',
-        help='Vad coworkern ska göra vid automatisk körning. Tomt för en '
-             'aktiv automatisk typ är en felsituation — ingen generisk '
-             'fallback används.')
+        help='What the coworker should do on an automatic run. Empty for an active automatic type is an error state — no generic fallback is used.')
     cron_interval_number = fields.Integer('Interval', default=1,
         help='How often to run (1 = every interval)')
     cron_interval_type = fields.Selection([
@@ -166,11 +158,7 @@ class AICoworkerInitType(models.Model):
     rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000)
     pi_instruction = fields.Text(
         'Instruktion till externa klienter (pi/Cline)',
-        help='Markdown-text som skickas som system_prompt_add till klienten '
-             '(Pi-agenten). Instruerar klienten hur den ska arbeta med denna '
-             'coworker: verktyg, arbetsregler, skills att ladda. '
-             'Tom = ingen extra instruktion. Gäller ENBART init-typen '
-             'openai_api — andra init-typer orkestrerar som förut.')
+        help='Markdown text sent as system_prompt_add to the client (the Pi agent). Instructs the client how to work with this coworker: tools, working rules, skills to load. Empty = no extra instruction. Applies ONLY to the openai_api trigger type — other trigger types orchestrate as before.')
 
     # Kontextfönster som annonseras till externa API-klienter (Pi/Cline) via
     # /ai/v1/<coworker>/models. 0/tomt = härleds automatiskt som det MINSTA
@@ -181,15 +169,11 @@ class AICoworkerInitType(models.Model):
         compute='_compute_openai_context_window',
         inverse='_inverse_openai_context_window',
         store=True, readonly=False,
-        help='Kontextfönster (tokens) som annonseras till externa API-klienter '
-             'för denna AI Medarbetare. Tomt/0 = automatisk härledning (minsta '
-             'context_window bland medarbetarens agenters modeller).')
+        help='Context window (tokens) announced to external API clients for this AI Coworker. Empty/0 = derived automatically (the smallest context_window among the coworker agent models).')
     openai_context_window_manual = fields.Boolean(
         'Context Window (manuellt)',
         default=False,
-        help='Sätts automatiskt när du anger ett eget värde ovan. False = '
-             'värdet härleds alltid från medarbetarens agenters modeller '
-             '(minsta), så att det följer med när modellerna ändras.')
+        help='Set automatically when you enter an explicit value above. False = the value is always derived from the coworker agent models (the smallest), so it follows when the models change.')
 
     # ── watch specific ──
     # De flesta fälten är related till base_automation — ändringar skrivs
@@ -199,22 +183,22 @@ class AICoworkerInitType(models.Model):
     watch_trigger = fields.Selection(
         related='base_automation_id.trigger', readonly=False,
         string='When updating',
-        help='Trigger-händelse — speglar base.automation.trigger.')
+        help='Trigger event — mirrors base.automation.trigger.')
     watch_trg_selection_field_id = fields.Many2one(
         'ir.model.fields.selection', string='Trigger Field',
         related='base_automation_id.trg_selection_field_id', readonly=False,
-        help='Selection-fält för on_state_set/on_priority_set.')
+        help='Selection field for on_state_set/on_priority_set.')
     watch_trg_field_ref_model_name = fields.Char(
         string='Trigger Field Model',
         related='base_automation_id.trg_field_ref_model_name', readonly=True)
     watch_trg_field_ref = fields.Many2oneReference(
         string='Trigger Reference',
         related='base_automation_id.trg_field_ref', readonly=False,
-        help='Fält-ref för on_stage_set/on_tag_set.')
+        help='Field reference for on_stage_set/on_tag_set.')
     watch_trg_date_id = fields.Many2one(
         'ir.model.fields', string='Trigger Date',
         related='base_automation_id.trg_date_id', readonly=False,
-        help='Datumfält för on_time-trigger.')
+        help='Date field for the on_time trigger.')
     watch_trg_date_range = fields.Integer(
         string='Delay after trigger date',
         related='base_automation_id.trg_date_range', readonly=False)
@@ -233,16 +217,15 @@ class AICoworkerInitType(models.Model):
     watch_trigger_field_ids = fields.Many2many(
         'ir.model.fields', string='When updating',
         related='base_automation_id.trigger_field_ids', readonly=False,
-        help='Fält som bevakas — tomt = alla fält.')
+        help='Fields that are watched — empty = all fields.')
     watch_on_change_field_ids = fields.Many2many(
         'ir.model.fields', string='When updating (on change)',
         related='base_automation_id.on_change_field_ids', readonly=False)
     watch_active = fields.Boolean(
         string='Active', related='base_automation_id.active', readonly=False,
-        help='Avbockad = regeln göms och körs inte.')
+        help='Unticked = the rule is hidden and does not run.')
     watch_domain = fields.Char('Watch Domain',
-        help='Domänfilter för vilka records som triggar. '
-             'E.g. [("priority", ">", 5)]')
+        help='Domain filter for which records trigger. E.g. [("priority", ">", 5)]')
     base_automation_id = fields.Many2one('base.automation',
         string='Base Automation', readonly=True,
         help='Auto-created base.automation record.')
@@ -342,7 +325,7 @@ class AICoworkerInitType(models.Model):
                 try:
                     self.watch_model_id = self.env.ref('base.model_res_partner').id
                 except Exception:
-                    _logger.warning('ensure watch: ingen målmodell för %s',
+                    _logger.warning('ensure watch: no target model for %s',
                                     self.coworker_id.name)
                     return
 
@@ -409,7 +392,7 @@ class AICoworkerInitType(models.Model):
                         'state': 'code',
                         'code': code,
                     })
-                    _logger.info('Created saknad server action %s för watch-init %s',
+                    _logger.info('Created missing server action %s for watch trigger %s',
                                  action.id, auto_name)
                 else:
                     action.write({
@@ -446,7 +429,7 @@ class AICoworkerInitType(models.Model):
                 'state': 'code',
                 'code': code,
             })
-            _logger.info('Created server action %s för watch-init %s',
+            _logger.info('Created server action %s for watch trigger %s',
                          action.id, auto_name)
         else:
             action.write({'name': auto_name, 'code': code})
@@ -486,7 +469,7 @@ class AICoworkerInitType(models.Model):
         if not self.alias_id:
             alias = self.env['mail.alias'].create(vals)
             self.alias_id = alias.id
-            _logger.info('Skapade mail-alias %s för %s',
+            _logger.info('Created mail alias %s for %s',
                          self.alias_name, self.coworker_id.name)
         else:
             self.alias_id.write(vals)
@@ -532,7 +515,7 @@ class AICoworkerInitType(models.Model):
             if quest.chat_user_id != self.chat_user_id:
                 quest.sudo().chat_user_id = self.chat_user_id.id
                 _logger.info(
-                    'Kopplade ägare %s till coworker %s',
+                    'Linked owner %s to coworker %s',
                     self.chat_user_id.login, quest.name)
 
     def _ensure_channel(self):
@@ -578,7 +561,7 @@ class AICoworkerInitType(models.Model):
                 if self.coworker_id and self.coworker_id.model_ids:
                     model_id = self.coworker_id.model_ids[0].id
                 if not model_id:
-                    _logger.warning('ensure cron: ingen målmodell för %s',
+                    _logger.warning('ensure cron: no target model for %s',
                                     self.coworker_id.name)
                     return
                 eid = self.coworker_id._get_eid()
@@ -652,7 +635,7 @@ class AICoworkerInitType(models.Model):
                 model_id = model_rec.id
             if not model_id:
                 _logger.warning(
-                    'ensure server action: ingen målmodell för %s',
+                    'ensure server action: no target model for %s',
                     self.coworker_id.name)
                 return
             if self.server_action_use_wizard:
@@ -683,7 +666,7 @@ class AICoworkerInitType(models.Model):
                 'code': code,
             })
             self.server_action_id = action.id
-            _logger.info('Skapade server action %s för %s',
+            _logger.info('Created server action %s for %s',
                          action.id, self.coworker_id.name)
 
     def unlink(self):
@@ -764,8 +747,6 @@ class AICoworkerInitType(models.Model):
                 continue
             if rec.coworker_id and not rec.coworker_id.chat_user_id:
                 _logger.warning(
-                    'Init-typ %s (%s) är aktiv men coworkern %s saknar '
-                    '"Ägare (automatiska körningar)" — automatiska körningar '
-                    'kommer att nekas vid körning.',
+                    'Trigger type %s (%s) is active but coworker %s has no "Owner (automatic runs)" — automatic runs will be denied at run time.',
                     rec.init_type, rec.display_name,
                     rec.coworker_id.display_name)
