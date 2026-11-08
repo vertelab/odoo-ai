@@ -159,7 +159,7 @@
     <menuitem id="menu_workspace_generate_gap"
               parent="menu_workspace_agenda"
               action="action_workspace_generate_gap" sequence="2"
-              name="Generera förslag (GAP)"/>
+              name="Generate suggestions (GAP)"/>
     <menuitem id="menu_workspace_inbox" parent="menu_workspace_root"
               action="action_workspace_inbox" sequence="20" name="Inbox"/>
     <menuitem id="menu_workspace_approvals" parent="menu_workspace_root"
@@ -170,13 +170,13 @@
               action="action_workspace_search" sequence="50" name="Search"/>
     <menuitem id="menu_workspace_search_hybrid" parent="menu_workspace_search"
               action="ai_agent_core.action_okf_global_search" sequence="1"
-              name="Sök (OKF)"/>
+              name="Search (OKF)"/>
     <menuitem id="menu_workspace_coworkers" parent="menu_workspace_root"
               action="action_workspace_coworkers" sequence="60" name="Coworkers"/>
 
     <!-- Server action: AI-föreslagna Areas (task 3.5) -->
     <record id="action_workspace_suggest_areas" model="ir.actions.server">
-        <field name="name">Föreslå Areas (AI)</field>
+        <field name="name">Suggest Areas (AI)</field>
         <field name="model_id" ref="model_workspace_para_container"/>
         <field name="state">code</field>
         <field name="code">
@@ -195,7 +195,7 @@ else:
 
     <menuitem id="menu_workspace_suggest_areas" parent="menu_workspace_para"
               action="action_workspace_suggest_areas" sequence="99"
-              name="Föreslå Areas (AI)"/>
+              name="Suggest Areas (AI)"/>
 
     <!-- 8.7 Coworker-katalog (gap A1/A3): Hjälp/Assistant-sida -->
     <record id="action_workspace_catalog" model="ir.actions.act_window">

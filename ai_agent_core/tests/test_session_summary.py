@@ -217,10 +217,10 @@ class TestFinalSummary(common.TransactionCase):
             'name': 'prompt', 'status': 'active', 'user_id': self.user.id})
         prompt = session._final_summary_prompt('testtranskript')
         for heading in ('Syfte', 'Utfall', 'Beslut', 'Fakta',
-                        'Artefakter', 'Öppna frågor'):
+                        'Artefakter', 'Open questions'):
             self.assertIn(heading, prompt,
                           'rubriken %s saknas i prompten' % heading)
-        self.assertIn('aldrig påhittat', prompt)
+        self.assertIn('never write invented', prompt)
         self.assertIn('svenska', prompt)
 
 

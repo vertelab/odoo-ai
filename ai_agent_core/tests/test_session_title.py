@@ -235,7 +235,7 @@ class TestSessionTitle(common.TransactionCase):
         """Prompten ber om EXAKT en mening, utan rubrik/citattecken."""
         session = self._session()
         prompt = session._title_prompt('user: Hej\nassistant: Hej')
-        self.assertIn('EXAKT en mening', prompt)
+        self.assertIn('EXACTLY one sentence', prompt)
         self.assertIn('utan rubrik', prompt)
         self.assertIn('user: Hej', prompt)
 

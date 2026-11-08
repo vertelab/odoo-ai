@@ -270,11 +270,11 @@ class TestCompanionQuality(TransactionCase):
     # ── 4.1 negativ listan ────────────────────────────────────────────
 
     def test_negative_list_in_prompt(self):
-        """Reflektionsprompten bär SPARA INTE med de sex kategorierna."""
+        """The reflection prompt carries DO NOT SAVE with the six categories."""
         import inspect
         src = inspect.getsource(
             type(self.coworker)._extract_concepts_from_conversation)
-        self.assertIn('SPARA INTE', src)
+        self.assertIn('DO NOT SAVE', src)
         for needle in ('triviala', 'återfinnas', 'rådata',
                        'uppgiftsframsteg', 'loggar', 'TODO'):
             self.assertIn(needle, src,

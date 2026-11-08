@@ -114,7 +114,7 @@
                         <div class="sidebar-header"><span>🤖</span> AI Chat</div>
                         <div class="coworker-list" id="coworker-list">
                             <div class="coworker-item active" data-id="" data-name="default">
-                                <span class="coworker-icon">💬</span> Allmän assistent
+                                <span class="coworker-icon">💬</span> General Assistant
                             </div>
                             <t t-foreach="quests" t-as="q">
                                 <div class="coworker-item" t-att-data-id="q.id" t-att-data-name="q.name">
@@ -126,7 +126,7 @@
                     </div>
                     <div class="chat-main">
                         <div class="chat-header">
-                            Chattar med <strong id="active-quest-name">Allmän assistent</strong>
+                            Chattar med <strong id="active-quest-name">General Assistant</strong>
                         </div>
                         <div class="messages" id="messages"></div>
                         <div class="chat-input-area">

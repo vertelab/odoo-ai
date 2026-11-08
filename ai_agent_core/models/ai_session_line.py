@@ -138,6 +138,28 @@ class AICoworkerSessionLine(models.Model):
         help='Comma-separated input tokens per round, in order. The sum equals '
              'token_input. Empty for lines written before 2026-11-06.')
 
+    # ── Per-turn timing (form fields the view already referenced) ────────
+    # views/ai_session_views.xml has referenced these three since ac42d816
+    # while no field existed on the model, so every `-u ai_agent_core`
+    # aborted with:
+    #     ParseError: Field "first_token_seconds" does not exist
+    # Adding the fields is the smaller change: the view is the interface the
+    # numbers are meant to be read through, and 0 means "not measured" — the
+    # view hides the row when the value is 0, so an unmeasured turn does not
+    # look like a fast one.
+    first_token_seconds = fields.Float(
+        'First Token (s)', digits=(12, 3), default=0.0,
+        help='Seconds from the request until the first streamed token. '
+             '0 = not measured.')
+    longest_gap_seconds = fields.Float(
+        'Longest Gap (s)', digits=(12, 3), default=0.0,
+        help='Longest pause between two streamed tokens in the turn. '
+             '0 = not measured.')
+    stream_seconds = fields.Float(
+        'Stream Duration (s)', digits=(12, 3), default=0.0,
+        help='Total streaming duration of the turn, in seconds. '
+             '0 = not measured.')
+
     # Systemtoken tracking
     model_real = fields.Char('Model Used',
         help='The actual model name returned by the provider (e.g. claude-sonnet-4-20250514)')

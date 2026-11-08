@@ -144,7 +144,7 @@
                                 confirm="Abort the external run (SIGTERM → SIGKILL)?">
                             <div class="o_stat_info">
                                 <span class="o_stat_value">Avbryt</span>
-                                <span class="o_stat_text">extern körning</span>
+                                <span class="o_stat_text">external run</span>
                             </div>
                         </button>
                     </div>
@@ -401,7 +401,7 @@
         <field name="context">{'search_default_my_sessions': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
-                Sessioner registreras automatiskt när AI-medarbetare samtalar.
+                Sessions are registered automatically when AI coworkers converse.
             </p>
         </field>
     </record>

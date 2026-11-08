@@ -11,7 +11,7 @@
                         class="oe_stat_button" icon="fa-bullseye"
                         groups="ai_agent_core.group_ai_officer">
                     <field name="ai_goal_count" widget="statinfo"/>
-                    <span class="o_stat_text">🎯 Mål</span>
+                    <span class="o_stat_text">🎯 Goals</span>
                 </button>
                 <button name="action_open_ai_tasks" type="object"
                         class="oe_stat_button" icon="fa-tasks"
@@ -190,7 +190,7 @@
                         <span title="AI-medarbetare med heartbeat aktiverad">
                             💓 <field name="ai_heartbeat_count"/> aktiva
                         </span>
-                        <span title="OKR-mål för avdelningen">
+                        <span title="OKR goals for the department">
                             🎯 <field name="ai_goal_count"/> mål
                         </span>
                     </div>
@@ -260,7 +260,7 @@
                                 <span class="badge bg-secondary text-light"
                                       title="Antal AI-tasks i avdelningen">📋 <field name="ai_task_count"/></span>
                                 <span class="badge bg-secondary text-light"
-                                      title="Antal OKR-mål i avdelningen">🎯 <field name="ai_goal_count"/></span>
+                                      title="Number of OKR goals in the department">🎯 <field name="ai_goal_count"/></span>
                             </div>
                             <div class="d-flex gap-2 mt-1 ms-1" groups="ai_agent_core.group_ai_officer">
                                 <button class="btn btn-link p-0" type="object" name="action_open_ai_tasks">📋 Tasks</button>

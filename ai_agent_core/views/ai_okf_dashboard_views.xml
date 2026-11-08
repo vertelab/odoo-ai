@@ -108,8 +108,8 @@
         <field name="target">inline</field>
         <field name="help" type="html">
             <p><strong>🧠 Odoo Mind Dashboard</strong></p>
-            <p>Administratörens övervakningsyta: graph, minne, cron-jobb
-            och manuella körningar.</p>
+            <p>The administrator monitoring surface: graph, memory, cron jobs
+            and manual runs.</p>
             <p>💡 Varje kategori har hälsa (🟢/🟡/🔴) och egna kör-knappar.
             Manuella körningar använder samma
             <code>_okf_upsert()</code>-path som cron — med tidsfönster

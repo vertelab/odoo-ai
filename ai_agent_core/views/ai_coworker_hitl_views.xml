@@ -102,7 +102,7 @@
 
     <!-- ── Action + meny (AI Orkestrering → Organisation) ── -->
     <record id="ai_coworker_hitl_action" model="ir.actions.act_window">
-        <field name="name">Godkännanden (HITL)</field>
+        <field name="name">Approvals (HITL)</field>
         <field name="res_model">ai.coworker.hitl</field>
         <field name="view_mode">list,form</field>
         <field name="context">{'search_default_asked': 1}</field>
@@ -135,7 +135,7 @@
                         class="oe_stat_button" icon="fa-check-square-o">
                     <div class="o_stat_info">
                         <field name="hitl_approver_count"/>
-                        <span class="o_stat_text">Godkännanden</span>
+                        <span class="o_stat_text">Approvals</span>
                     </div>
                 </button>
             </div>

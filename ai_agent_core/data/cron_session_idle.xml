@@ -22,7 +22,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_close_idle_sessions" model="cron.task">
-            <field name="name">Session: Stäng inaktiva och skriv eftermäle</field>
+            <field name="name">Session: Close idle sessions and write the aftermath</field>
             <field name="technical_name">ai_close_idle_sessions</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.coworker.session</field>

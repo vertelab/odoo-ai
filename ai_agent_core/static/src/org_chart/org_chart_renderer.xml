@@ -5,7 +5,7 @@
             <div t-if="state.loading" class="p-4 text-muted">Laddar organisationen…</div>
             <div t-elif="state.error" class="alert alert-danger m-3" t-esc="state.error"/>
             <div t-elif="!state.flat.length" class="p-4 text-muted">
-                Ingen organisation än — starta AI-onboarding för att bygga den.
+                No organisation yet — start AI onboarding to build it.
             </div>
             <div t-else="" class="o_org_chart_tree">
                 <t t-foreach="state.flat" t-as="node" t-key="node.id">
@@ -27,7 +27,7 @@
                                 </div>
                                 <div class="d-flex gap-2 mt-1">
                                     <span class="badge bg-secondary text-light" title="Antal AI-tasks i avdelningen">📋 <t t-esc="node.ai_task_count"/></span>
-                                    <span class="badge bg-secondary text-light" title="Antal OKR-mål i avdelningen">🎯 <t t-esc="node.ai_goal_count"/></span>
+                                    <span class="badge bg-secondary text-light" title="Number of OKR goals in the department">🎯 <t t-esc="node.ai_goal_count"/></span>
                                 </div>
                                 <div class="d-flex gap-2 mt-1">
                                     <button class="btn btn-link p-0" type="button"

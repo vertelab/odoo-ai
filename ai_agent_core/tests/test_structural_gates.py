@@ -1050,7 +1050,10 @@ LANGUAGE_SCOPE = ('models', 'core', 'controllers', 'wizards', 'fields', 'migrati
 LANGUAGE_ROOT_FILES = ('hooks.py',)
 
 #: XML-attribut vars värde är användartext och därför ska vara engelskt.
-LANGUAGE_XML_ATTRIBUTES = ('string', 'help', 'placeholder', 'confirm')
+#: ``name`` och ``title`` togs med efter att ett svep missade menyetiketter,
+#: knappnamn och diagramtitlar som bor där — de syntes i UI:t men inte i
+#: grinden. ``invisible``/``esc`` är kod (domäner, uttryck) och prövas inte.
+LANGUAGE_XML_ATTRIBUTES = ('string', 'help', 'placeholder', 'confirm', 'name', 'title')
 
 #: Filer och mönster som är undantagna, med skrivet skäl. Ett undantag utan
 #: skäl fallerar ``test_language_exemptions_have_reasons``.
@@ -1071,6 +1074,22 @@ LANGUAGE_EXEMPT = [
         'Seed-poster (namn och beskrivningar) blir databasrader, inte '
         'UI-strängar. Att översätta dem kräver en egen ändring för '
         'kundinstallationer på andra språk.',
+    ),
+    (
+        'data/skill_*.xml',
+        'Skill-recept: description och trigger_keywords är promptinnehåll och '
+        'svenska nyckelord som ska matcha svenska frågor. Samma skäl som '
+        'data/*_skills.xml.',
+    ),
+    (
+        'data/git_identity_skill.xml',
+        'Skill-recept (samma skäl som data/skill_*.xml).',
+    ),
+    (
+        'data/okf_artifact_types_personal.xml',
+        'The artifact type name "mål" is a stored key: the domains search on '
+        'artifact_type_id.name in ("roll", "mål"). Translating it empties '
+        'those searches.',
     ),
     (
         'migrations/',
@@ -1185,13 +1204,23 @@ def _swedish_in_strings(path, source, tree):
 
 
 def _swedish_in_xml(path):
-    """Returnerar ``[(lineno, attribut, text)]`` för svenska XML-attributvärden."""
+    """Returnerar ``[(lineno, vad, text)]`` för svensk XML-användartext.
+
+    Två ytor: de fyra UI-attributen, och **elementtext** (``>text<``) — som
+    är där menyetiketter, gruppnamn och cron-namn bor. Den första versionen
+    såg bara attributen och missade 34 meny- och gruppnamn; de syntes i UI:t
+    men inte i grinden.
+    """
     hits = []
     for lineno, line in enumerate(path.read_text(encoding='utf-8').split('\n'), 1):
         for attr in LANGUAGE_XML_ATTRIBUTES:
             for match in re.finditer(attr + r'="([^"]*)"', line):
                 if SWEDISH_LETTERS.search(match.group(1)):
                     hits.append((lineno, attr, match.group(1)[:60]))
+        for match in re.finditer(r'>([^<>]*[åäöÅÄÖ][^<>]*)<', line):
+            text = match.group(1).strip()
+            if text:
+                hits.append((lineno, 'text', text[:60]))
     return hits
 
 

@@ -29,7 +29,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_reap_external_agents" model="cron.task">
-            <field name="name">Extern agent: livs-heartbeat och städning</field>
+            <field name="name">External agent: liveness heartbeat and cleanup</field>
             <field name="technical_name">ai_reap_external_agents</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.coworker.session</field>

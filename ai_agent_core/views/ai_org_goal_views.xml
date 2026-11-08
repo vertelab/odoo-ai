@@ -114,7 +114,7 @@
         <field name="res_model">ai.org.goal</field>
         <field name="view_mode">kanban,list,form</field>
         <field name="help" type="html">
-            <p>AI Organization Goals — hierarkiska mål med OKR-struktur.</p>
+            <p>AI Organization Goals — hierarchical goals with an OKR structure.</p>
         </field>
     </record>
 </odoo>

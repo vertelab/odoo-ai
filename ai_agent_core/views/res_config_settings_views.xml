@@ -13,13 +13,13 @@
                     <!-- ════════════════════════════════════════════
                          Företagsidentitet
                          ════════════════════════════════════════════ -->
-                    <block title="Företagsidentitet">
+                    <block title="Company Identity">
 
                         <!-- Mission -->
                         <setting id="company_mission_setting">
                             <div class="d-flex align-items-center mb8">
                                 <span class="h5 mb0 me-2 fw-bold">Mission</span>
-                                <span class="text-muted small">— Företagets existensberättigande</span>
+                                <span class="text-muted small">— The company reason for being</span>
                             </div>
                             <div class="well well-sm mb8 p-2 bg-light rounded">
                                 <field name="company_mission" readonly="1"
@@ -43,7 +43,7 @@
                         <setting id="company_values_setting">
                             <div class="d-flex align-items-center mb8">
                                 <span class="h5 mb0 me-2 fw-bold">Values</span>
-                                <span class="text-muted small">— Företagets kärnvärderingar</span>
+                                <span class="text-muted small">— The company core values</span>
                             </div>
                             <div class="well well-sm mb8 p-2 bg-light rounded">
                                 <field name="company_values" readonly="1"
@@ -65,7 +65,7 @@
 
                         <!-- Webbplats -->
                         <setting id="company_website_setting"
-                                 title="Webbplats för RAG">
+                                 title="Website for RAG">
                             <div class="d-flex align-items-center gap-2 mb4">
                                 <span class="fw-bold me-2">URL:</span>
                                 <field name="company_website_url_edit"
@@ -91,7 +91,7 @@
                     <block title="Odoo Mind">
                         <setting>
                             <div class="text-muted mb8">
-                                Företagets och dess medarbetares andra hjärna
+                                The second brain of the company and its employees
                             </div>
                         </setting>
                         <setting id="odoo_mind_graph_status" title="Graph Status">
@@ -158,7 +158,7 @@
                                 <span>sessioner</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <span>Glöm efter</span>
+                                <span>Forget after</span>
                                 <field name="coworker_memory_forget_days" class="d-inline"/>
                                 <span>dag(ar)</span>
                             </div>
@@ -176,7 +176,7 @@
                             </div>
                         </setting>
 
-                        <setting id="okf_dept_health_settings" title="Avdelningshälsa-trösklar (OKF)"
+                        <setting id="okf_dept_health_settings" title="Department Health Thresholds (OKF)"
                                  help="The thresholds for red/yellow/green department health — not hardcoded.">
                             <div class="d-flex align-items-center gap-3">
                                 <label for="health_heartbeat_stale_days" string="Heartbeat stale efter"/>
@@ -281,7 +281,7 @@
                                  tooltips. Inga interna parameternamn — de
                                  hör i Technical-menyn. -->
                             <div class="well well-sm mb8 p-2 bg-light rounded">
-                                <strong>Så fungerar default-medarbetaren</strong>
+                                <strong>How the default coworker works</strong>
                                 <p class="mb-1 mt-1">
                                     När du använder AI utan att välja en specifik
                                     medarbetare — via AI-ikonen, ett API-anrop eller
@@ -290,9 +290,9 @@
                                     kedjan: agent, kompetenser, verktyg och modell.
                                 </p>
                                 <ul class="mb-1 ps-3">
-                                    <li><strong>Fältet ovan</strong> vinner när det är satt.</li>
-                                    <li><strong>Är fältet tomt</strong> används första medarbetare du har åtkomst till.</li>
-                                    <li><strong>Saknar en medarbetare en egen modell</strong> lånar den default-medarbetarens modell i stället för att köra utan.</li>
+                                    <li><strong>The field above</strong> wins when it is set.</li>
+                                    <li><strong>If the field is empty</strong> the first coworker you have access to is used.</li>
+                                    <li><strong>Saknar en medarbetare en egen modell</strong> borrows the default coworker model instead of running without one.</li>
                                 </ul>
                                 <p class="mb-0">
                                     Modellvalet är inte längre en egen inställning — det

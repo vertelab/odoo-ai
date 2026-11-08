@@ -80,7 +80,7 @@ class TestBudgetBlockMessage(TransactionCase):
         self._spend(7_550_000)
         code, msg = self.coworker.budget_block_message()
         self.assertEqual(code, 'daily_budget_exhausted')
-        self.assertIn('Dagsbudget slut', msg)
+        self.assertIn('Daily budget exhausted', msg)
         self.assertIn('midnatt', msg)
         self.assertIn('7.55', msg)
         self.assertIn('755', msg)
@@ -96,7 +96,7 @@ class TestBudgetBlockMessage(TransactionCase):
         self._spend(11_000_000)
         code, msg = self.coworker.budget_block_message()
         self.assertEqual(code, 'budget_exhausted')
-        self.assertIn('månadstaket', msg)
+        self.assertIn('monthly cap', msg)
 
     def test_soft_monthly_cap_does_not_block(self):
         """Mjukt månadstak ska varna men köra vidare — inte blockera."""

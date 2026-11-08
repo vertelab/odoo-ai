@@ -246,7 +246,7 @@ class TestExternalLifecycle(TransactionCase):
         result = self.Session._cron_reap_external()
         session.invalidate_recordset()
         self.assertEqual(session.status, 'error')
-        self.assertIn('avslutades oväntat', session.error_detail or '')
+        self.assertIn('ended unexpectedly', session.error_detail or '')
         self.assertGreaterEqual(result['detected'], 1)
 
     def test_orphan_process_is_reaped(self):

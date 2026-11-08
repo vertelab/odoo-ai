@@ -9,7 +9,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_workspace_gap" model="cron.task">
-            <field name="name">Workspace: GAP-analys → aktivitetsförslag</field>
+            <field name="name">Workspace: GAP analysis → activity suggestions</field>
             <field name="technical_name">ai_workspace_gap</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">workspace.gap.engine</field>

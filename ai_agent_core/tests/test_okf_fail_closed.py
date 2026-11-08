@@ -201,7 +201,7 @@ class TestOkfFailClosedAccess(ConfigParamGuardedCase):
                 self.Concept._format_concept_block(
                     c, 2000, 'TEST', user=self.env.user)
         joined = '\n'.join(cm.output)
-        self.assertIn('avför', joined)
+        self.assertIn('removes', joined)
         self.assertIn('dms.file,7', joined)
 
     def test_dropped_concept_without_source_is_logged(self):
@@ -216,5 +216,5 @@ class TestOkfFailClosedAccess(ConfigParamGuardedCase):
             self.Concept._format_concept_block(
                 c, 2000, 'TEST', user=self.env.user)
         joined = '\n'.join(cm.output)
-        self.assertIn('avför', joined)
-        self.assertIn('ingen källhänvisning', joined)
+        self.assertIn('removes', joined)
+        self.assertIn('no source reference', joined)

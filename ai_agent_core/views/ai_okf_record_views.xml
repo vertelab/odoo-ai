@@ -20,13 +20,13 @@
                 <sheet>
                     <div class="alert alert-warning" role="alert"
                          invisible="not okf_dirty">
-                        <strong>OKF-fälten är inaktuella.</strong>
+                        <strong>The OKF fields are stale.</strong>
                         <span> En cron kör normalt inom 5 minuter. Vill du
                         köra nu, använd knappen nedan.</span>
                     </div>
                     <div class="alert alert-success" role="alert"
                          invisible="okf_dirty">
-                        <span>OKF-fälten är aktuella.</span>
+                        <span>The OKF fields are current.</span>
                     </div>
 
                     <group>

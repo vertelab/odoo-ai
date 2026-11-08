@@ -51,10 +51,10 @@
 
     <!-- Dashboard action -->
     <record id="ai_monthly_summary_action" model="ir.actions.act_window">
-        <field name="name">Månadsrapporter</field>
+        <field name="name">Monthly Reports</field>
         <field name="res_model">ai.coworker.monthly_summary</field>
         <field name="view_mode">pivot,graph,list</field>
-        <field name="help">Systemtoken-förbrukning per quest och månad. Historisk rapportering för fakturering.</field>
+        <field name="help">System token usage per coworker and month. Historical reporting for invoicing.</field>
     </record>
 
     <!-- Search for monthly summaries -->

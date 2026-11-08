@@ -19,7 +19,7 @@
              Låg kaizen först hade varje fynd verifierats mot förra veckans
              run — ett helt veckofönster för sent. -->
         <record id="cron_task_cron_run_evals_weekly" model="cron.task">
-            <field name="name">AI: Kör eval-fall (veckovis)</field>
+            <field name="name">AI: Run eval cases (weekly)</field>
             <field name="technical_name">ai_run_evals_weekly</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.coworker</field>

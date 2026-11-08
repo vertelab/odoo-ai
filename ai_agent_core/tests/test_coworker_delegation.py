@@ -182,7 +182,7 @@ class TestDelegationDirection(DelegationTestBase):
     def test_upward_denied(self):
         ok, reason = self.support._delegation_target_allowed(self.chief)
         self.assertFalse(ok, 'uppåt ska nekas (eskalering)')
-        self.assertIn('riktning', reason.lower())
+        self.assertIn('delegation direction', reason.lower())
 
     def test_across_departments_denied(self):
         ok, _ = self.worker._delegation_target_allowed(self.accountant)
@@ -280,7 +280,7 @@ class TestReceptivity(DelegationTestBase):
         self.worker.last_successful_run = False
         ok, reason = self.worker._is_receptive()
         self.assertFalse(ok)
-        self.assertIn('livstecken', reason.lower())
+        self.assertIn('sign of life', reason.lower())
 
     def test_stale_liveness_not_receptive(self):
         from datetime import timedelta
@@ -294,7 +294,7 @@ class TestReceptivity(DelegationTestBase):
         env, _ = self._requester_env(self.chief)
         with self.assertRaises(ValidationError) as cm:
             env._delegate_task_to(self.worker, 'Kolla loggarna')
-        self.assertIn('livstecken', str(cm.exception).lower())
+        self.assertIn('sign of life', str(cm.exception).lower())
         # Ingen task skapad (inget ruttnande).
         self.assertEqual(self.Task.search_count([
             ('coworker_id', '=', self.worker.id),

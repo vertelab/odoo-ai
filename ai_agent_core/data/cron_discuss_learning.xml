@@ -16,7 +16,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_discuss_learning" model="cron.task">
-            <field name="name">AI: Extrahera lärdomar från Discuss</field>
+            <field name="name">AI: Extract lessons from Discuss</field>
             <field name="technical_name">ai_discuss_learning</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.personal.memory</field>

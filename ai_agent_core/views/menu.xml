@@ -62,7 +62,7 @@
               groups="ai_agent_core.group_ai_admin"/>
 
     <!-- Inställningar — först under Configuration -->
-    <menuitem id="menu_ai_settings" name="Inställningar" parent="menu_ai_configuration"
+    <menuitem id="menu_ai_settings" name="Settings" parent="menu_ai_configuration"
               sequence="1" action="action_ai_settings"/>
 
     <!-- Masterdata (basdata/konfigurationsentiteter) -->
@@ -93,19 +93,19 @@
               action="action_ai_okf_concept"/>
 
     <!-- Mål & Tasks (transaktioner) -->
-    <menuitem id="menu_ai_config_goals" name="Mål &amp; Tasks"
+    <menuitem id="menu_ai_config_goals" name="Goals &amp; Tasks"
               parent="menu_ai_configuration" sequence="10"
               groups="ai_agent_core.group_ai_admin"/>
-    <menuitem id="menu_ai_org_goal" name="Mål (OKR)" parent="menu_ai_config_goals"
+    <menuitem id="menu_ai_org_goal" name="Goals (OKR)" parent="menu_ai_config_goals"
               sequence="10" action="action_ai_org_goal"/>
     <menuitem id="menu_ai_org_task" name="Tasks" parent="menu_ai_config_goals"
               sequence="20" action="action_ai_org_task"/>
 
     <!-- Godkännanden (HITL) — transaktioner -->
-    <menuitem id="menu_ai_config_hitl" name="Godkännanden"
+    <menuitem id="menu_ai_config_hitl" name="Approvals"
               parent="menu_ai_configuration" sequence="15"
               groups="ai_agent_core.group_ai_admin"/>
-    <menuitem id="menu_ai_hitl" name="Godkännanden (HITL)"
+    <menuitem id="menu_ai_hitl" name="Approvals (HITL)"
               parent="menu_ai_config_hitl" sequence="10"
               action="ai_coworker_hitl_action"
               groups="ai_agent_core.group_ai_admin"/>
