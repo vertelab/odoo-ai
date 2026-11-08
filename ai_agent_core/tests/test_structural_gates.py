@@ -28,10 +28,16 @@ Dessutom bor två grindar som bevakar *mekanismer* i ``core/``:
 4. **Trovärdighetsmärkningen** (``test_web_tools_are_untrusted``)
    — ägs av ``untrusted-tool-output``. Frågan är "är ett verktyg som når
    internet märkt som otrovärdigt?".
+
+5. **Språket** (``test_no_new_swedish_string_literals``)
+   — ägs av ``core-english-and-sv-po``. Frågan är "är den här strängen
+   skriven på modulens källspråk?". Källan är engelska; svenskan bor i
+   ``i18n/sv.po``. Tillväxttaket ligger i ``tests/language_baseline.json``.
 """
 
 import ast
 import pathlib
+import re
 import unittest
 
 from odoo.tests.common import TransactionCase, tagged
@@ -950,3 +956,258 @@ class TestApprovalsSpecConsistency(TransactionCase):
         # det vore att göra kanalen otillåten.
         self.assertNotIn('SHALL NOT prompt', text)
         self.assertNotIn('must deny when no approval channel', text)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Grind 5 — språket i källan (core-english-and-sv-po)
+# ──────────────────────────────────────────────────────────────────────
+
+#: Modulens källspråk är engelska. Svenska hör hemma i ``i18n/sv.po``.
+#: Grinden bevakar att en ny svensk sträng inte smyger in — den fångar
+#: *tillväxt*, inte befintlig skuld. Skulden mäts i
+#: ``tests/language_baseline.json`` och får bara minska.
+SWEDISH_LETTERS = re.compile(r'[åäöÅÄÖ]')
+
+#: Kataloger som grinden bevakar (allt utom tester).
+LANGUAGE_SCOPE = ('models', 'core', 'controllers', 'wizards', 'fields', 'migrations')
+
+#: Rotfiler som grinden bevakar utöver katalogerna.
+LANGUAGE_ROOT_FILES = ('hooks.py',)
+
+#: XML-attribut vars värde är användartext och därför ska vara engelskt.
+LANGUAGE_XML_ATTRIBUTES = ('string', 'help', 'placeholder', 'confirm')
+
+#: Filer och mönster som är undantagna, med skrivet skäl. Ett undantag utan
+#: skäl fallerar ``test_language_exemptions_have_reasons``.
+LANGUAGE_EXEMPT = [
+    (
+        'data/*_skills.xml',
+        'Skill-recept är promptinnehåll (se spec: domain-skills), inte '
+        'UI-strängar. De injiceras i agentens systemprompt på det språk '
+        'agenten arbetar på och översätts därför inte.',
+    ),
+    (
+        'data/*_tools.xml',
+        'Verktygsbeskrivningar är promptinnehåll — instruktioner till '
+        'modellen, inte text som renderas i ett formulär.',
+    ),
+    (
+        'data/*_coworker.xml',
+        'Seed-poster (namn och beskrivningar) blir databasrader, inte '
+        'UI-strängar. Att översätta dem kräver en egen ändring för '
+        'kundinstallationer på andra språk.',
+    ),
+    (
+        'migrations/',
+        'Migreringar är historisk kod som redan kört i drift. Bara '
+        'kommentarer och docstrings får röras där — en literal som används '
+        'i ett env-uppslag eller en jämförelse lämnas orörd.',
+    ),
+]
+
+#: Fältnamn i ``ir.ui.view``-vakten som är DATA (svenska fältnamn som ska
+#: mappas till engelska), inte UI-text. Undantas per fil och fältnamn.
+LANGUAGE_DATA_KEYS = {
+    'models/ir_ui_view.py': (
+        'kundämne', 'kundämnen', 'kundämne_count', 'kundämnen_count',
+    ),
+}
+
+
+def _swedish_in_strings(path, source, tree):
+    """Returnerar ``[(lineno, text)]`` för svenska kodliteraler (ej docstrings)."""
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = node.body
+            if body and isinstance(body[0], ast.Expr) \
+               and isinstance(body[0].value, ast.Constant) \
+               and isinstance(body[0].value.value, str):
+                docs.add(id(body[0].value))
+    hits = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+           and id(node) not in docs and SWEDISH_LETTERS.search(node.value):
+            hits.append((node.lineno, node.value.strip().split('\n')[0][:70]))
+    return sorted(hits)
+
+
+def _swedish_in_xml(path):
+    """Returnerar ``[(lineno, attribut, text)]`` för svenska XML-attributvärden."""
+    hits = []
+    for lineno, line in enumerate(path.read_text(encoding='utf-8').split('\n'), 1):
+        for attr in LANGUAGE_XML_ATTRIBUTES:
+            for match in re.finditer(attr + r'="([^"]*)"', line):
+                if SWEDISH_LETTERS.search(match.group(1)):
+                    hits.append((lineno, attr, match.group(1)[:60]))
+    return hits
+
+
+def _language_exempt(rel):
+    """Sant om ``rel`` matchar ett undantag i ``LANGUAGE_EXEMPT``."""
+    for pattern, _reason in LANGUAGE_EXEMPT:
+        if pattern.endswith('/'):
+            if rel.startswith(pattern):
+                return True
+        elif pathlib.PurePath(rel).match(pattern):
+            return True
+    return False
+
+
+def _scan_swedish(root):
+    """Returnerar ``{relpath: count}`` för svenska kodliteraler i modulen."""
+    found = {}
+    targets = []
+    for scope in LANGUAGE_SCOPE:
+        base = root / scope
+        if base.is_dir():
+            targets.extend(sorted(base.rglob('*.py')))
+    for name in LANGUAGE_ROOT_FILES:
+        if (root / name).is_file():
+            targets.append(root / name)
+    for path in targets:
+        if '__pycache__' in path.parts:
+            continue
+        rel = path.relative_to(root).as_posix()
+        if _language_exempt(rel):
+            continue
+        try:
+            source = path.read_text(encoding='utf-8')
+            tree = ast.parse(source)
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        hits = _swedish_in_strings(path, source, tree)
+        data_keys = LANGUAGE_DATA_KEYS.get(rel, ())
+        if data_keys:
+            hits = [h for h in hits if not any(k in h[1] for k in data_keys)]
+        if hits:
+            found[rel] = len(hits)
+    return found
+
+
+@tagged('ai_core', 'post_install', '-at_install')
+class StructuralGateLanguage(TransactionCase):
+    """Grind: källan talar engelska, svenskan bor i ``i18n/sv.po``.
+
+    Ägs av ``core-english-and-sv-po``. Frågan är "är den här strängen skriven
+    på modulens källspråk?" — inte "är den översatt?".
+
+    Grinden fallerar på **tillväxt**: en fil får inte få fler svenska
+    literaler än baslinjen i ``tests/language_baseline.json`` tillåter.
+    Att sänka ett tal är en medveten commit; att höja det är en regression.
+    """
+
+    baseline_path = MODULE_ROOT / 'tests' / 'language_baseline.json'
+
+    def _baseline(self):
+        import json
+        return json.loads(self.baseline_path.read_text(encoding='utf-8'))['files']
+
+    def _baseline_xml(self):
+        import json
+        return json.loads(self.baseline_path.read_text(encoding='utf-8')).get('xml', {})
+
+    def test_no_new_swedish_string_literals(self):
+        baseline = self._baseline()
+        actual = _scan_swedish(MODULE_ROOT)
+        violations = []
+        for rel, count in sorted(actual.items()):
+            allowed = baseline.get(rel, {}).get('code', 0)
+            if count > allowed:
+                violations.append(f'{rel}: {count} svenska literaler (tak {allowed})')
+        self.assertFalse(
+            violations,
+            'Nya svenska strängliteraler. Källan ska vara engelsk — flytta '
+            'texten till `i18n/sv.po` som msgstr, eller höj taket i '
+            'tests/language_baseline.json med ett skrivet skäl:\n  '
+            + '\n  '.join(violations),
+        )
+
+    def test_baseline_does_not_claim_more_than_reality(self):
+        """Ett tak som ligger över verkligheten döljer en framtida ökning."""
+        baseline = self._baseline()
+        actual = _scan_swedish(MODULE_ROOT)
+        stale = []
+        for rel, entry in sorted(baseline.items()):
+            allowed = entry.get('code', 0)
+            count = actual.get(rel, 0)
+            if count < allowed:
+                stale.append(f'{rel}: tak {allowed}, verkligt {count}')
+        self.assertFalse(
+            stale,
+            'Baslinjen ligger över verkligheten — sänk taket så att det '
+            'speglar koden (annars döljs nästa ökning):\n  ' + '\n  '.join(stale),
+        )
+
+    def test_no_swedish_xml_ui_text(self):
+        """XML-etikatter renderas i UI:t — en ny svensk sådan är en regression.
+
+        Räknaren är ett **tak per fil**, inte en absolut regel: de 136
+        befintliga etiketterna kan inte översättas i samma commit som grinden
+        införs. Taket får bara sjunka.
+        """
+        baseline = self._baseline_xml()
+        actual = {}
+        for path in sorted(MODULE_ROOT.rglob('*.xml')):
+            if '__pycache__' in path.parts:
+                continue
+            rel = path.relative_to(MODULE_ROOT).as_posix()
+            if _language_exempt(rel):
+                continue
+            hits = _swedish_in_xml(path)
+            if hits:
+                actual[rel] = len(hits)
+        violations = [
+            f'{rel}: {count} svenska attribut (tak {baseline.get(rel, 0)})'
+            for rel, count in sorted(actual.items())
+            if count > baseline.get(rel, 0)
+        ]
+        self.assertFalse(
+            violations,
+            'Svensk text i XML-attribut som renderas i UI:t. Skriv engelska '
+            'och lägg översättningen i `i18n/sv.po`:\n  ' + '\n  '.join(violations),
+        )
+
+    def test_xml_baseline_does_not_claim_more_than_reality(self):
+        """Samma ratchet som för koden — ett slappt tak döljer nästa ökning."""
+        baseline = self._baseline_xml()
+        actual = {}
+        for path in sorted(MODULE_ROOT.rglob('*.xml')):
+            if '__pycache__' in path.parts:
+                continue
+            rel = path.relative_to(MODULE_ROOT).as_posix()
+            if _language_exempt(rel):
+                continue
+            hits = _swedish_in_xml(path)
+            if hits:
+                actual[rel] = len(hits)
+        stale = [
+            f'{rel}: tak {allowed}, verkligt {actual.get(rel, 0)}'
+            for rel, allowed in sorted(baseline.items())
+            if actual.get(rel, 0) < allowed
+        ]
+        self.assertFalse(
+            stale,
+            'XML-baslinjen ligger över verkligheten — sänk taket:\n  ' + '\n  '.join(stale),
+        )
+
+    def test_language_exemptions_have_reasons(self):
+        """Ett undantag utan skäl är oanträffbart vid granskning."""
+        missing = [
+            f'{pattern} — skäl saknas'
+            for pattern, reason in LANGUAGE_EXEMPT
+            if not (reason or '').strip()
+        ]
+        self.assertFalse(missing, 'Undantag utan motivering:\n  ' + '\n  '.join(missing))
+
+    def test_language_exemptions_match_something(self):
+        """En föråldrad undantagspost döljer inget men lurar läsaren."""
+        stale = []
+        for pattern, _reason in LANGUAGE_EXEMPT:
+            if pattern.endswith('/'):
+                hit = any((MODULE_ROOT / pattern).rglob('*.py'))
+            else:
+                hit = any(MODULE_ROOT.rglob(pattern.split('/')[-1]))
+            if not hit:
+                stale.append(pattern)
+        self.assertFalse(stale, 'Undantag som inte matchar något:\n  ' + '\n  '.join(stale))

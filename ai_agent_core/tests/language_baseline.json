@@ -1,0 +1,388 @@
+{
+ "_comment": "Swedish source budget for ai_agent_core. code = Swedish string literals (AST, docstrings excluded) in non-exempt files. doc = Swedish docstrings, tracked so the debt is visible but not enforced. The ceiling only ratchets down: test_baseline_does_not_claim_more_than_reality fails when a recorded ceiling sits above the real count.",
+ "_measured": "2026-11-08",
+ "_source_rev": "071c88d4",
+ "files": {
+  "controllers/openai_api.py": {
+   "code": 8,
+   "doc": 6
+  },
+  "controllers/stream.py": {
+   "code": 59,
+   "doc": 56
+  },
+  "core/channel.py": {
+   "code": 2,
+   "doc": 15
+  },
+  "core/channels.py": {
+   "code": 4,
+   "doc": 27
+  },
+  "core/conference.py": {
+   "code": 4,
+   "doc": 4
+  },
+  "core/extract.py": {
+   "code": 0,
+   "doc": 10
+  },
+  "core/improve.py": {
+   "code": 3,
+   "doc": 7
+  },
+  "core/interrupt.py": {
+   "code": 8,
+   "doc": 12
+  },
+  "core/linear.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "core/loop.py": {
+   "code": 10,
+   "doc": 16
+  },
+  "core/permission.py": {
+   "code": 3,
+   "doc": 2
+  },
+  "core/provider.py": {
+   "code": 22,
+   "doc": 30
+  },
+  "core/router.py": {
+   "code": 1,
+   "doc": 1
+  },
+  "core/runtime.py": {
+   "code": 7,
+   "doc": 15
+  },
+  "core/ssrf.py": {
+   "code": 0,
+   "doc": 6
+  },
+  "core/supervisor.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "core/tool_select.py": {
+   "code": 38,
+   "doc": 0
+  },
+  "core/tools.py": {
+   "code": 28,
+   "doc": 40
+  },
+  "core/trust.py": {
+   "code": 1,
+   "doc": 6
+  },
+  "core/verify.py": {
+   "code": 19,
+   "doc": 12
+  },
+  "fields/pg_vector.py": {
+   "code": 1,
+   "doc": 5
+  },
+  "hooks.py": {
+   "code": 21,
+   "doc": 9
+  },
+  "http_guard.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_access_resolver.py": {
+   "code": 5,
+   "doc": 8
+  },
+  "models/ai_agent.py": {
+   "code": 16,
+   "doc": 7
+  },
+  "models/ai_artifact_type.py": {
+   "code": 1,
+   "doc": 3
+  },
+  "models/ai_company_memory.py": {
+   "code": 7,
+   "doc": 10
+  },
+  "models/ai_company_memory_category.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_cost_period.py": {
+   "code": 10,
+   "doc": 4
+  },
+  "models/ai_coworker.py": {
+   "code": 351,
+   "doc": 159
+  },
+  "models/ai_coworker_error.py": {
+   "code": 3,
+   "doc": 1
+  },
+  "models/ai_coworker_hitl.py": {
+   "code": 26,
+   "doc": 16
+  },
+  "models/ai_coworker_init_type.py": {
+   "code": 35,
+   "doc": 8
+  },
+  "models/ai_eval.py": {
+   "code": 10,
+   "doc": 4
+  },
+  "models/ai_graph_node.py": {
+   "code": 2,
+   "doc": 7
+  },
+  "models/ai_identity.py": {
+   "code": 17,
+   "doc": 1
+  },
+  "models/ai_kaizen.py": {
+   "code": 33,
+   "doc": 6
+  },
+  "models/ai_lineage.py": {
+   "code": 1,
+   "doc": 4
+  },
+  "models/ai_mail_test_wizard.py": {
+   "code": 7,
+   "doc": 2
+  },
+  "models/ai_memory.py": {
+   "code": 19,
+   "doc": 13
+  },
+  "models/ai_memory_chunk.py": {
+   "code": 3,
+   "doc": 1
+  },
+  "models/ai_memory_mixin.py": {
+   "code": 6,
+   "doc": 13
+  },
+  "models/ai_memory_scope.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_model.py": {
+   "code": 3,
+   "doc": 3
+  },
+  "models/ai_okf_concept.py": {
+   "code": 58,
+   "doc": 60
+  },
+  "models/ai_okf_dashboard.py": {
+   "code": 13,
+   "doc": 9
+  },
+  "models/ai_okf_format_mixin.py": {
+   "code": 3,
+   "doc": 2
+  },
+  "models/ai_okf_mixin.py": {
+   "code": 18,
+   "doc": 46
+  },
+  "models/ai_okf_tag.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_okf_upload.py": {
+   "code": 19,
+   "doc": 12
+  },
+  "models/ai_onboard.py": {
+   "code": 12,
+   "doc": 0
+  },
+  "models/ai_onboarding.py": {
+   "code": 29,
+   "doc": 18
+  },
+  "models/ai_org_bridge.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/ai_org_goal.py": {
+   "code": 6,
+   "doc": 1
+  },
+  "models/ai_org_review.py": {
+   "code": 2,
+   "doc": 1
+  },
+  "models/ai_org_task.py": {
+   "code": 13,
+   "doc": 2
+  },
+  "models/ai_org_template.py": {
+   "code": 1,
+   "doc": 3
+  },
+  "models/ai_personal_goal.py": {
+   "code": 2,
+   "doc": 3
+  },
+  "models/ai_personal_memory.py": {
+   "code": 14,
+   "doc": 18
+  },
+  "models/ai_provider.py": {
+   "code": 22,
+   "doc": 37
+  },
+  "models/ai_search_source.py": {
+   "code": 12,
+   "doc": 3
+  },
+  "models/ai_session.py": {
+   "code": 125,
+   "doc": 73
+  },
+  "models/ai_session_line.py": {
+   "code": 17,
+   "doc": 8
+  },
+  "models/ai_session_object.py": {
+   "code": 11,
+   "doc": 5
+  },
+  "models/ai_skill.py": {
+   "code": 18,
+   "doc": 9
+  },
+  "models/ai_tool.py": {
+   "code": 11,
+   "doc": 6
+  },
+  "models/ai_tool_capability.py": {
+   "code": 2,
+   "doc": 1
+  },
+  "models/discuss_channel.py": {
+   "code": 5,
+   "doc": 5
+  },
+  "models/hr_department.py": {
+   "code": 20,
+   "doc": 9
+  },
+  "models/hr_employee.py": {
+   "code": 2,
+   "doc": 1
+  },
+  "models/ir_action_act_window.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ir_attachment.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/ir_ui_view.py": {
+   "code": 1,
+   "doc": 2
+  },
+  "models/okf_access_cache.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/res_company.py": {
+   "code": 10,
+   "doc": 2
+  },
+  "models/res_config_settings.py": {
+   "code": 25,
+   "doc": 5
+  },
+  "models/res_users.py": {
+   "code": 5,
+   "doc": 3
+  },
+  "models/workspace_activity.py": {
+   "code": 17,
+   "doc": 12
+  },
+  "models/workspace_para.py": {
+   "code": 3,
+   "doc": 5
+  },
+  "wizards/ai_onboarding_wizard.py": {
+   "code": 7,
+   "doc": 6
+  }
+ },
+ "_exempt": {
+  "migrations/": "Historical code already run in production. Only comments and docstrings may be touched; a literal used in an env lookup or a comparison stays as it is (see LANGUAGE_EXEMPT)."
+ },
+ "_data_keys": {
+  "models/ir_ui_view.py": [
+   "kundämne",
+   "kundämnen",
+   "kundämne_count",
+   "kundämnen_count"
+  ]
+ },
+ "_data_keys_note": "Swedish field names in the sv_SE view-translation guard are DATA (keys that must map to English), not UI text. Exempt by key.",
+ "xml": {
+  "views/ai_coworker_error_views.xml": 2,
+  "views/ai_coworker_hitl_views.xml": 8,
+  "views/ai_coworker_init_type_views.xml": 1,
+  "views/ai_coworker_views.xml": 33,
+  "views/ai_lineage_views.xml": 2,
+  "views/ai_model_views.xml": 1,
+  "views/ai_monthly_summary_views.xml": 2,
+  "views/ai_okf_concept_views.xml": 3,
+  "views/ai_okf_dashboard_views.xml": 8,
+  "views/ai_okf_record_views.xml": 3,
+  "views/ai_onboarding_wizard_views.xml": 3,
+  "views/ai_personal_goal_views.xml": 12,
+  "views/ai_session_object_views.xml": 2,
+  "views/ai_session_views.xml": 13,
+  "views/ai_skill_views.xml": 3,
+  "views/ai_tool_views.xml": 1,
+  "views/hr_department_views.xml": 3,
+  "views/hr_employee_views.xml": 1,
+  "views/mail_test_wizard_views.xml": 4,
+  "views/res_config_settings_views.xml": 19,
+  "views/workspace_activity_views.xml": 10,
+  "views/workspace_para_views.xml": 2
+ },
+ "_xml_note": "Swedish text in UI-rendering XML attributes (string/help/placeholder/confirm), per file. Same ratchet as the code count: a file may not grow.",
+ "_sv_po": {
+  "measured": "2026-11-08",
+  "msgid": 2317,
+  "empty_msgstr": 2272,
+  "filled_msgstr": 45,
+  "swedish_msgid": 450,
+  "swedish_msgid_identical": 2,
+  "entries_with_reference": 2317,
+  "note": "state before task 10. The 450 Swedish msgid are the defect: there is no English original to translate from. Reference for task 10.3."
+ },
+ "_suite_baseline": {
+  "measured": "2026-11-08",
+  "database": "luke18",
+  "command": "odoo -c /etc/odoo/odoo.conf -d luke18 --test-enable --test-tags /ai_agent_core -l test --stop-after-init",
+  "tests": 1379,
+  "failed": 16,
+  "errors": 776,
+  "with_language_gate": {
+   "tests": 1385,
+   "failed": 16,
+   "errors": 776
+  },
+  "note": "The 16 failures / 776 errors are PRE-EXISTING: the same numbers come out on a clean HEAD without the language gate (verified 2026-11-08). The gate adds 6 passing tests and no new failures. Errors are dominated by environment issues (HTTP port, duplicate-key fixtures, _embedding_provider assertion on ai.provider)."
+ }
+}
