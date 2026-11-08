@@ -210,53 +210,6 @@ class TestMessage(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Context Tests (LOOP-004)
-# ---------------------------------------------------------------------------
-
-class TestContext(unittest.TestCase):
-    """Test context management."""
-
-    def setUp(self):
-        from ai_agent_core.core.provider import Message, Role
-        self.Message = Message
-        self.Role = Role
-
-    def test_estimate_tokens(self):
-        from ai_agent_core.core.context import estimate_tokens
-        msgs = [
-            self.Message(role=self.Role.USER, content="hello world"),
-            self.Message(role=self.Role.ASSISTANT, content="hi there"),
-        ]
-        tokens = estimate_tokens(msgs)
-        self.assertGreater(tokens, 0)
-        self.assertLess(tokens, 10)
-
-    def test_is_context_full(self):
-        from ai_agent_core.core.context import is_context_full
-        msgs = [self.Message(role=self.Role.USER, content="x" * 1000)]
-        self.assertFalse(is_context_full(msgs, max_tokens=1000))
-
-        big = [self.Message(role=self.Role.USER, content="x" * 600_000)]  # 600K chars / 4 = 150K tokens > 128K
-        self.assertTrue(is_context_full(big, max_tokens=128_000))
-
-    def test_summarize_preserves_recent(self):
-        from ai_agent_core.core.context import summarize_history
-        msgs = [
-            self.Message(role=self.Role.USER, content=f"message {i}")
-            for i in range(10)
-        ]
-        # Without a real provider, summarize_history requires one.
-        # Test that it keeps recent messages when too few to summarize.
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(
-            summarize_history(None, "test", msgs, keep_recent=4)
-        )
-        loop.close()
-        # If provider is None, it'll fall through. Just verify no crash.
-        self.assertIsInstance(result, list)
-
-
-# ---------------------------------------------------------------------------
 # Interrupt Tests (HITL-004)
 # ---------------------------------------------------------------------------
 

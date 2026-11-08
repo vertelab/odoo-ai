@@ -109,8 +109,8 @@ def _looks_like_math(text: str) -> bool:
     return bool(_MATH_RE.match(t)) and any(
         op in t for op in ("+", "-", "*", "/", "^", "("))
 
-# Rough token cost of the tool block, for logging. ~4 chars/token, matching
-# context.estimate_tokens().
+# Rough token cost of the tool block, for logging. ~4 chars/token — the same
+# ratio `AgentLoop._summarize()` uses when it estimates the context budget.
 _CHARS_PER_TOKEN = 4
 
 
