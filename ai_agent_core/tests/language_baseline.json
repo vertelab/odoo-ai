@@ -12,15 +12,15 @@
    "doc": 56
   },
   "core/channel.py": {
-   "code": 2,
+   "code": 0,
    "doc": 15
   },
   "core/channels.py": {
-   "code": 4,
+   "code": 0,
    "doc": 27
   },
   "core/conference.py": {
-   "code": 4,
+   "code": 1,
    "doc": 4
   },
   "core/extract.py": {
@@ -28,11 +28,11 @@
    "doc": 10
   },
   "core/improve.py": {
-   "code": 3,
+   "code": 0,
    "doc": 7
   },
   "core/interrupt.py": {
-   "code": 8,
+   "code": 0,
    "doc": 12
   },
   "core/linear.py": {
@@ -40,15 +40,15 @@
    "doc": 2
   },
   "core/loop.py": {
-   "code": 10,
+   "code": 1,
    "doc": 16
   },
   "core/permission.py": {
-   "code": 3,
+   "code": 0,
    "doc": 2
   },
   "core/provider.py": {
-   "code": 22,
+   "code": 1,
    "doc": 30
   },
   "core/router.py": {
@@ -56,7 +56,7 @@
    "doc": 1
   },
   "core/runtime.py": {
-   "code": 7,
+   "code": 0,
    "doc": 15
   },
   "core/ssrf.py": {
@@ -68,11 +68,11 @@
    "doc": 1
   },
   "core/tool_select.py": {
-   "code": 38,
+   "code": 36,
    "doc": 0
   },
   "core/tools.py": {
-   "code": 28,
+   "code": 0,
    "doc": 40
   },
   "core/trust.py": {
@@ -80,7 +80,7 @@
    "doc": 6
   },
   "core/verify.py": {
-   "code": 19,
+   "code": 13,
    "doc": 12
   },
   "fields/pg_vector.py": {
@@ -389,5 +389,16 @@
   "models/ai_coworker.py": 7,
   "note": "Remaining Swedish literals are DATA: transliteration table, field names in domains, and regexes that must match Swedish LLM answers. Exempt with a written reason in LANGUAGE_DATA_LITERALS."
  },
- "_contracts_note": "tests/language_contracts.json was re-snapshotted 2026-11-08 after ac42d816 (\"[FIX] views: tree -> list\") added first_token_seconds, longest_gap_seconds and stream_seconds to views/ai_session_views.xml. That is another author view change, not a translation. From here on, any contract diff is a translation regression."
+ "_contracts_note": "tests/language_contracts.json was re-snapshotted 2026-11-08 after ac42d816 (\"[FIX] views: tree -> list\") added first_token_seconds, longest_gap_seconds and stream_seconds to views/ai_session_views.xml. That is another author view change, not a translation. From here on, any contract diff is a translation regression.",
+ "_permanent_swedish": {
+  "core/tool_select.py": "Swedish query terms in the lexical fallback bridge (_BRIDGE), the bilingual stopword list (_STOP) and the Swedish stem entries. Tool descriptions are English; prompts are often Swedish. These keys are the mapping itself.",
+  "core/verify.py": "Swedish text analysis: the source-claim regex, the proper-noun and sentence-start character classes, the sv/en language-detection word lists and the entity stopwords. Translating them would break entity extraction and citation checking.",
+  "core/loop.py": "One accepted approval answer (\"kör\") alongside \"ja\"/\"yes\"/\"ok\".",
+  "core/conference.py": "One docstring fragment.",
+  "core/provider.py": "One docstring fragment.",
+  "core/router.py": "One docstring fragment.",
+  "core/trust.py": "One docstring fragment.",
+  "models/ai_coworker.py": "Data: transliteration table, beställare_* field names, narration/meta-note regexes, and the stored name \"Allmän\".",
+  "models/ai_mail_test_wizard.py": "Data: two f-string fragments already translated in context."
+ }
 }

@@ -338,14 +338,14 @@ class PermissionEngine:
                 # Automation kan aldrig köra dessa utan människa → neka
                 return Decision(
                     allowed=False,
-                    reason=(f"{tool_name} kräver alltid mänskligt godkännande "
-                            "(hårt stopp — ingen auto-approval)"),
+                    reason=(f"{tool_name} always requires human approval "
+                            "(hard stop — no auto approval)"),
                 )
             return Decision(
                 allowed=True,
                 needs_user=True,
-                reason=(f"{tool_name} kräver alltid mänskligt godkännande "
-                        "(hårt stopp)"),
+                reason=(f"{tool_name} always requires human approval "
+                        "(hard stop)"),
             )
 
         # -- Delegerad tillit (coworker-delegation D4) --
@@ -366,9 +366,9 @@ class PermissionEngine:
                     allowed=True,
                     needs_user=True,
                     reason=(
-                        f"delegerat uppdrag: effektivt tillitssteg "
-                        f"{self.delegated_trust} (min(beställare, utförare)) "
-                        f"kräver mänskligt godkännande för '{tool_name}'"),
+                        f"delegated assignment: effective trust level "
+                        f"{self.delegated_trust} (min(requester, executor)) "
+                        f"requires human approval for '{tool_name}'"),
                 )
 
         # -- AUTO mode: everything allowed --

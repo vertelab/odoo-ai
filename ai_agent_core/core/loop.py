@@ -168,8 +168,7 @@ class AgentConfig:
         """
         if not self.max_rounds or self.max_rounds < 1:
             _logger.warning(
-                'AgentConfig.max_rounds=%r är inte ett positivt heltal — '
-                'normaliserar till %s', self.max_rounds, DEFAULT_MAX_ROUNDS)
+                'AgentConfig.max_rounds=%r is not a positive integer — normalising to %s', self.max_rounds, DEFAULT_MAX_ROUNDS)
             self.max_rounds = DEFAULT_MAX_ROUNDS
 
 
@@ -627,12 +626,12 @@ class AgentLoop:
                             # Emit plan for approval
                             if self.interrupt_handler:
                                 result = await self.interrupt_handler.ask(
-                                    question=f"Agenten föreslår följande plan:\n\n{plan_text}\n\nGodkänn?",
+                                    question=f"The agent proposes the following plan:\n\n{plan_text}\n\nApprove?",
                                     approval_type="plan_approval",
                                     timeout=300,
                                 )
                                 if result.get("action") == "answer" and result.get("answer", "").lower().strip() in (
-                                    "ja", "yes", "ok", "godkänn", "approve", "kör"
+                                    "ja", "yes", "ok", "approve", "run", "kör"
                                 ):
                                     # Switch from PLAN to INTERACTIVE mode
                                     self.permissions.set_mode(PermissionMode.INTERACTIVE)
@@ -726,10 +725,7 @@ class AgentLoop:
             synth_messages = messages + [Message(
                 role=Role.USER,
                 content=(
-                    'Sammanfatta nu ditt bästa svar på användarens fråga '
-                    'ovan. Svara direkt med slutsatsen/resultatet — inga '
-                    'verktyg. Om du saknar tillräcklig data, säg det '
-                    'ärligt och ge det du vet.'
+                    'Now summarise your best answer to the user question above. Answer directly with the conclusion/result — no tools. If you lack enough data, say so honestly and give what you know.'
                 ),
             )]
             synth = await self.provider.chat(
@@ -1250,8 +1246,7 @@ class AgentLoop:
         recent = messages[-keep_recent:]
 
         summary_prompt = (
-            "Sammanfatta konversationen nedan. Behåll alla nyckelfakta, "
-            "beslut och kontext. Var koncis men komplett.\n\n"
+            "Summarise the conversation below. Keep all key facts, decisions and context. Be concise but complete.\n\n"
             + "\n".join(
                 f"{m.role.value}: {m.content[:500]}"
                 for m in to_summarize
@@ -1274,7 +1269,7 @@ class AgentLoop:
             summary = f"[Tidigare konversation, sammanfattad: {response.text}]"
         except Exception as e:
             _logger.warning("Summarization failed: %s — keeping recent messages", e)
-            summary = "[Sammanfattning misslyckades — behåller senaste kontexten]"
+            summary = "[Summary failed — keeping the latest context]"
 
         summary_msg = Message(role=Role.SYSTEM, content=summary)
         return [summary_msg] + recent
@@ -1453,7 +1448,7 @@ class StreamingAgentLoop(AgentLoop):
                                         "executor": "nats",
                                         "tool": tc["name"],
                                         "status": "pending",
-                                        "message": f"Väntar på Pi-agent ({tc['name']})...",
+                                        "message": f"Waiting for the Pi agent ({tc['name']})...",
                                     }),
                                 )
                             result = await self._execute_tool(
@@ -1514,10 +1509,7 @@ class StreamingAgentLoop(AgentLoop):
                 messages=messages + [Message(
                     role=Role.USER,
                     content=(
-                        'Sammanfatta nu ditt bästa svar på användarens fråga '
-                        'ovan. Svara direkt med slutsatsen/resultatet — inga '
-                        'verktyg. Om du saknar tillräcklig data, säg det '
-                        'ärligt och ge det du vet.'
+                        'Now summarise your best answer to the user question above. Answer directly with the conclusion/result — no tools. If you lack enough data, say so honestly and give what you know.'
                     ),
                 )],
                 system_prompt=self.config.system_prompt,

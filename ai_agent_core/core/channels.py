@@ -231,7 +231,7 @@ class MailItemProcessor:
             _ai_context_id=item.session.id,
         )._request_hitl(
             action_type,
-            f'Godkänn {action_type} för {item.coworker.name}',
+            f'Approve {action_type} for {item.coworker.name}',
             context=context or {},
             session=item.session,
         )
@@ -434,7 +434,7 @@ class ChatItemProcessor:
             _ai_context_id=item.session.id,
         )._request_hitl(
             action_type,
-            f'Godkänn {action_type} för {item.coworker.name}',
+            f'Approve {action_type} for {item.coworker.name}',
             context=context or {},
             session=item.session,
         )

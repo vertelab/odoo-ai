@@ -133,13 +133,13 @@ class Message:
                 self.role = Role(self.role)
             except ValueError:
                 raise ValueError(
-                    'Message.role=%r är inte en Role-medlem (giltiga: %s)'
+                    'Message.role=%r is not a Role member (valid: %s)'
                     % (self.role,
                        ', '.join(sorted(r.value for r in Role))))
             # debug, inte warning: sju anropsplatser × varje LLM-anrop
             # hade fyllt loggen. Konverteringen syns när någon letar.
             _logger.debug(
-                'Message.role var en sträng — normaliserade till %s',
+                'Message.role was a string — normalised to %s',
                 self.role.name)
 
     def to_openai(self) -> dict:
@@ -294,14 +294,11 @@ class GatewayRejection(ProviderError):
         self.detail = detail
         if self.reason == 'combo_forbidden':
             msg = (
-                "Modellen '%s' är inte tillgänglig för denna nyckel "
-                "(gateway-avslag: %s). Kontrollera att modellnamnet finns i "
-                "gatewayens katalog och att nyckeln är entitled till det."
+                "The model '%s' is not available for this key (gateway rejection: %s). Check that the model name exists in the gateway catalog and that the key is entitled to it."
                 % (self.model, self.reason))
         elif self.reason in ('model_not_found', 'not_found'):
             msg = (
-                "Modellen '%s' finns inte hos leverantören "
-                "(gateway-avslag: %s)." % (self.model, self.reason))
+                "The model '%s' does not exist at the provider (gateway rejection: %s)." % (self.model, self.reason))
         else:
             msg = (
                 "Gatewayen avvisade modellen '%s' (HTTP %s, %s)."
@@ -665,7 +662,7 @@ class AIProvider:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         if not self.api_key:
-            _logger.warning("AIProvider: ingen API-nyckel på recordet.")
+            _logger.warning("AIProvider: no API key on the record.")
 
         self.is_bifrost = is_bifrost
         self.api_style = api_style or "openai"
@@ -732,12 +729,11 @@ class AIProvider:
                     break
                 if can_retry is not None and not can_retry():
                     _logger.warning(
-                        'provider: transient fel (%s) men retry är förbjuden '
-                        '— innehåll har redan sänts', verdict.reason)
+                        'provider: transient error (%s) but retry is forbidden — content has already been sent', verdict.reason)
                     raise
                 wait = self._compute_wait(verdict, attempt - 1)
                 _logger.warning(
-                    'provider: %s (HTTP %s) — nytt försök %d/%d om %.1f s',
+                    'provider: %s (HTTP %s) — retry %d/%d in %.1f s',
                     verdict.reason,
                     getattr(exc, 'response', None) is not None
                     and getattr(exc.response, 'status_code', '?') or '?',
@@ -757,8 +753,8 @@ class AIProvider:
         except Exception:
             status = 0
         raise ProviderRetriesExhausted(
-            'Providern gav upp efter %d försök — %s'
-            % (attempt, last_verdict.reason or 'okänt fel'),
+            'The provider gave up after %d attempts — %s'
+            % (attempt, last_verdict.reason or 'unknown error'),
             status_code=status, attempts=attempt,
             last_reason=last_verdict.reason,
         ) from last_exc
@@ -1112,8 +1108,7 @@ class AIProvider:
                     raise
                 if state.get('emitted'):
                     _logger.warning(
-                        'provider: transient fel (%s) efter levererade '
-                        'tokens — retry förbjuden, innehåll är redan sänt',
+                        'provider: transient error (%s) after delivered tokens — retry forbidden, content has already been sent',
                         verdict.reason)
                     raise
                 if attempt >= limit:
@@ -1124,14 +1119,14 @@ class AIProvider:
                     except Exception:
                         status = 0
                     raise ProviderRetriesExhausted(
-                        'Providern gav upp efter %d försök — %s'
-                        % (attempt, verdict.reason or 'okänt fel'),
+                        'The provider gave up after %d attempts — %s'
+                        % (attempt, verdict.reason or 'unknown error'),
                         status_code=status, attempts=attempt,
                         last_reason=verdict.reason) from exc
 
                 wait = self._compute_wait(verdict, attempt - 1)
                 _logger.warning(
-                    'provider (stream): %s — nytt försök %d/%d om %.1f s',
+                    'provider (stream): %s — retry %d/%d in %.1f s',
                     verdict.reason, attempt + 1, limit, wait)
                 # D5: synligt försök — yieldas FÖRE väntan, i realtid.
                 yield TokenEvent(type="retry", attempt=attempt,
@@ -1336,15 +1331,15 @@ class AIProvider:
                     raise
                 if attempt >= limit:
                     raise ProviderRetriesExhausted(
-                        'Providern gav upp efter %d försök — %s'
-                        % (attempt, verdict.reason or 'okänt fel'),
+                        'The provider gave up after %d attempts — %s'
+                        % (attempt, verdict.reason or 'unknown error'),
                         status_code=getattr(
                             getattr(exc, 'response', None), 'status_code', 0) or 0,
                         attempts=attempt,
                         last_reason=verdict.reason) from exc
                 wait = self._compute_wait(verdict, attempt - 1)
                 _logger.warning(
-                    'provider (anthropic stream): %s — nytt försök %d/%d om %.1f s',
+                    'provider (anthropic stream): %s — retry %d/%d in %.1f s',
                     verdict.reason, attempt + 1, limit, wait)
                 yield TokenEvent(type="retry", attempt=attempt,
                                  reason=verdict.reason)
@@ -1452,8 +1447,7 @@ def resolve_provider_from_model(ai_model):
         )
         if api_key:
             _logger.debug(
-                "Bifrost-provider %s saknar api_key — använder "
-                "bifrost.admin_api_key",
+                "Bifrost provider %s has no api_key — using bifrost.admin_api_key",
                 provider.name,
             )
 
@@ -1544,7 +1538,7 @@ def get_default_provider(env=None):
             provider, model = resolve_provider_from_coworker(default_coworker)
             if provider:
                 _logger.debug(
-                    'get_default_provider: källa=coworker=%s',
+                    'get_default_provider: source=coworker=%s',
                     default_coworker.id)
                 return provider, model
 
@@ -1553,14 +1547,14 @@ def get_default_provider(env=None):
             'ai_agent_core.default_model_id'
         )
         if not param:
-            _logger.debug('get_default_provider: källa=none')
+            _logger.debug('get_default_provider: source=none')
             return None, None
 
         model = env['ai.model'].sudo().browse(int(param))
         if not model.exists():
             return None, None
 
-        _logger.debug('get_default_provider: källa=param')
+        _logger.debug('get_default_provider: source=param')
         return resolve_provider_from_model(model), model
     except Exception:
         return None, None
@@ -1677,8 +1671,7 @@ def resolve_coworker_or_default(coworker, env=None, raise_on_error=False):
             provider, model = resolve_provider_from_coworker(default_coworker)
             if provider:
                 _logger.warning(
-                    'Provider-fallback: coworker %s saknade upplösbar '
-                    'modell — använder default-medarbetaren %s (%s)',
+                    'Provider fallback: coworker %s had no resolvable model — using the default coworker %s (%s)',
                     coworker.id if coworker else '-',
                     default_coworker.id, default_coworker.name)
                 return provider, model

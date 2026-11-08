@@ -62,8 +62,8 @@ def get_float(env, key, default):
     try:
         return float(raw)
     except (TypeError, ValueError):
-        _logger.warning('runtime: parametern %s=%r är inte ett tal — '
-                        'använder default %s', key, raw, default)
+        _logger.warning('runtime: the parameter %s=%r is not a number — '
+                        'using default %s', key, raw, default)
         return default
 
 
@@ -95,7 +95,7 @@ def find_free_port(start):
                 raise
             return port
     raise RuntimeError(
-        'runtime: ingen ledig port hittades från %s (200 försök).' % start)
+        'runtime: no free port found from %s (200 attempts).' % start)
 
 
 # ── API-nyckel (D5: bunden till upplöst användare, aldrig i argv) ────
@@ -263,10 +263,10 @@ def spawn(env, coworker_id, api_key, base_url, name=None, skills=None,
     binary = get_bin(env)
     if not os.path.isfile(binary):
         raise RuntimeError(
-            'runtime: pi-agent-binären saknas: %s. Sätt %s.'
+            'runtime: the pi-agent binary is missing: %s. Set %s.'
             % (binary, PARAM_BIN))
     if not os.access(binary, os.X_OK):
-        raise RuntimeError('runtime: %s är inte körbar.' % binary)
+        raise RuntimeError('runtime: %s is not executable.' % binary)
 
     if port_start is None:
         port_start = get_int(env, PARAM_PORT_START, DEFAULT_PORT_START)
@@ -322,7 +322,7 @@ def spawn(env, coworker_id, api_key, base_url, name=None, skills=None,
         except OSError:
             pass  # best-effort: tyst fallback — se etiketteringsregeln
         raise RuntimeError(
-            'runtime: pi-agent lyssnade inte på port %d inom %.1f s '
+            'runtime: pi-agent did not listen on port %d within %.1f s '
             '(rc=%s).' % (port, spawn_timeout, rc))
 
     handle = ExternalAgentHandle(
@@ -330,7 +330,7 @@ def spawn(env, coworker_id, api_key, base_url, name=None, skills=None,
         key_file=key_file, base_url=base_url, coworker_id=coworker_id,
         name=name)
     _logger.info(
-        'runtime: startade %s (pid=%s, port=%s, coworker=%s) på %.3f s',
+        'runtime: started %s (pid=%s, port=%s, coworker=%s) in %.3f s',
         name, proc.pid, port, coworker_id, time.time() - started_at)
     return handle
 
@@ -372,7 +372,7 @@ def abort(handle, grace=None, env=None):
         return True
     gone = _terminate(handle.proc, grace)
     handle.cleanup_key_file()
-    _logger.info('runtime: avbröt %s (pid=%s) — borta=%s',
+    _logger.info('runtime: aborted %s (pid=%s) — gone=%s',
                  handle.name, handle.pid, gone)
     return gone
 

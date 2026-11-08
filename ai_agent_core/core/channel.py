@@ -183,7 +183,7 @@ class ChannelRegistry:
         _logger.warning(
             'channel_registry: kanalen %r registreras med en %s som inte '
             'uppfyller kontraktet — saknar: %s',
-            name, kind, ', '.join(missing) or '(okänt)')
+            name, kind, ', '.join(missing) or '(unknown)')
 
     def forget_no_processor_warning(self, name: str) -> None:
         """Glöm att kanalen varnats (används av tester och omregistrering)."""
@@ -221,9 +221,7 @@ async def process_item(item: NormalizedItem, processor: Optional[ItemProcessor] 
         if item.channel not in reg._warned_no_processor:
             reg._warned_no_processor.add(item.channel)
             _logger.warning(
-                'process_item: ingen processor registrerad för kanalen %r — '
-                "returnerar 'no_processor'. Registrera kanalen med "
-                'channel_registry.register(%r, processor=...).',
+                'process_item: no processor registered for channel %r — returning \'no_processor\'. Register the channel with channel_registry.register(%r, processor=...).',
                 item.channel, item.channel)
         return 'no_processor'
 

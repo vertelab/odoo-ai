@@ -173,15 +173,13 @@ class AutoInterruptHandler(InterruptHandler):
         if self.hitl_request is None:
             # Ingen mottagare för ärendet → ingen kan godkänna → neka.
             _logger.warning(
-                'AutoInterruptHandler: nekar %s (%s) — no approval recipient '
-                '(hitl_request saknas i denna körväg)', tool_name, risk_level)
+                'AutoInterruptHandler: denying %s (%s) — no approval recipient (hitl_request is missing on this path)', tool_name, risk_level)
             return False
         # Destruktivt/skrivande: materialisera ärendet och neka tills vidare.
         try:
             self.hitl_request(tool_name, risk_level, arguments)
         except Exception as e:  # noqa: BLE001 — HITL får aldrig krascha loopen
-            _logger.warning('AutoInterruptHandler: kunde inte skapa '
-                            'HITL-ärende för %s: %s', tool_name, e)
+            _logger.warning('AutoInterruptHandler: could not create a HITL request for %s: %s', tool_name, e)
         return False
 
     async def drain_steer(self) -> list[str]:
@@ -221,7 +219,7 @@ class DiscussInterruptHandler(InterruptHandler):
         """Post question in channel and wait for human response."""
         # Post the question
         self.channel.message_post(
-            body=f"🤖 **Agent behöver input:**\n\n{question}",
+            body=f"🤖 **Agent needs input:**\n\n{question}",
             message_type='comment',
         )
 
@@ -259,15 +257,15 @@ class DiscussInterruptHandler(InterruptHandler):
     ) -> bool:
         """Ask for approval for a specific tool call."""
         result = await self.ask(
-            question=f"Får jag köra verktyget **{tool_name}**?\n"
-                     f"Risknivå: {risk_level}\n"
-                     f"Parametrar: {arguments}",
+            question=f"May I run the tool **{tool_name}**?\n"
+                     f"Risk level: {risk_level}\n"
+                     f"Parameters: {arguments}",
             approval_type="tool_approval",
             timeout=120,
         )
         if result["action"] == "answer":
             answer = result["answer"].lower().strip()
-            return answer in ("ja", "yes", "ok", "kör", "approve", "godkänn")
+            return answer in ("ja", "yes", "ok", "run", "approve", "approve")
         return False  # timeout = deny
 
     async def drain_steer(self) -> list[str]:
@@ -507,7 +505,7 @@ class OpenAIInterruptHandler(InterruptHandler):
                         "tool": tool_name,
                         "risk_level": risk_level,
                         "arguments": arguments,
-                        "question": f"Godkänn verktyg {tool_name}?",
+                        "question": f"Approve tool {tool_name}?",
                     }),
                 },
             }],

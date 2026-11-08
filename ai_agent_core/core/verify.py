@@ -500,7 +500,7 @@ def _verify_source_coverage(result, check, field, actual, source):
     result.coverage_found = cov.found
 
     if not cov.passed:
-        missing = ', '.join(cov.missing[:8]) if cov.missing else '(okänt)'
+        missing = ', '.join(cov.missing[:8]) if cov.missing else '(unknown)'
         result.requirement_errors.append(ValidationError(
             layer='write_verify', field=field,
             message=(f'{field} covers only {cov.coverage:.0%} of the source '
@@ -509,7 +509,7 @@ def _verify_source_coverage(result, check, field, actual, source):
             actual=f'{cov.coverage:.0%}',
         ))
         result.fix_suggestions.append(
-            f'Lägg till det som saknas i {field}: {missing}')
+            f'Add what is missing in {field}: {missing}')
 
     # Påstådd källa som inte finns i sammanhanget (3.1–3.3).
     claimed = _extract_claimed_sources(content)
@@ -523,7 +523,7 @@ def _verify_source_coverage(result, check, field, actual, source):
                 expected='a source found in the context', actual=claim,
             ))
             result.fix_suggestions.append(
-                f'Ta bort eller belägg källhänvisningen: {claim}')
+                f'Remove or substantiate the source reference: {claim}')
 
 
 # Källhänvisning i innehållet: "Källa: X", "Source: X", "(X)" efter Källa.

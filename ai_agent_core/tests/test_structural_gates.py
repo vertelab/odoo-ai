@@ -1131,6 +1131,38 @@ LANGUAGE_DATA_LITERALS = {
          'Same proper-noun regex as ai_personal_memory: Swedish capitals are '
          'part of the character class, not a label.'),
     ],
+    'core/verify.py': [
+        ('källa|källor',
+         'Source-claim regex: it detects "Källa:"/"Referens:" in an LLM '
+         'answer so an unbacked citation can be flagged. The Swedish words '
+         'are the needles.'),
+        ('[A-ZÅÄÖ]',
+         'Proper-noun and sentence-start regexes: Swedish capitals are part '
+         'of the character classes.'),
+        ('swedish',
+         'Language detection: a dict of Swedish vs English function words. '
+         'The words themselves are the data.'),
+        ('_ENTITY_STOPWORDS',
+         'Entity stopword list: Swedish and English function words that must '
+         'not be treated as named entities. Translating them would break '
+         'entity extraction.'),
+    ],
+    'core/tool_select.py': [
+        ('_BRIDGE',
+         'Swedish -> English token bridge for the lexical fallback scorer. '
+         'Tool descriptions are English, prompts are often Swedish; this map '
+         'is what connects them. The Swedish keys are the data.'),
+        ('att till',
+         'Stopword list for the same scorer, covering both languages.'),
+        ('sök',
+         'Bridge/stem entries for Swedish query terms. Data.'),
+    ],
+    'core/loop.py': [
+        ('"kör"',
+         'Accepted answer when a human approves a plan: "ja", "yes", "ok", '
+         '"approve", "run", "kör". The Swedish word is one of the accepted '
+         'inputs, not a label.'),
+    ],
 }
 
 

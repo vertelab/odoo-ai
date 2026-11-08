@@ -420,8 +420,8 @@ def _tool_personal_memory(env, action: str = "", content: str = "",
         if not (content or "").strip():
             return _missing_argument_error(
                 'content',
-                'texten som ska sparas (t.ex. "användaren vill ha fem nyheter")',
-                example="content='Användaren vill ha fem nyheter'",
+                'the text to store (e.g. "the user wants five news items")',
+                example="content='The user wants five news items'",
                 tool_name='personal_memory').to_json()
         valid_cat = dict(Memory._fields['category'].selection)
         valid_imp = dict(Memory._fields['importance'].selection)
@@ -614,7 +614,7 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
             soup = _Soup(r.text, 'html.parser')
             items = parser(soup)
             if not items:
-                _logger.info('web_search: %s gav inga parsade träffar', label)
+                _logger.info('web_search: %s gave no parsed hits', label)
             return items
         except Exception as exc:
             _logger.info('web_search: %s misslyckades: %s', label, exc)
@@ -973,7 +973,7 @@ def _capability_enum_schema(members):
         'operation': {
             'type': 'string',
             'enum': [m.name for m in members],
-            'description': 'Operation att utföra. Välj exakt en av enumen.',
+            'description': 'Operation to perform. Choose exactly one from the enum.',
         },
     }
     for m in members:
@@ -1005,8 +1005,8 @@ def capability_enum_tool(cap_name, cap_desc, members):
     if len(members) > CAPABILITY_ENUM_MAX_OPS:
         raise ValueError(
             f"Capability '{cap_name}' has {len(members)} operations "
-            f"> {CAPABILITY_ENUM_MAX_OPS} — dela förmågan eller använd "
-            'namespace-läge (spec tool-capability-serialization).')
+            f"> {CAPABILITY_ENUM_MAX_OPS} — split the capability or use "
+            'namespace mode (spec tool-capability-serialization).')
 
     by_name = {m.name: m for m in members}
     max_risk = max(
@@ -1048,7 +1048,7 @@ def capability_namespace_prompt(capabilities):
     """
     if not capabilities:
         return ''
-    lines = ['', '## Förmågor (capabilities)', '']
+    lines = ['', '## Capabilities', '']
     for cap in capabilities:
         lines.append(f'### {cap["name"]}')
         lines.append(cap.get('description') or '')
@@ -1279,7 +1279,7 @@ def builtin_tools() -> list[Tool]:
                     },
                     "content": {
                         "type": "string",
-                        "description": "The memory to store (required for action='write'), e.g. 'Användaren vill ha fem nyheter'",
+                        "description": "The memory to store (required for action='write'), e.g. 'The user wants five news items'",
                     },
                     "query": {
                         "type": "string",
@@ -1711,7 +1711,7 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="odoo_create",
-            description="Create a record via the ORM (affärslager) — defaults/onchange tillämpas. Returns id and display_name. Requires approval.",
+            description="Create a record via the ORM (business layer) — defaults/onchange are applied. Returns id and display_name. Requires approval.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -1823,15 +1823,7 @@ def builtin_tools() -> list[Tool]:
         Tool(
             name="delegate_task",
             description=(
-                "Lägg ett uppdrag hos en kollega (ai.coworker) i din "
-                "avdelning. Använd när uppgiften ligger utanför din egen "
-                "förmåga men inom din avdelning (sidledes) eller under dig "
-                "(neråt) — t.ex. en redovisningscoworker som ber en "
-                "driftcoworker kolla loggarna. Delegering går ALDRIG uppåt "
-                "(det är eskalering) eller tvärs över avdelningar. "
-                "Uppdraget bär ditt tillitssteg och utförs av kollegan i "
-                "deras egen takt (heartbeat); du får svaret därifrån. "
-                "Se kollegakatalogen i systemprompten för giltiga mottagare."
+                "Place an assignment with a colleague (ai.coworker) in your department. Use it when the task is outside your own ability but within your department (sideways) or below you (down) — e.g. an accounting coworker asking an operations coworker to check the logs. Delegation NEVER goes upward (that is escalation) or across departments. The assignment carries your trust level and is carried out by the colleague at their own pace (heartbeat); you get the answer from there. See the colleague catalog in the system prompt for valid recipients."
             ),
             parameters={
                 "type": "object",
@@ -1842,7 +1834,7 @@ def builtin_tools() -> list[Tool]:
                     },
                     "description": {
                         "type": "string",
-                        "description": "Vad som ska göras (krävs — en tom uppgift ruttnar)",
+                        "description": "What should be done (required — an empty task rots)",
                     },
                     "name": {
                         "type": "string",
@@ -1851,7 +1843,7 @@ def builtin_tools() -> list[Tool]:
                     "priority": {
                         "type": "string",
                         "enum": ["0", "1", "2", "3"],
-                        "description": "0=Låg, 1=Normal, 2=Hög, 3=Brådskande",
+                        "description": "0=Low, 1=Normal, 2=High, 3=Urgent",
                     },
                 },
                 "required": ["target_coworker", "description"],
@@ -1947,7 +1939,7 @@ def nats_kv_create(key: str, value: str) -> bool:
         return asyncio.run(_run())
     except Exception as e:
         # Konflikt (nyckeln finns) eller NATS otillgängligt → neka.
-        _logger.info('NATS KV create nekad för %s: %s', key, e)
+        _logger.info('NATS KV create denied for %s: %s', key, e)
         return False
 
 
@@ -1970,7 +1962,7 @@ def nats_kv_delete(key: str) -> bool:
     try:
         return asyncio.run(_run())
     except Exception as e:
-        _logger.debug('NATS KV delete misslyckades för %s: %s', key, e)
+        _logger.debug('NATS KV delete failed for %s: %s', key, e)
         return False
 
 
@@ -2857,7 +2849,7 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
     Model = env[model]
     vals = dict(values or {})
     if not vals:
-        return json.dumps({"error": "values krävs"})
+        return json.dumps({"error": "values is required"})
     try:
         fg = Model.fields_get(list(vals.keys()))
     except Exception:
@@ -3174,9 +3166,9 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
     """
     import json as _json
     if not query:
-        return json.dumps({"error": "query krävs"})
+        return json.dumps({"error": "query is required"})
     if 'ai.okf.concept' not in env:
-        return json.dumps({"error": "OKF inte tillgängligt"})
+        return json.dumps({"error": "OKF not available"})
     try:
         kw = {'query': query, 'limit': limit or 10}
         if scope in ('company', 'personal', 'coworker'):
@@ -3197,8 +3189,7 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
                         cw_id = sess.coworker_id.id if sess.exists() else None
                 if not cw_id:
                     return json.dumps({
-                        "error": "coworker-scope kräver en coworker i "
-                                 "kontexten (default_coworker_id)"})
+                        "error": "coworker scope requires a coworker in the context (default_coworker_id)"})
                 kw['owner_id'] = cw_id
         results = env['ai.okf.concept']._okf_search(**kw)
         out = [{
@@ -3272,19 +3263,17 @@ def _tool_delegate_task(env, target_coworker='', description='',
     requester = _current_coworker(env)
     if requester is None:
         return _delegation_error(
-            'delegate_task kan bara användas inuti en coworker-körning '
-            '(ingen aktuell session i kontexten).',
+            'delegate_task can only be used inside a coworker run (no current session in the context).',
             parameter='target_coworker', retryable=False)
     if not (description or '').strip():
         return _delegation_error(
-            'description krävs — en uppgift utan beskrivning köas inte.',
+            'description is required — a task without a description is not queued.',
             parameter='description',
             expected='en tydlig beskrivning av uppdraget', retryable=True)
     target_coworker = str(target_coworker or '').strip()
     if not target_coworker:
         return _delegation_error(
-            'target_coworker krävs — ange kollegans namn (se '
-            'kollegakatalogen).', parameter='target_coworker',
+            'target_coworker is required — give the colleague name (see the colleague catalog).', parameter='target_coworker',
             expected='en kollega i din avdelning (eller under dig)',
             retryable=True)
 
@@ -3301,8 +3290,7 @@ def _tool_delegate_task(env, target_coworker='', description='',
         return _delegation_error(
             'Hittade ingen kollega som matchar "%s".' % target_coworker,
             parameter='target_coworker',
-            expected='exakt namn på en kollega i din avdelning '
-                     '(se kollegakatalogen)', retryable=True)
+            expected='exact name of a colleague in your department (see the colleague catalog)', retryable=True)
 
     try:
         task = requester._delegate_task_to(
@@ -3321,8 +3309,7 @@ def _tool_delegate_task(env, target_coworker='', description='',
         "name": task.name,
         "target": target.name,
         "delegation_depth": task.delegation_depth,
-        "message": ("Uppdraget ligger nu hos %s. Du får svaret därifrån när "
-                    "kollegan plockar upp det." % target.name),
+        "message": ("The assignment now sits with %s. You get the answer from there once the colleague picks it up." % target.name),
     }, ensure_ascii=False)
 
 
@@ -3989,18 +3976,17 @@ def specialist_tools(agents) -> list[Tool]:
         import re as _re
         if not _re.match(r'^[a-zA-Z0-9_-]+$', tool_name):
             _logger.error(
-                'specialist_tools: byggt verktygsnamn %r matchar inte '
-                '^[a-zA-Z0-9_-]+$ (agentnamn=%r) — saniteringen är trasig',
+                'specialist_tools: built tool name %r does not match ^[a-zA-Z0-9_-]+$ (agent name=%r) — the sanitisation is broken',
                 tool_name, name)
         tool = Tool(
             name=tool_name,
             description=(
-                f"Delegera EN konkret delfråga till specialisten '{name}'. "
-                f"{description or ''}. VIKTIGT: `query` MÅSTE alltid vara en konkret, "
-                f"specifik sök-/arbetsuppgift som du bygger ur användarens fråga "
-                f"(t.ex. exakt ämne/term att undersöka) — skicka ALDRIG en tom eller "
-                f"vag query. Om du inte kan formulera en konkret delfråga åt "
-                f"specialisten, anropa INTE verktyget."
+                f"Delegate ONE concrete sub-question to the specialist '{name}'. "
+                f"{description or ''}. IMPORTANT: `query` MUST always be a concrete, "
+                f"specific search/work task that you build from the user question "
+                f"(e.g. the exact topic/term to investigate) — NEVER send an empty or "
+                f"vague query. If you cannot formulate a concrete sub-question for "
+                f"the specialist, do NOT call the tool."
             ),
             parameters={
                 "type": "object",
@@ -4008,11 +3994,11 @@ def specialist_tools(agents) -> list[Tool]:
                     "query": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Precis uppgift att utföra."
+                        "description": "The exact task to perform."
                     },
                     "context": {
                         "type": "string",
-                        "description": "Relevant bakgrund för uppgiften (valfritt)."
+                        "description": "Relevant background for the task (optional)."
                     },
                 },
                 "required": ["query"],
@@ -4030,7 +4016,7 @@ def specialist_tools(agents) -> list[Tool]:
                 return _missing_argument_error(
                     'query',
                     'a concrete task for the specialist (not empty)',
-                    example='Sammanfatta senaste driftlarmet för web01',
+                    example='Summarise the latest operational alert for web01',
                     tool_name='call_specialist').to_json()
             prompt = f"{context}\n\n{query}" if context else query
             try:

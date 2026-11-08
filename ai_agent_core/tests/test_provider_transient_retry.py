@@ -277,7 +277,7 @@ class TestRetryEnvelope(TransactionCase):
         self.assertEqual(err.attempts, 3)
         self.assertEqual(err.last_reason, 'rate_limit')
         self.assertIn('rate_limit', str(err))
-        self.assertIn('3 försök', str(err))
+        self.assertIn('3 attempts', str(err))
 
     def test_chat_retries_through_non_streaming_path(self):
         """3.6 + 7.1: chat() retryar — callsites behöver inget eget lager."""

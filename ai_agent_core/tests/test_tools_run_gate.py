@@ -51,13 +51,13 @@ class TestHardStopsClassify(TransactionCase):
         engine = PermissionEngine(mode=PermissionMode.AUTO)
         decision = engine.evaluate('odoo_call_method', {'model': 'res.partner'})
         self.assertFalse(decision.allowed)
-        self.assertIn('hårt stopp', decision.reason)
+        self.assertIn('hard stop', decision.reason)
 
     def test_hard_stop_needs_user_in_interactive(self):
         engine = PermissionEngine(mode=PermissionMode.INTERACTIVE)
         decision = engine.evaluate('odoo_call_method', {'model': 'res.partner'})
         self.assertTrue(decision.needs_user)
-        self.assertIn('hårt stopp', decision.reason)
+        self.assertIn('hard stop', decision.reason)
 
     def test_read_tool_passes_without_user(self):
         """Läsande verktyg ska passera tyst — annars blir grinden ett hinder."""
