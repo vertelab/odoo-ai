@@ -240,7 +240,7 @@ class TestSummaryChain(_OkfTestModel):
                 summary, source = mem._okf_build_summary(text, 100)
         self.assertEqual(source, 'truncated')
         self.assertEqual(len(summary), 100)
-        self.assertTrue(any('trunkerar' in m for m in cm.output))
+        self.assertTrue(any('truncating at' in m for m in cm.output))
 
     def test_max_chars_comes_from_parameter(self):
         """F3.2: gränsen är en systemparameter, default 2000."""

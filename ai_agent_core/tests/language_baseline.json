@@ -180,7 +180,7 @@
    "doc": 3
   },
   "models/ai_okf_concept.py": {
-   "code": 58,
+   "code": 0,
    "doc": 60
   },
   "models/ai_okf_dashboard.py": {
@@ -192,7 +192,7 @@
    "doc": 2
   },
   "models/ai_okf_mixin.py": {
-   "code": 18,
+   "code": 0,
    "doc": 46
   },
   "models/ai_okf_tag.py": {

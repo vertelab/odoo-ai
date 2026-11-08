@@ -97,11 +97,11 @@ class AIOkfMixin(models.AbstractModel):
     # (_okf_index_record sätter relationen om fältet finns).
     okf_dirty = fields.Boolean(
         'OKF Dirty', default=True, index=True, copy=False,
-        help='Satt när OKF-fälten är inaktuella och måste genereras om. '
-             'Sätts av create()/write(), rensas av indexeraren.')
+        help='Set when the OKF fields are stale and must be regenerated. '
+             'Set by create()/write(), cleared by the indexer.')
     okf_indexed_at = fields.Datetime(
         'OKF Indexed At', readonly=True, copy=False,
-        help='När OKF-fälten senast genererades.')
+        help='When the OKF fields were last generated.')
 
     # ==================================================================
     # Källmetoder — modellen svarar, mixinen läser aldrig själv
@@ -587,7 +587,7 @@ class AIOkfMixin(models.AbstractModel):
             value = int(raw)
         except (TypeError, ValueError):
             _logger.warning(
-                'OKF: parametern %s är inte ett tal (%r) — använder %s',
+                'OKF: the parameter %s is not a number (%r) — using %s',
                 SUMMARY_MAX_CHARS_PARAM, raw, SUMMARY_MAX_CHARS_DEFAULT)
             return SUMMARY_MAX_CHARS_DEFAULT
         return value if value > 0 else SUMMARY_MAX_CHARS_DEFAULT
@@ -606,8 +606,8 @@ class AIOkfMixin(models.AbstractModel):
                                 raise_if_not_found=False)
         if not coworker:
             _logger.warning(
-                'OKF: coworker_default_assistent saknas — kan inte '
-                'sammanfatta långa texter')
+                'OKF: coworker_default_assistent is missing — cannot '
+                'summarise long texts')
             return None
         session = self.env['ai.coworker.session'].sudo().search([
             ('coworker_id', '=', coworker.id),
@@ -658,8 +658,8 @@ class AIOkfMixin(models.AbstractModel):
         # 4. Trunkering — sista utväg. Loggas: tyst trunkering är samma
         #    felklass som `except: pass`.
         _logger.warning(
-            'OKF: kunde inte sammanfatta %s,%s (%d tecken) — trunkerar vid '
-            '%d. Posten får ett ofullständigt koncept.',
+            'OKF: could not summarise %s,%s (%d characters) — truncating at '
+            '%d. The record gets an incomplete concept.',
             self._name, self.id, len(text), max_chars)
         return text[:max_chars], 'truncated'
 
@@ -672,17 +672,17 @@ class AIOkfMixin(models.AbstractModel):
         if session is None:
             session = self._okf_summarize_session()
         prompt = (
-            'Sammanfatta texten nedan på högst %d tecken.\n'
-            'Behåll fakta, namn, siffror och datum. Tappa ingen innebörd.\n'
-            'Svara med ENDAST sammanfattningen — ingen inledning, ingen '
-            'förklaring, ingen rubrik.\n\n'
+            'Summarise the text below in at most %d characters.\n'
+            'Keep facts, names, numbers and dates. Lose no meaning.\n'
+            'Answer with ONLY the summary — no preamble, no '
+            'explanation, no heading.\n\n'
             '---\n%s' % (max_chars, text)
         )
         try:
             result = coworker.sudo().run(prompt, session=session)
         except Exception as e:  # noqa: BLE001 — felvägen är ett giltigt utfall
             _logger.warning(
-                'OKF: sammanfattning via Allmän assistent misslyckades för '
+                'OKF: summarisation via the General Assistant failed for '
                 '%s,%s: %s', self._name, self.id, e)
             return None
         if not result or not str(result).strip():
@@ -1033,7 +1033,7 @@ class AIOkfMixin(models.AbstractModel):
             # flaggan, rör inget. Utan detta indexerades posten med tom
             # kategori, och kön tömdes innan innehållet fanns.
             _logger.debug(
-                'OKF: %s,%s är inte mogen än — behåller flaggan',
+                'OKF: %s,%s is not mature yet — keeping the flag',
                 self._name, self.id)
             return None
 
@@ -1042,14 +1042,14 @@ class AIOkfMixin(models.AbstractModel):
             if clear_dirty:
                 self._clear_okf_dirty(
                     {'okf_body': body, 'okf_summary': ''})
-            _logger.info('OKF: avför %s,%s (%s)', self._name, self.id, skip)
+            _logger.info('OKF: removes %s,%s (%s)', self._name, self.id, skip)
             return None
 
         if not body.strip():
             # "Tomt just nu" — behåll flaggan, försök nästa körning.
             # Annars tappar vi poster permanent (D5-fällan: "vägen är byggd"
             # utan att ha sett den köra).
-            _logger.debug('OKF: %s,%s har ingen text än — behåller flaggan',
+            _logger.debug('OKF: %s,%s has no text yet — keeping the flag',
                           self._name, self.id)
             return None
 
@@ -1118,7 +1118,7 @@ class AIOkfMixin(models.AbstractModel):
 
         concept = self.env['ai.okf.concept']._okf_upsert(**vals)
         _logger.info(
-            'OKF: indexerade %s (summary-källa: %s, %d -> %d tecken)',
+            'OKF: indexed %s (summary source: %s, %d -> %d characters)',
             source_ref, source, len(body), len(summary))
         return concept
 
@@ -1138,10 +1138,10 @@ class AIOkfMixin(models.AbstractModel):
                 'type': 'success' if concept else 'warning',
                 'title': 'OKF',
                 'message': (
-                    'Koncept sparat.'
+                    'Concept saved.'
                     if concept else
-                    'Inget koncept skapades — texten är tom eller posten '
-                    'avfördes. Se loggen.'),
+                    'No concept was created — the text is empty or the '
+                    'record was removed. See the log.'),
                 'sticky': False,
             },
         }
@@ -1191,7 +1191,7 @@ class AIOkfMixin(models.AbstractModel):
         extra = _OKF_EXTRA_INDEXABLE
         if model_name not in extra:
             extra.append(model_name)
-            _logger.info('OKF: registrerade %s för dirty-indexering',
+            _logger.info('OKF: registered %s for dirty indexing',
                          model_name)
         return True
 
@@ -1297,10 +1297,10 @@ class AIOkfMixin(models.AbstractModel):
         params.set_param(key, today)
         remaining = Model.search_count([('okf_dirty', '=', True)])
         _logger.warning(
-            'OKF stillestånd: %s har %d poster kvar att indexera, äldsta '
-            'är %.1f timmar gammal (tröskel %d h). Ingen post har '
-            'indexerats på den tiden — kontrollera om indexeringen kastar '
-            'fel per post (failure_count är 0 även då).',
+            'OKF standstill: %s has %d records left to index, the oldest '
+            'is %.1f hours old (threshold %d h). No record has been indexed '
+            'in that time — check whether the indexing raises per record '
+            '(failure_count is 0 even then).',
             model_name, remaining, age_hours, hours)
 
     @api.model
@@ -1315,7 +1315,7 @@ class AIOkfMixin(models.AbstractModel):
             current.append(model_name)
             self.env['ir.config_parameter'].sudo().set_param(
                 self.OKF_PRIORITY_PARAM, ','.join(current))
-            _logger.info('OKF: %s får garanterad andel (sökdrivande)',
+            _logger.info('OKF: %s gets a guaranteed share (search-driven)',
                          model_name)
         return True
 
@@ -1462,7 +1462,7 @@ class AIOkfMixin(models.AbstractModel):
         cap = self._okf_adaptive_cap(batch_size, queue_depth)
         if cap != batch_size:
             _logger.info(
-                'OKF cron: ködjup %s → tak %s (golv %s, max %s)',
+                'OKF cron: queue depth %s -> cap %s (floor %s, max %s)',
                 queue_depth, cap, batch_size, self.OKF_CRON_TAK_MAX)
 
         # Garanterad andel per modell — aldrig mindre än 1, och minst en
@@ -1543,7 +1543,7 @@ class AIOkfMixin(models.AbstractModel):
                     # exc_info: ett kraschande resultat får inte se ut som
                     # ett tomt (okf-recall-path §16).
                     _logger.warning(
-                        'OKF cron: indexering misslyckades för %s,%s: %s',
+                        'OKF cron: indexing failed for %s,%s: %s',
                         model_name, rec.id, e, exc_info=True)
             # Outnyttjad del av modellens andel går till nästa modell.
             spare = max(0, spare - max(0, remaining - len(dirty)))
@@ -1555,8 +1555,8 @@ class AIOkfMixin(models.AbstractModel):
 
         if skipped_for_time:
             _logger.info(
-                'OKF cron: tidsbudgeten (%ss) slut efter %s poster — '
-                '%s kvar till nästa varv',
+                'OKF cron: the time budget (%ss) ran out after %s records — '
+                '%s left for the next round',
                 time_budget, total, skipped_for_time)
         return total
 
