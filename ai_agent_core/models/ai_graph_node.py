@@ -70,8 +70,7 @@ class GraphNodeDefinition(models.Model):
     last_error = fields.Text('Last Error', readonly=True)
     is_healthy = fields.Boolean(
         'Healthy', compute='_compute_is_healthy',
-        help='False när senaste synken rapporterade fel — skiljer en trasig '
-             'skrivväg från en frisk men tom graf.')
+        help='False when the last sync reported an error — separates a broken write path from a healthy but empty graph.')
 
     _sql_constraints = [
         ('unique_model_graph_label',
@@ -308,7 +307,7 @@ class GraphNodeDefinition(models.Model):
         # Gör det till ett synligt fel i stället för en tyst nolla.
         undefined = self._undefined_edge_labels()
         if undefined:
-            msg = ('%s: kantmål utan noddefinition: %s'
+            msg = ('%s: edge target without a node definition: %s'
                    % (self.graph_label, ', '.join(undefined)))
             _logger.warning(msg)
             failed += 1

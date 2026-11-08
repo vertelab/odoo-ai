@@ -28,12 +28,12 @@ class AIIdentity(models.Model):
     # ── SOUL: Who the agent IS ──
     personality = fields.Text(
         'Personality',
-        default='Hjälpsam, professionell, rak kommunikation.',
+        default='Helpful, professional, direct communication.',
         help='Character traits. Shown in system prompt.',
     )
     style = fields.Text(
         'Communication Style',
-        default='Säg "du", korta svar, inga emojis om inte användaren använder dem först.',
+        default='Use "you", short answers, no emojis unless the user uses them first.',
         help='How the agent communicates.',
     )
     values = fields.Text(
@@ -43,7 +43,7 @@ class AIIdentity(models.Model):
     )
     boundaries = fields.Text(
         'Boundaries',
-        default='Gör inga juridiska tolkningar. Flagga osäkerhet.',
+        default='Do not make legal interpretations. Flag uncertainty.',
         help='Explicit limits — what the agent must NOT do.',
     )
 
@@ -85,19 +85,18 @@ class AIIdentity(models.Model):
 
     # ── Minnesprofil (agent-memory-governance: typens designintent) ──
     memory_profile = fields.Selection([
-        ('hermes', 'Hermes — lärande rådgivare'),
-        ('balanced', 'Balanserad — företag + session'),
+        ('hermes', 'Hermes — learning advisor'),
+        ('balanced', 'Balanced — company + session'),
         ('session_only', 'Session-only — bara konversationen'),
     ], default='balanced', string='Memory Profile',
-       help='Typens designintent — seedar AI Medarbetarens minnesinställningar '
-            'vid skapande. Runtime-saningen bor på medarbetaren.')
+       help='The type design intent — seeds the AI Coworker memory settings on creation. The runtime truth lives on the coworker.')
     learning = fields.Selection([
-        ('active', 'Active — lär sig av samtal'),
-        ('passive', 'Passive — injicerar bara, lär sig inte'),
+        ('active', 'Active — learns from conversations'),
+        ('passive', 'Passive — injects only, does not learn'),
     ], default='passive', string='Learning',
-       help='Om medarbetare med denna identitet skriver OKF-koncept från samtal.')
+       help='Whether coworkers with this identity write OKF concepts from conversations.')
     nudging = fields.Boolean('Nudging', default=False,
-       help='Typens default för nudging (drivs av medarbetarens runtime).')
+       help='The type default for nudging (driven by the coworker runtime).')
 
     # ── Persona (OpenWorker-inspired) ──
     family = fields.Selection([
@@ -143,7 +142,7 @@ class AIIdentity(models.Model):
     def _compute_system_prompt(self):
         for rec in self:
             parts = [
-                f"Du är {rec.name}.",
+                f"You are {rec.name}.",
                 "",
                 "## Personlighet",
                 rec.personality or '',
@@ -151,19 +150,17 @@ class AIIdentity(models.Model):
                 "## Kommunikationsstil",
                 rec.style or '',
                 "",
-                "## Värderingar",
+                "## Values",
                 rec.values or '',
                 "",
-                "## Gränser",
+                "## Boundaries",
                 rec.boundaries or '',
             ]
 
             if rec.skill_ids:
                 parts.append("")
-                parts.append("## Tillgängliga skills")
-                parts.append("(Aktivera en skill explicit med /skill-name. "
-                             "Skills aktiveras också automatiskt när användarens "
-                             "prompt matchar trigger-nyckelord.)")
+                parts.append("## Available skills")
+                parts.append("(Activate a skill explicitly with /skill-name. Skills also activate automatically when the user prompt matches trigger keywords.)")
                 for skill in rec.skill_ids:
                     trigger_info = ""
                     if skill.trigger_keywords:
@@ -196,7 +193,7 @@ class AIIdentity(models.Model):
             'template_id': self.id if self.is_template else (
                 self.template_id.id or self.id),
         })
-        _logger.info('Identitetskopia %s skapad för coworker %s från %s',
+        _logger.info('Identity copy %s created for coworker %s from %s',
                      copy.name, coworker.name, self.name)
         return copy
 
@@ -354,7 +351,7 @@ class AIIdentity(models.Model):
         lines.append(self.values or 'Korrekthet > snabbhet. Transparens alltid.')
         lines.append('')
         lines.append('## Boundaries')
-        lines.append(self.boundaries or 'Gör inga juridiska tolkningar. Flagga osäkerhet.')
+        lines.append(self.boundaries or 'Do not make legal interpretations. Flag uncertainty.')
 
         self.persona_md = '\n'.join(lines)
         return {

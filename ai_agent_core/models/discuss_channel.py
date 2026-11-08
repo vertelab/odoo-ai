@@ -42,13 +42,13 @@ class DiscussChannel(models.Model):
     # ny session varje gång — kanalen är den stabila bäraren.
     ai_context_model = fields.Char(
         string='AI Context Model',
-        help='Modellen användaren hade öppen när chatten användes senast.')
+        help='The model the user had open when the chat was last used.')
     ai_context_record_id = fields.Integer(
         string='AI Context Record ID',
-        help='Recorden användaren hade öppen (form-vy).')
+        help='The record the user had open (form view).')
     ai_context_record_ids = fields.Json(
         string='AI Context Record IDs',
-        help='Markeringen användaren hade (list-vy).')
+        help='The selection the user had (list view).')
     ai_context_view_type = fields.Char(
         string='AI Context View Type',
         help='Vytypen (form, list, kanban, ...).')
@@ -88,7 +88,7 @@ class DiscussChannel(models.Model):
         try:
             src = self._resolve_ai_context_sources(extra_context)
         except Exception as e:
-            _logger.warning('ai-context: källuppslag misslyckades: %s', e)
+            _logger.warning('ai-context: source lookup failed: %s', e)
             return
 
         model = src['model']
@@ -118,8 +118,7 @@ class DiscussChannel(models.Model):
         if vals:
             self.sudo().write(vals)
             _logger.info(
-                'ai-context: kanal %s ← model=%s record_id=%s record_ids=%s '
-                'view=%s (källa: %s)',
+                'ai-context: channel %s ← model=%s record_id=%s record_ids=%s view=%s (source: %s)',
                 self.id, model, record_id, record_ids, src['view_type'],
                 src['source'])
 

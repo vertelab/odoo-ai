@@ -22,7 +22,7 @@ class AICoworkerError(models.Model):
 
     error_type = fields.Selection([
         ('tool_error', 'Verktygsfel'),
-        ('search_error', 'Sökfel'),
+        ('search_error', 'Search Error'),
         ('provider_error', 'Provider-fel'),
         ('max_rounds', 'Max rounds'),
         # Utfalls-typer (utfall-och-tokenmatning 5.5): härleds ur
@@ -36,8 +36,8 @@ class AICoworkerError(models.Model):
     tool_name = fields.Char('Verktyg')
     message = fields.Text('Meddelande')
     context = fields.Text('Kontext')
-    resolved = fields.Boolean('Löst', default=False)
-    resolution = fields.Text('Lösning/Notering')
+    resolved = fields.Boolean('Resolved', default=False)
+    resolution = fields.Text('Resolution/Note')
     create_date = fields.Datetime('Uppstod', readonly=True)
 
     def action_mark_resolved(self):

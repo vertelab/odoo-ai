@@ -52,10 +52,7 @@ class AIAccessResolver(models.Model):
              'ir.attachment-kontext (res_model/res_id)')
     follower_domain = fields.Char(
         string='Follower Domain',
-        help='Domain-template med {partner_id}-placeholder, t.ex. '
-             "[('message_follower_ids','in',['{partner_id}'])] — använder "
-             'faktiska followers (message_follower_ids), INTE alla '
-             'chatter-partners')
+        help='Domain template with a {partner_id} placeholder, e.g. [(\'message_follower_ids\',\'in\',[\'{partner_id}\'])] — uses actual followers (message_follower_ids), NOT all chatter partners')
     owner_domain = fields.Char(
         string='Owner Domain',
         help='Domain-template med {user_id}-placeholder, t.ex. '
@@ -172,8 +169,7 @@ class AIAccessResolver(models.Model):
             return Model.with_user(uid).search([]).ids
         except Exception as e:  # noqa: BLE001
             _logger.warning(
-                'OKF access: kunde inte hämta synliga id:n för %s — '
-                'klassas CLOSED: %s', model_name, e)
+                'OKF access: could not fetch visible ids for %s — classified CLOSED: %s', model_name, e)
             return []
 
     def _classify_cache(self):
@@ -221,7 +217,7 @@ class AIAccessResolver(models.Model):
             total = Model.sudo().search_count([])
         except Exception as e:  # noqa: BLE001
             _logger.warning(
-                'OKF access: kunde inte räkna %s — klassas CLOSED: %s',
+                'OKF access: could not count %s — classified CLOSED: %s',
                 model_name, e)
             return self.CLOSED, None
         if total == 0:
@@ -232,8 +228,7 @@ class AIAccessResolver(models.Model):
             visible_count = Model.with_user(uid).search_count([])
         except Exception as e:  # noqa: BLE001
             _logger.warning(
-                'OKF access: kunde inte pröva %s för uid=%s — klassas '
-                'CLOSED: %s', model_name, uid, e)
+                'OKF access: could not test %s for uid=%s — classified CLOSED: %s', model_name, uid, e)
             return self.CLOSED, None
         if visible_count >= total:
             return self.OPEN, None
@@ -243,8 +238,7 @@ class AIAccessResolver(models.Model):
             visible_ids = Model.with_user(uid).search([]).ids
         except Exception as e:  # noqa: BLE001
             _logger.warning(
-                'OKF access: kunde inte hämta synliga id:n för %s — '
-                'klassas CLOSED: %s', model_name, e)
+                'OKF access: could not fetch visible ids for %s — classified CLOSED: %s', model_name, e)
             return self.CLOSED, None
         return self.PARTIAL, visible_ids
 

@@ -64,34 +64,29 @@ class AIEvalCase(models.Model):
     coworker_id = fields.Many2one(
         'ai.coworker', string='Coworker', required=True, ondelete='cascade',
         index=True,
-        help='Medarbetaren testet hör till. En medarbetare byter agent '
-             'över tid — testet hör till medarbetaren, inte till agenten.')
+        help='The coworker the test belongs to. A coworker changes agent over time — the test belongs to the coworker, not to the agent.')
     source_session_id = fields.Many2one(
         'ai.coworker.session', string='Source Session', required=True,
         ondelete='cascade', index=True,
-        help='Sessionen testfallet befordrades från. Spårbarhet: ett '
-             'testfall som inte kan härledas till en verklig händelse är '
-             'en gissning.')
+        help='The session the test case was promoted from. Traceability: a test case that cannot be traced to a real event is a guess.')
     input = fields.Text(
         'Input', required=True,
-        help='Prompten som ska köras. Sätts från sessionens första '
-             'user-rad vid befordran.')
+        help='The prompt to run. Set from the session first user line on promotion.')
     expected_contains = fields.Text(
         'Expected Contains (JSON)',
-        help='JSON-lista av strängar som svaret MÅSTE innehålla. '
-             'Tom lista = inget krav (testet mäter då bara frånvaro).')
+        help='JSON list of strings the answer MUST contain. Empty list = no requirement (the test then measures absence only).')
     expected_not_contains = fields.Text(
         'Expected Not Contains (JSON)',
-        help='JSON-lista av strängar som svaret INTE får innehålla.')
+        help='JSON list of strings the answer must NOT contain.')
     category = fields.Char(
         'Category', default='general',
-        help='Fri kategori för gruppering (t.ex. "tool_use", "odoo_write").')
+        help='Free category for grouping (e.g. "tool_use", "odoo_write").')
     active = fields.Boolean('Active', default=True)
 
     _sql_constraints = [
         ('source_session_uniq',
          'UNIQUE(source_session_id)',
-         'En session kan bara befordras en gång.'),
+         'A session can only be promoted once.'),
     ]
 
     @api.constrains('expected_contains', 'expected_not_contains')
@@ -132,14 +127,13 @@ class AIEvalRun(models.Model):
         'Run Date', default=fields.Datetime.now, required=True, index=True)
     accuracy = fields.Float(
         'Accuracy', digits=(5, 4),
-        help='Andel godkända fall (0.0–1.0).')
+        help='Share of passed cases (0.0-1.0).')
     passed = fields.Integer('Passed', default=0)
     failed = fields.Integer('Failed', default=0)
     total_cases = fields.Integer('Total Cases', default=0)
     total_cost = fields.Float(
         'Total Cost (USD)', digits=(12, 6),
-        help='Summan av `EvalResult.cost`. Priserna är hårdkodade i '
-             'core/eval.py och är en uppskattning — inte en faktura.')
+        help='The sum of `EvalResult.cost`. The prices are hardcoded in core/eval.py and are an estimate — not an invoice.')
     result_ids = fields.One2many(
         'ai.eval.result', 'run_id', string='Results')
 
@@ -164,8 +158,7 @@ class AIEvalRun(models.Model):
                 order='week_start desc, id desc', limit=1)
             if not report:
                 _logger.info(
-                    'Eval: inget kaizen-rapport för %s — accuracy %.2f '
-                    'sparas bara på runnet', run.coworker_id.name,
+                    'Eval: no kaizen report for %s — accuracy %.2f is stored on the run only', run.coworker_id.name,
                     run.accuracy)
                 continue
             report.eval_accuracy_trend = run.accuracy

@@ -66,21 +66,14 @@ class AIOkfFormatMixin(models.AbstractModel):
     #   länkar:       okf_links (OKF §6.1 — koncept till koncept)
     okf_body = fields.Text(
         'OKF Body',
-        help='OKF:ns body — modellens hela text (name, description, notes, '
-             'arch_db ...). Materialet, inte det som söks. Fylls av '
-             'modellens _okf_body_source().')
+        help='The OKF body — the whole text of the model (name, description, notes, arch_db ...). The material, not what is searched. Filled by the model _okf_body_source().')
     okf_summary = fields.Text(
         'OKF Summary',
-        help='OKF:ns description — det tunna konceptet som embeddas och '
-             'söks. Hålls inom den konfigurerade gränsen '
-             '(%s, default %s).' % (SUMMARY_MAX_CHARS_PARAM,
+        help='The OKF description — the thin concept that is embedded and searched. Kept within the configured limit (%s, default %s).' % (SUMMARY_MAX_CHARS_PARAM,
                                     SUMMARY_MAX_CHARS_DEFAULT))
     okf_links = fields.Json(
         'OKF Links', default=list,
-        help='OKF:ns [[länkar]] — referenser till andra poster, som '
-             '"res.partner,10". Otypade (OKF §6.1): relationen bor i '
-             'okf_body, inte i länken. Trasiga länkar är tillåtna — målet '
-             'kanske ännu inte har ett koncept.')
+        help='The OKF [[links]] — references to other records, like "res.partner,10". Untyped (OKF §6.1): the relation lives in okf_body, not in the link. Broken links are allowed — the target may not have a concept yet.')
 
     # ==================================================================
     # Källmetoderna (_okf_body_source, _okf_summary_source) deklareras av

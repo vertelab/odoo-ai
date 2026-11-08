@@ -20,14 +20,12 @@ class AIToolCapability(models.Model):
     active = fields.Boolean(default=True)
     description = fields.Text(
         'AI Description', required=True,
-        help=('Förmågans AI-beskrivning enligt mallen (syfte/när/när inte/'
-              'exempel/output/guardrail). Används som samlad beskrivning när '
-              'förmågan serialiseras i enum- eller namespace-läge.'),
+        help=('The capability AI description following the template (purpose/when/when not/example/output/guardrail). Used as the combined description when the capability is serialised in enum or namespace mode.'),
     )
     member_ids = fields.Many2many(
         'ai.tool', 'ai_tool_capability_member_rel',
         'capability_id', 'tool_id', string='Member Tools',
-        help='Verktyg som ingår i förmågan.',
+        help='Tools included in the capability.',
     )
 
     _sql_constraints = [

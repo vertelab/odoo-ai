@@ -146,7 +146,7 @@ class AIOkfUpload(models.Model):
     name = fields.Char(string='Filnamn', required=True)
     attachment_id = fields.Many2one('ir.attachment', string='Bilaga')
     state = fields.Selection([
-        ('queued', 'Köad'),
+        ('queued', 'Queued'),
         ('working', 'Arbetar…'),
         ('done', 'Klar ✓'),
         ('error', 'Fel ✗'),
@@ -155,25 +155,23 @@ class AIOkfUpload(models.Model):
     # Ägande/access (task 5b.5)
     owner_user_id = fields.Many2one(
         'res.users', string='Uppladdare',
-        help='Primär ägare — sessionen är knuten till en res.users.')
+        help='Primary owner — the session is tied to a res.users.')
     owner_company_id = fields.Many2one(
-        'res.company', string='Företag',
-        help='Company-scope för channel-uppladdningar.')
+        'res.company', string='Company',
+        help='Company scope for channel uploads.')
     coworker_id = fields.Many2one(
-        'ai.coworker', string='Coworker (utförare)',
-        help='Coworkern vars agenter utför normaliseringen.')
+        'ai.coworker', string='Coworker (executor)',
+        help='The coworker whose agents perform the normalisation.')
     channel_id = fields.Many2one(
         'discuss.channel', string='Kanal',
-        help='För channel-uppladdningar — access via kanalens prenumeranter.')
+        help='For channel uploads — access via the channel subscribers.')
 
     error_message = fields.Text(
         string='Felmeddelande',
-        help='Mouse-over/status-text: time-out / för stor / saknar agentisk '
-             'förmåga / normaliseringsfel (task 7.11).')
+        help='Mouse-over/status text: timeout / too large / lacks agentic capability / normalisation error (task 7.11).')
     normalized_text = fields.Text(
         string='Normaliserad text (cache)',
-        help='Normaliserad text som sources[].normalized_text-cache — '
-             'metadata, INTE concept-innehåll (task 5b.4).')
+        help='Normalised text as the sources[].normalized_text cache — metadata, NOT concept content (task 5b.4).')
     concept_ids = fields.Many2many('ai.okf.concept', string='Koncept')
     retry_count = fields.Integer(string='Retries', default=0)
 
@@ -230,15 +228,15 @@ class AIOkfUpload(models.Model):
         if not attach:
             return '', 'Bilagan saknas.'
         if attach.file_size and attach.file_size > 50 * 1024 * 1024:
-            return '', 'Filen är för stor (max 50 MB).'
+            return '', 'The file is too large (max 50 MB).'
 
         category = self._get_mime_category(attach.mimetype)
         text = ''
         try:
             if category == 'binary':
                 # Binärfil — indexeras inte som kunskap. Stoppar NUL vid källan.
-                return '', ('Binärfil indexeras inte (%s).'
-                            % (attach.mimetype or 'okänd typ'))
+                return '', ('Binary file is not indexed (%s).'
+                            % (attach.mimetype or 'unknown type'))
             if category == 'text':
                 # Odoo 18: _index_content() togs bort — läs raw och avkoda som text
                 raw = attach.raw or b''
@@ -259,7 +257,7 @@ class AIOkfUpload(models.Model):
             return '', 'Normaliseringsfel: %s' % e
 
         if not text.strip():
-            return '', 'Kunde inte extrahera text från filen.'
+            return '', 'Could not extract text from the file.'
         return text, None
 
     def _normalize_pdf(self, attach):
@@ -323,8 +321,8 @@ class AIOkfUpload(models.Model):
         # 0. Alltid: en beskrivning ur bilagans egen metadata. Gör att
         #    bilden blir sökbar även utan OCR/vision.
         parts.append('Bild: %s (%s, %s byte)' % (
-            attach.name or 'namnlös',
-            attach.mimetype or 'okänd typ',
+            attach.name or 'unnamed',
+            attach.mimetype or 'unknown type',
             attach.file_size or 0))
 
         # 1. OCR (krver tesseract-binären)
@@ -412,7 +410,7 @@ class AIOkfUpload(models.Model):
         hint = hints.get(capability.lower(),
                          'kontrollera modulens beroenden')
         raise UserError(_(
-            'Förmågan "%s" saknas i denna Odoo-miljö — %s.'
+            'The capability "%s" is missing in this Odoo environment — %s.'
         ) % (capability, hint))
 
     # ── Kön (task 5b.1) ──
@@ -527,8 +525,8 @@ class AIOkfUpload(models.Model):
         Arkiverar dem ur kön i stället för att radera — historiken är
         beviset på vad som hände (ADD-only).
         """
-        hopeless = ('Binärfil indexeras inte', 'Bilagan saknas.',
-                    'Filen är för stor')
+        hopeless = ('Binary file is not indexed', 'Bilagan saknas.',
+                    'The file is too large')
 
         def _is_hopeless(rec):
             msg = rec.error_message or ''
@@ -537,6 +535,6 @@ class AIOkfUpload(models.Model):
         to_clear = self.filtered(
             lambda r: r.state == 'error' and _is_hopeless(r))
         if to_clear:
-            _logger.info('OKF: rensar %d hopplösa felposter', len(to_clear))
+            _logger.info('OKF: clearing %d hopeless error records', len(to_clear))
             to_clear.unlink()
         return True

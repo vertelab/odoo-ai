@@ -38,7 +38,7 @@ class WorkspaceActivitySuggestion(models.Model):
     coworker_id = fields.Many2one('ai.coworker', string='Suggested by')
     session_id = fields.Many2one(
         'ai.coworker.session', string='Session',
-        help='Coworker-session som producerade förslaget (lineage).')
+        help='The coworker session that produced the suggestion (lineage).')
     source = fields.Selection([
         ('gap_okr', 'OKR GAP'),
         ('smart_deadline', 'SMART Deadline'),
@@ -49,10 +49,10 @@ class WorkspaceActivitySuggestion(models.Model):
     ], string='Source', default='coworker')
 
     # ── Innehåll ──
-    summary = fields.Char('Förslag', required=True)
+    summary = fields.Char('Suggestion', required=True)
     detail = fields.Text('Detalj')
     suggestion_type = fields.Selection([
-        ('calendar.event', 'Boka möte'),
+        ('calendar.event', 'Book Meeting'),
         ('mail.activity', 'Skapa todo/aktivitet'),
         ('dms.file', 'Skapa dokument'),
         ('sale.order', 'Skapa offert'),
@@ -80,23 +80,22 @@ class WorkspaceActivitySuggestion(models.Model):
     # ── 5.5c "Varför?"-vy (B1): källorna bakom slutsatsen ──
     evidence_ids = fields.Many2many(
         'ai.okf.concept', 'workspace_sugg_evidence_rel',
-        'suggestion_id', 'concept_id', string='Källkoncept',
-        help='Klickbara referenser som motiverar förslaget (Varför?-vyn).')
+        'suggestion_id', 'concept_id', string='Source Concept',
+        help='Clickable references that justify the suggestion (the Why? view).')
 
     # ── 5.7 Mötets ankare (D13) ──
     meeting_anchor = fields.Reference(
         selection=lambda self: self._selection_anchor_models(),
-        string='Mötets ankare',
+        string='Meeting Anchor',
         help='object_ref till calendar.event som detta material knyts till.')
 
     # ── Resultat ──
-    result_ref = fields.Char('Resultat', help='res_model,id när godkänt objekt skapats')
+    result_ref = fields.Char('Resultat', help='res_model,id when the approved object was created')
 
     # ── 6.2 Länk tillbaka: ärende → källkoncept ──
     source_concept_id = fields.Many2one(
-        'ai.okf.concept', string='Källkoncept',
-        help='Konceptet detta initiativ arbetar med — express-objektet '
-             'länkas tillbaka hit.')
+        'ai.okf.concept', string='Source Concept',
+        help='The concept this initiative works on — the express object links back here.')
 
     # ── Livscykel ──
     rejected_at = fields.Datetime('Rejected At')
@@ -199,7 +198,7 @@ class WorkspaceActivitySuggestion(models.Model):
                     'suggestion_to_action',
                     f'workspace.activity.suggestion,{rec.id}',
                     result,
-                    note=f'Godkänt av {rec.user_id.name}')
+                    note=f'Approved by {rec.user_id.name}')
         return True
 
     def action_reject(self):
@@ -263,12 +262,12 @@ class WorkspaceActivitySuggestion(models.Model):
                     'type': 'ir.actions.client',
                     'tag': 'display_notification',
                     'params': {'title': 'Ingen lineage',
-                               'message': 'Detta förslag har inga kopplade källkoncept eller edges.',
+                               'message': 'This suggestion has no linked source concepts or edges.',
                                'type': 'info', 'sticky': False},
                 }
             return {
                 'type': 'ir.actions.act_window',
-                'name': 'Varför? — källkoncept',
+                'name': 'Why? — source concepts',
                 'res_model': 'ai.okf.concept',
                 'view_mode': 'list,form',
                 'views': [[False, 'list'], [False, 'form']],
@@ -276,12 +275,12 @@ class WorkspaceActivitySuggestion(models.Model):
             }
         return {
             'type': 'ir.actions.act_window',
-            'name': 'Varför? — lineage-kedja',
+            'name': 'Why? — lineage chain',
             'res_model': 'ai.lineage.link',
             'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
             'domain': [('id', 'in', edge_ids)],
-            'help': 'Kedjan: ÅTGÄRD ← FÖRSLAG ← SESSION ← KONCEPT ← KÄLLA',
+            'help': 'The chain: ACTION ← SUGGESTION ← SESSION ← CONCEPT ← SOURCE',
         }
 
     # ── Materialisering: förslag → riktigt Odoo-objekt ──
@@ -356,11 +355,11 @@ class WorkspaceActivitySuggestion(models.Model):
                 if self.source_concept_id:
                     try:
                         self.source_concept_id.message_post(
-                            body='Express-åtgärd: %s (%s)' % (
+                            body='Express action: %s (%s)' % (
                                 self.summary,
                                 'mail.activity,%d' % act.id))
                     except Exception:
-                        _logger.debug('Länkning till koncept misslyckades')
+                        _logger.debug('Linking to the concept failed')
                 return 'mail.activity,%d' % act.id
         except Exception as e:
             _logger.warning('activity_schedule failed: %s', e)
@@ -418,8 +417,7 @@ class WorkspaceGapEngine(models.AbstractModel):
                             Suggestion._create_suggestion(
                                 summary='Deadline om %d dagar: %s'
                                         % (delta, goal.name),
-                                detail='SMART-målet har deadline %s och '
-                                       'progress %.0f%%.'
+                                detail='The SMART goal has deadline %s and progress %.0f%%.'
                                        % (goal.time_bound, goal.progress),
                                 suggestion_type='calendar.event',
                                 source='smart_deadline',

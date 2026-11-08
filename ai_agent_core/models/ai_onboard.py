@@ -84,10 +84,10 @@ class AIOnboardCandidate(models.Model):
              'partners utan telefon', 'cleanup', 0.4),
             ('account.move', [('state', '=', 'draft'),
              ('invoice_date', '<', fields.Date.today() - timedelta(days=90))],
-             'utkast-fakturor äldre än 90 dagar', 'cleanup', 0.8),
+             'draft invoices older than 90 days', 'cleanup', 0.8),
             ('sale.order', [('state', '=', 'draft'),
              ('create_date', '<', fields.Date.today() - timedelta(days=30))],
-             'utkast-ordrar äldre än 30 dagar', 'cleanup', 0.6),
+             'draft orders older than 30 days', 'cleanup', 0.6),
         ]
 
         for model_name, domain, desc, quest_type, confidence in checks:
@@ -123,8 +123,8 @@ class AIOnboardCandidate(models.Model):
                 # Has a menu item — user might be running this manually often
                 self.create({
                     'source': 'repetitive_task',
-                    'description': f'Server action "{action.name}" är tillgänglig via meny — '
-                                 f'kandidat för automatisering eller AI-quest',
+                    'description': f'Server action "{action.name}" is available via a menu — '
+                                 f'a candidate for automation or an AI coworker',
                     'suggested_quest_type': 'automation',
                     'confidence': 0.5,
                     'evidence': f'Server action ID {action.id}, model: {action.model_id.name}',
@@ -163,7 +163,7 @@ class AIOnboardCandidate(models.Model):
         integrations = {
             'helpdesk': {
                 'model': 'helpdesk.ticket',
-                'description': 'Återkommande helpdesk-ämnen → quest-kandidater',
+                'description': 'Recurring helpdesk topics → coworker candidates',
             },
             'project': {
                 'model': 'project.task',
@@ -181,7 +181,7 @@ class AIOnboardCandidate(models.Model):
                 # Module is installed — create an integration candidate
                 self.create({
                     'source': 'integration',
-                    'description': f'{module_key} är installerat. {info["description"]}',
+                    'description': f'{module_key} is installed. {info["description"]}',
                     'suggested_quest_type': 'integration',
                     'confidence': 0.6,
                     'evidence': f'Module: {module_key}, Model: {info["model"]}',
@@ -212,12 +212,12 @@ class AIOnboardCandidate(models.Model):
         """Send a notification about this candidate to admin users."""
         self.ensure_one()
         self.message_post(
-            subject=f'ONBOARD upptäckt: {self.description[:80]}',
-            body=f"**ONBOARD upptäckte:** {self.description}\n\n"
-                 f"Typ: {self.suggested_quest_type}\n"
-                 f"Källa: {self.source}\n"
+            subject=f'ONBOARD found: {self.description[:80]}',
+            body=f"**ONBOARD found:** {self.description}\n\n"
+                 f"Type: {self.suggested_quest_type}\n"
+                 f"Source: {self.source}\n"
                  f"Confidence: {self.confidence:.0%}\n"
-                 f"Antal poster: {self.record_count or 'N/A'}",
+                 f"Record count: {self.record_count or 'N/A'}",
             message_type='notification',
             partner_ids=[(4, uid) for uid in
                 self.env.ref('base.group_system').users.ids],
@@ -293,13 +293,13 @@ class AIOnboardCandidate(models.Model):
         ticket = ticket_model.create({
             'name': f'ONBOARD: {self.description[:80]}',
             'description': (
-                f"**Upptäckt av ONBOARD**\n\n"
+                f"**Found by ONBOARD**\n\n"
                 f"{self.description}\n\n"
-                f"Typ: {self.suggested_quest_type}\n"
-                f"Källa: {self.source}\n"
+                f"Type: {self.suggested_quest_type}\n"
+                f"Source: {self.source}\n"
                 f"Confidence: {self.confidence:.0%}\n"
                 f"Evidens: {self.evidence or 'N/A'}\n"
-                f"Antal poster: {self.record_count or 'N/A'}"
+                f"Record count: {self.record_count or 'N/A'}"
             ),
             'team_id': team.id,
             'priority': '2' if self.confidence > 0.7 else '1',
@@ -331,10 +331,10 @@ class AIOnboardCandidate(models.Model):
         nc = nc_model.create({
             'name': f'ONBOARD: {self.description[:80]}',
             'description': (
-                f"Upptäckt av ONBOARD\n\n{self.description}\n\n"
-                f"Typ: {self.suggested_quest_type}\n"
-                f"Källa: {self.source}\n"
-                f"Evidens: {self.evidence or 'N/A'}"
+                f"Found by ONBOARD\n\n{self.description}\n\n"
+                f"Type: {self.suggested_quest_type}\n"
+                f"Source: {self.source}\n"
+                f"Evidence: {self.evidence or 'N/A'}"
             ),
         })
         self.resulting_nonconformity_id = nc.id

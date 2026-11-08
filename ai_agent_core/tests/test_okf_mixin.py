@@ -651,4 +651,4 @@ class TestQueueStats(_OkfTestModel):
             [('okf_dirty', '=', True)])._clear_okf_dirty()
         text = self.env['ai.okf.dashboard']._format_queue_status()
         self.assertIsInstance(text, str)
-        self.assertIn('tom', text)
+        self.assertIn('empty', text)

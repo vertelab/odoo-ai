@@ -114,7 +114,7 @@ class AICompanyMemory(models.Model):
     # kolumnens typnamn, så Odoo lämnar den orörd.
     embedding = PgVector(
         string='Vector Embedding', dimension=1024,
-        help='pgvector(1024) embedding — kolumnen är vector(1024)-typ.')
+        help='pgvector(1024) embedding — the column is vector(1024) type.')
     entities = fields.Json(
         string='Extracted Entities',
         help='Entities extracted for entity linking boost.')
@@ -482,7 +482,7 @@ class AICompanyMemory(models.Model):
                 )
                 n += 1
             except Exception as e:
-                _logger.warning('Partner indexering misslyckades för %s: %s',
+                _logger.warning('Partner indexing failed for %s: %s',
                                 p.id, e)
         return n
 
@@ -508,8 +508,8 @@ class AICompanyMemory(models.Model):
         else:
             partners = self.env['res.partner'].search(domain)
         n = self._okf_index_partner_batch(
-            partners, company_id, 'Leverantör')
-        _logger.info('OKF leverantörs-indexerare: %s leverantörer indexerade', n)
+            partners, company_id, 'Vendor')
+        _logger.info('OKF vendor indexer: %s vendors indexed', n)
         return {'kind': 'supplier', 'indexed': n}
 
     @api.model
@@ -523,8 +523,7 @@ class AICompanyMemory(models.Model):
             ('knowledge.article', 'title', 'body'),
         ]:
             if model_name not in self.env:
-                _logger.debug('OKF knowledge-indexerare: modellen %s '
-                              'saknas — hoppar över', model_name)
+                _logger.debug('OKF knowledge indexer: model %s is missing — skipping', model_name)
                 continue
             Model = self.env[model_name]
             if not hasattr(Model, 'search'):
@@ -548,8 +547,7 @@ class AICompanyMemory(models.Model):
                     )
                     n += 1
                 except Exception as e:
-                    _logger.warning('Knowledge-indexering misslyckades '
-                                    'för %s: %s', art.id, e)
+                    _logger.warning('Knowledge indexing failed for %s: %s', art.id, e)
         _logger.info('OKF knowledge-indexerare: %s artiklar indexerade', n)
         return {'kind': 'knowledge', 'indexed': n}
 
@@ -727,7 +725,7 @@ class AICompanyMemory(models.Model):
         # Gruppera efter artifact type
         by_type = {}
         for c in concepts:
-            atype = c.artifact_type_id.name or 'övrigt'
+            atype = c.artifact_type_id.name or 'other'
             by_type.setdefault(atype, []).append(c)
 
         lines = []

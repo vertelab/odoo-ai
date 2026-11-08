@@ -49,10 +49,10 @@ class AIOkfDashboardLine(models.TransientModel):
     bridge_module = fields.Char(string='Bridge-modul')
 
     health = fields.Selection([
-        ('green', '🟢 Grön'),
+        ('green', '🟢 Green'),
         ('yellow', '🟡 Gul'),
-        ('red', '🔴 Röd'),
-    ], string='Hälsa')
+        ('red', '🔴 Red'),
+    ], string='Health')
     health_reason = fields.Char(string='Orsak')
 
     concept_count = fields.Integer(string='Koncept')
@@ -62,7 +62,7 @@ class AIOkfDashboardLine(models.TransientModel):
     size_estimate = fields.Char(string='Storlek')
 
     indexer_tasks = fields.Text(string='Indexer-uppgifter')
-    last_run = fields.Datetime(string='Senaste körning')
+    last_run = fields.Datetime(string='Last Run')
     cron_failures = fields.Integer(string='Cron-fel')
 
     def _open_dashboard(self):
@@ -110,7 +110,7 @@ class AIOkfDashboard(models.TransientModel):
     dirty_count = fields.Integer(compute='_compute_stats', string='Dirty')
     cron_status = fields.Text(compute='_compute_stats', string='Cron Status')
     queue_status = fields.Text(
-        compute='_compute_stats', string='Indexeringskö')
+        compute='_compute_stats', string='Indexing Queue')
 
     # ── Manuella körningar ──
     artifact_type_ids = fields.Many2many(
@@ -220,12 +220,12 @@ class AIOkfDashboard(models.TransientModel):
                 # Hälsa (spec odoo-mind-dashboard)
                 if failures:
                     health, reason = 'red', \
-                        '%d misslyckade cron-körningar' % failures
+                        '%d failed cron runs' % failures
                 elif t.model_id and total == 0:
                     health, reason = 'red', \
                         'bridge aktiv men 0 koncept'
                 elif type_crons and not last_run:
-                    health, reason = 'yellow', 'indexer-cron ej kört'
+                    health, reason = 'yellow', 'indexer cron has not run'
                 elif dirty or stale:
                     bits = []
                     if dirty:
@@ -327,11 +327,11 @@ class AIOkfDashboard(models.TransientModel):
         try:
             stats = self.env['ai.okf.mixin']._okf_queue_stats()
         except Exception as e:  # noqa: BLE001 — dashboarden får inte krascha
-            _logger.warning('OKF: kunde inte läsa ködjupet: %s', e)
+            _logger.warning('OKF: could not read the queue depth: %s', e)
             return ''
         rows = [s for s in stats if s['dirty']]
         if not rows:
-            return 'Kön är tom — alla indexerade modeller är ajour.'
+            return 'The queue is empty — every indexed model is up to date.'
         rows.sort(key=lambda s: s['dirty'], reverse=True)
         lines = []
         for s in rows:
@@ -344,7 +344,7 @@ class AIOkfDashboard(models.TransientModel):
                 age_txt = '%d h' % (age // 3600)
             else:
                 age_txt = '%d min' % max(1, age // 60)
-            lines.append('%s%-32s %8d kvar  (av %d, äldst %s)' % (
+            lines.append('%s%-32s %8d left  (of %d, oldest %s)' % (
                 '★ ' if s['priority'] else '  ',
                 s['model'], s['dirty'], s['total'], age_txt))
         return '\n'.join(lines)
@@ -373,7 +373,7 @@ class AIOkfDashboard(models.TransientModel):
         Mixin = self.env['ai.okf.mixin']
         if not dirty_scope and not artifact_types:
             total = Mixin._okf_cron_index_dirty(batch_size=limit or 200)
-            self.run_result = 'Indexerade %d artefakter (via cron-vägen).' % total
+            self.run_result = 'Indexed %d artifacts (via the cron path).' % total
             return
 
         # Avgränsad körning: samma per-post-väg som cronen, men filtrerad.
@@ -408,9 +408,9 @@ class AIOkfDashboard(models.TransientModel):
                 if rec._okf_index_record(max_chars=max_chars, session=session):
                     total += 1
 
-        scope_label = {'today': ' idag', 'month': ' denna månad'}.get(
+        scope_label = {'today': ' idag', 'month': ' this month'}.get(
             dirty_scope, '')
-        self.run_result = 'Indexerade %d artefakter%s (via cron-vägen).' % (
+        self.run_result = 'Indexed %d artifacts%s (via the cron path).' % (
             total, scope_label)
     def action_index_all(self):
         self._run_okf_index()

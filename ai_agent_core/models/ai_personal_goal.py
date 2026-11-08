@@ -199,11 +199,10 @@ class AIPersonalGoal(models.Model):
                 if concepts:
                     concepts.write({'status': 'deprecated'})
                     _logger.info(
-                        'Mål %s avslutat — %s OKF-koncept markerade '
-                        'deprecated', goal.id, len(concepts))
+                        'Goal %s closed — %s OKF concepts marked deprecated', goal.id, len(concepts))
             except Exception as e:
                 _logger.warning(
-                    'Kunde inte deprecera OKF-koncept för mål %s: %s',
+                    'Could not deprecate OKF concepts for goal %s: %s',
                     goal.id, e)
 
     @api.model

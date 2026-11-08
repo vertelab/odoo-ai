@@ -70,13 +70,11 @@ class AIModel(models.Model):
         names, ok = provider._fetch_catalog_names()
         if not ok:
             _logger.info(
-                'Modell-validering: katalogen för %s kunde inte hämtas — '
-                "kontrollen utfördes inte för '%s'.", provider.name, name)
+                'Model validation: the catalog for %s could not be fetched — the check was not performed for \'%s\'.', provider.name, name)
             return
         if name not in set(names):
             _logger.warning(
-                "Modell-validering: '%s' finns inte i gatewayen %s:s katalog "
-                '(registret och katalogen har drivit isär).',
+                "Model validation: '%s' is not in the gateway %s catalog (the registry and the catalog have drifted apart).",
                 name, provider.name)
 
     @api.model_create_multi
@@ -189,7 +187,7 @@ class AIModel(models.Model):
     llm_count = fields.Integer(compute='_compute_llm_count')
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
-        compute='_compute_session_tokens_30d', string='Tokens (månad)')
+        compute='_compute_session_tokens_30d', string='Tokens (month)')
 
     @api.depends('name', 'api_name')
     def _compute_session_tokens_30d(self):

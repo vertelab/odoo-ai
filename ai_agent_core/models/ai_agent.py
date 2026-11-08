@@ -72,9 +72,7 @@ class AIAgent(models.Model):
     memory_ids = fields.One2many(
         'ai.agent.memory', 'agent_id', string='Memories',
         context={'active_test': False},
-        help='Artefakter kopplade till denna agent. Samma artefakt kan '
-             'höra till flera agenter — kopplingen bär roll, ordning och '
-             'giltighetsfönster.')
+        help='Artifacts linked to this agent. The same artifact can belong to several agents — the link carries role, order and validity window.')
 
     # Model (points to ai.model — handles both Bifrost and Direct)
     model_id = fields.Many2one('ai.model', string='Model',
@@ -92,10 +90,8 @@ class AIAgent(models.Model):
     runtime = fields.Selection([
         ('in_process', 'I Odoo-processen'),
         ('external', 'Extern process'),
-    ], string='Körmiljö', default='in_process', required=True,
-        help='Var agent-loopen kör. "I Odoo-processen" ockuperar en '
-             'Odoo-worker under körningen; "Extern process" startar '
-             'agenten som en separat process och frigör workern direkt.')
+    ], string='Runtime Environment', default='in_process', required=True,
+        help='Where the agent loop runs. "In the Odoo process" occupies an Odoo worker during the run; "External process" starts the agent as a separate process and frees the worker immediately.')
 
     # Budget (budget-hard-cap D8: budget_limit/budget_used i USD begravda —
     # systemtokens är enda valuta, hanteras på ai.coworker)
@@ -110,11 +106,10 @@ class AIAgent(models.Model):
     coworker_count = fields.Integer(compute='_compute_coworker_count')
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
-        compute='_compute_session_tokens_30d', string='Tokens (månad)')
+        compute='_compute_session_tokens_30d', string='Tokens (month)')
     live_external_count = fields.Integer(
         compute='_compute_live_external_count', string='Levande externa',
-        help='Antal externa agent-processer som lever just nu (D10-mätpunkt). '
-             'Inget tak jämförs mot detta tal — taket är empiriskt.')
+        help='Number of external agent processes alive right now (D10 measurement point). No cap is compared against this number — the cap is empirical.')
 
     def _compute_session_line_count(self):
         for r in self:
@@ -168,9 +163,7 @@ class AIAgent(models.Model):
             [('name', '=', tool_name)], limit=1)
         if not tool:
             _logger.warning(
-                '_attach_builtin_tool_by_name: hittade inget verktyg med '
-                'namnet %r — hoppar över. Är _ensure_builtin_tool_records() '
-                'körd?', tool_name)
+                '_attach_builtin_tool_by_name: found no tool named %r — skipping. Has _ensure_builtin_tool_records() run?', tool_name)
             return 0
         for agent in self:
             agent.write({'tool_ids': [(4, tool.id)]})
@@ -203,11 +196,10 @@ class AIAgent(models.Model):
 
         if not user:
             raise ValidationError(
-                'Extern körning kräver en upplöst användare — '
-                'systemuser är aldrig tillåtet (D5).')
+                'An external run requires a resolved user — the system user is never allowed (D5).')
         if user.id == self.env.ref('base.user_root').id:
             raise ValidationError(
-                'Extern körning får inte köras som systemuser (D5).')
+                'An external run may not run as the system user (D5).')
 
         base_url = self.env['ir.config_parameter'].sudo().get_param(
             'web.base.url', 'http://localhost:8069')
@@ -243,8 +235,7 @@ class AIAgent(models.Model):
         if session:
             session._record_external_run(measurement)
         _logger.info(
-            'runtime: dispatchade agent %s för coworker %s som %s '
-            '(pid=%s, port=%s, %.3f s)',
+            'runtime: dispatched agent %s for coworker %s as %s (pid=%s, port=%s, %.3f s)',
             self.id, coworker.id, user.login, handle.pid, handle.port,
             measurement['spawn_time'])
         return measurement
@@ -392,9 +383,7 @@ class AIAgent(models.Model):
             return list(ResConfigSettings.DEFAULT_AGENT_TOOL_NAMES)
         except Exception as e:
             _logger.warning(
-                'Kunde inte läsa default-verktyg (DEFAULT_AGENT_TOOL_NAMES): '
-                '%s — returnerar TOM lista (inga verktyg) i stället för '
-                'interna odoo-verktyg', e)
+                'Could not read the default tools (DEFAULT_AGENT_TOOL_NAMES): %s — returning an EMPTY list (no tools) instead of internal odoo tools', e)
             return []
 
     def write(self, vals):
@@ -537,24 +526,24 @@ class AIAgentMemory(models.Model):
     # tagit bort artefakten för de andra agenterna också.
     active = fields.Boolean(
         default=True,
-        help='Avkopplad koppling behåller raden men injiceras inte.')
+        help='A detached link keeps the row but is not injected.')
 
     # Rollen ligger på KOPPLINGEN, inte på artefakten: samma handbok ska
     # inte bära olika instruktioner per agent, men en agent kan använda
     # den som instruktion och en annan som kunskapskälla.
     role = fields.Selection([
-        ('knowledge', 'Kunskapskälla'),
+        ('knowledge', 'Knowledge Source'),
         ('instruction', 'Instruktion'),
     ], default='knowledge', required=True,
-        help='Hur agenten använder artefakten.')
+        help='How the agent uses the artifact.')
 
     # Tidsbunden koppling: en kvartalsrapport gäller Q3, inte för evigt.
-    not_before = fields.Date(help='Giltig från och med.')
-    expires_at = fields.Date(help='Giltig till och med. Tomt = ingen gräns.')
+    not_before = fields.Date(help='Valid from.')
+    expires_at = fields.Date(help='Valid through. Empty = no limit.')
 
     _sql_constraints = [
         ('agent_memory_uniq', 'unique(agent_id, memory_id)',
-         'Samma minne kan bara kopplas en gång per agent.'),
+         'The same memory can only be linked once per agent.'),
     ]
 
     def _is_current(self, today=None):

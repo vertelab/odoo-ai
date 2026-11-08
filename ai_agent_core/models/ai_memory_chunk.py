@@ -39,8 +39,7 @@ class AIMemoryChunk(models.Model):
 
     embedding = PgVector(
         string='Embedding', dimension=_OKF_EMBEDDING_DIM,
-        help='pgvector(%d) embedding av content. Kolumnen är vector(%d)-typ '
-             '— satt av hooks.py (memory_ensure_search_infrastructure).'
+        help='pgvector(%d) embedding of content. The column is vector(%d) type — set by hooks.py (memory_ensure_search_infrastructure).'
              % (_OKF_EMBEDDING_DIM, _OKF_EMBEDDING_DIM))
 
     # search_vector — GENERATED COLUMN, skapad av SQL i hooks.py.
@@ -48,8 +47,7 @@ class AIMemoryChunk(models.Model):
     # glömmas bort av skrivsidan.
 
     start_index = fields.Integer(
-        help='Position i källtexten där chunken börjar '
-             '(RecursiveCharacterTextSplitter add_start_index).')
+        help='Position in the source text where the chunk starts (RecursiveCharacterTextSplitter add_start_index).')
     metadata = fields.Json(
         string='Metadata',
-        help='Källa för chunken: sida, rubrik, ursprungsfil.')
+        help='Source of the chunk: page, heading, originating file.')

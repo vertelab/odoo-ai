@@ -96,19 +96,19 @@
    "doc": 1
   },
   "models/ai_access_resolver.py": {
-   "code": 5,
+   "code": 0,
    "doc": 8
   },
   "models/ai_agent.py": {
-   "code": 16,
+   "code": 0,
    "doc": 7
   },
   "models/ai_artifact_type.py": {
-   "code": 1,
+   "code": 0,
    "doc": 3
   },
   "models/ai_company_memory.py": {
-   "code": 7,
+   "code": 0,
    "doc": 10
   },
   "models/ai_company_memory_category.py": {
@@ -116,7 +116,7 @@
    "doc": 1
   },
   "models/ai_cost_period.py": {
-   "code": 10,
+   "code": 0,
    "doc": 4
   },
   "models/ai_coworker.py": {
@@ -124,7 +124,7 @@
    "doc": 159
   },
   "models/ai_coworker_error.py": {
-   "code": 3,
+   "code": 0,
    "doc": 1
   },
   "models/ai_coworker_hitl.py": {
@@ -136,15 +136,15 @@
    "doc": 8
   },
   "models/ai_eval.py": {
-   "code": 10,
+   "code": 0,
    "doc": 4
   },
   "models/ai_graph_node.py": {
-   "code": 2,
+   "code": 0,
    "doc": 7
   },
   "models/ai_identity.py": {
-   "code": 17,
+   "code": 0,
    "doc": 1
   },
   "models/ai_kaizen.py": {
@@ -152,23 +152,23 @@
    "doc": 6
   },
   "models/ai_lineage.py": {
-   "code": 1,
+   "code": 0,
    "doc": 4
   },
   "models/ai_mail_test_wizard.py": {
-   "code": 7,
+   "code": 2,
    "doc": 2
   },
   "models/ai_memory.py": {
-   "code": 19,
+   "code": 0,
    "doc": 13
   },
   "models/ai_memory_chunk.py": {
-   "code": 3,
+   "code": 0,
    "doc": 1
   },
   "models/ai_memory_mixin.py": {
-   "code": 6,
+   "code": 0,
    "doc": 13
   },
   "models/ai_memory_scope.py": {
@@ -176,7 +176,7 @@
    "doc": 1
   },
   "models/ai_model.py": {
-   "code": 3,
+   "code": 0,
    "doc": 3
   },
   "models/ai_okf_concept.py": {
@@ -184,11 +184,11 @@
    "doc": 60
   },
   "models/ai_okf_dashboard.py": {
-   "code": 13,
+   "code": 0,
    "doc": 9
   },
   "models/ai_okf_format_mixin.py": {
-   "code": 3,
+   "code": 0,
    "doc": 2
   },
   "models/ai_okf_mixin.py": {
@@ -200,11 +200,11 @@
    "doc": 1
   },
   "models/ai_okf_upload.py": {
-   "code": 19,
+   "code": 0,
    "doc": 12
   },
   "models/ai_onboard.py": {
-   "code": 12,
+   "code": 0,
    "doc": 0
   },
   "models/ai_onboarding.py": {
@@ -216,27 +216,27 @@
    "doc": 3
   },
   "models/ai_org_goal.py": {
-   "code": 6,
+   "code": 0,
    "doc": 1
   },
   "models/ai_org_review.py": {
-   "code": 2,
+   "code": 0,
    "doc": 1
   },
   "models/ai_org_task.py": {
-   "code": 13,
+   "code": 0,
    "doc": 2
   },
   "models/ai_org_template.py": {
-   "code": 1,
+   "code": 0,
    "doc": 3
   },
   "models/ai_personal_goal.py": {
-   "code": 2,
+   "code": 0,
    "doc": 3
   },
   "models/ai_personal_memory.py": {
-   "code": 14,
+   "code": 0,
    "doc": 18
   },
   "models/ai_provider.py": {
@@ -244,7 +244,7 @@
    "doc": 37
   },
   "models/ai_search_source.py": {
-   "code": 12,
+   "code": 0,
    "doc": 3
   },
   "models/ai_session.py": {
@@ -256,31 +256,31 @@
    "doc": 8
   },
   "models/ai_session_object.py": {
-   "code": 11,
+   "code": 0,
    "doc": 5
   },
   "models/ai_skill.py": {
-   "code": 18,
+   "code": 0,
    "doc": 9
   },
   "models/ai_tool.py": {
-   "code": 11,
+   "code": 0,
    "doc": 6
   },
   "models/ai_tool_capability.py": {
-   "code": 2,
+   "code": 0,
    "doc": 1
   },
   "models/discuss_channel.py": {
-   "code": 5,
+   "code": 0,
    "doc": 5
   },
   "models/hr_department.py": {
-   "code": 20,
+   "code": 0,
    "doc": 9
   },
   "models/hr_employee.py": {
-   "code": 2,
+   "code": 0,
    "doc": 1
   },
   "models/ir_action_act_window.py": {
@@ -292,7 +292,7 @@
    "doc": 2
   },
   "models/ir_ui_view.py": {
-   "code": 1,
+   "code": 0,
    "doc": 2
   },
   "models/okf_access_cache.py": {
@@ -300,7 +300,7 @@
    "doc": 2
   },
   "models/res_company.py": {
-   "code": 10,
+   "code": 0,
    "doc": 2
   },
   "models/res_config_settings.py": {
@@ -308,15 +308,15 @@
    "doc": 5
   },
   "models/res_users.py": {
-   "code": 5,
+   "code": 0,
    "doc": 3
   },
   "models/workspace_activity.py": {
-   "code": 17,
+   "code": 0,
    "doc": 12
   },
   "models/workspace_para.py": {
-   "code": 3,
+   "code": 0,
    "doc": 5
   },
   "wizards/ai_onboarding_wizard.py": {

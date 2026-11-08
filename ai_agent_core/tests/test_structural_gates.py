@@ -1120,6 +1120,17 @@ LANGUAGE_DATA_LITERALS = {
          'Meta-note regex: strips a trailing "Notering:"/"OBS:" block from '
          'an answer. The Swedish word is the needle, not a label.'),
     ],
+    'models/ai_personal_memory.py': [
+        ('[A-ZÅÄÖ]',
+         'Proper-noun regex: catches uppercase words and abbreviations '
+         'including Å/Ä/Ö (K2, K3, BAS, AB, EF). Swedish capital letters are '
+         'the data it must match.'),
+    ],
+    'models/ai_memory_mixin.py': [
+        ('[A-ZÅÄÖ]',
+         'Same proper-noun regex as ai_personal_memory: Swedish capitals are '
+         'part of the character class, not a label.'),
+    ],
 }
 
 
