@@ -1,0 +1,2518 @@
+{
+ "_note": "Data contracts that must not change during translation. selection KEYS (not labels), view field references, xmlids.",
+ "selection": {
+  "models/ai_access_resolver.py::source_kind": [
+   "odoo_record",
+   "external_url",
+   "attachment"
+  ],
+  "models/ai_agent.py::runtime": [
+   "in_process",
+   "external"
+  ],
+  "models/ai_agent.py::status": [
+   "draft",
+   "active",
+   "error"
+  ],
+  "models/ai_agent.py::risk_level": [
+   "safe",
+   "read_only",
+   "write",
+   "destructive"
+  ],
+  "models/ai_agent.py::role": [
+   "knowledge",
+   "instruction"
+  ],
+  "models/ai_artifact_type.py::kind": [
+   "memory",
+   "knowledge"
+  ],
+  "models/ai_company_memory.py::scope": [
+   "public",
+   "restricted"
+  ],
+  "models/ai_company_memory.py::source": [
+   "partner",
+   "knowledge",
+   "website",
+   "strategy",
+   "marketing",
+   "social",
+   "management",
+   "mgmt_summary",
+   "manual",
+   "system"
+  ],
+  "models/ai_company_memory.py::category": [
+   "customer",
+   "supplier",
+   "strategy",
+   "marketing",
+   "competitor",
+   "market",
+   "management",
+   "knowledge",
+   "website",
+   "social",
+   "hr",
+   "finance",
+   "mgmt_summary",
+   "operations"
+  ],
+  "models/ai_company_memory.py::importance": [
+   "low",
+   "medium",
+   "high"
+  ],
+  "models/ai_cost_period.py::granularity": [
+   "day",
+   "month"
+  ],
+  "models/ai_coworker.py::status": [
+   "draft",
+   "active",
+   "done",
+   "error"
+  ],
+  "models/ai_coworker.py::orchestration_mode": [
+   "single",
+   "supervisor",
+   "buzz",
+   "linear",
+   "conference",
+   "automation"
+  ],
+  "models/ai_coworker.py::conference_mechanism": [
+   "confidence",
+   "majority",
+   "synthesis"
+  ],
+  "models/ai_coworker.py::memory_level": [
+   "L0",
+   "L1",
+   "L2",
+   "L3"
+  ],
+  "models/ai_coworker.py::memory_profile": [
+   "hermes",
+   "balanced",
+   "session_only"
+  ],
+  "models/ai_coworker.py::search_strategy": [
+   "precision",
+   "balanced",
+   "recall",
+   "detective"
+  ],
+  "models/ai_coworker.py::learning": [
+   "active",
+   "passive"
+  ],
+  "models/ai_coworker.py::cron_interval_type": [
+   "minutes",
+   "hours",
+   "days",
+   "weeks",
+   "months"
+  ],
+  "models/ai_coworker.py::response_mode": [
+   "always",
+   "mention",
+   "trigger"
+  ],
+  "models/ai_coworker.py::channel_reply_mode": [
+   "public",
+   "private",
+   "thread"
+  ],
+  "models/ai_coworker.py::mail_action": [
+   "reply",
+   "create_record",
+   "process",
+   "invoice_ai"
+  ],
+  "models/ai_coworker.py::hitl_threshold": [
+   "autonomous",
+   "high_risk",
+   "always"
+  ],
+  "models/ai_coworker.py::serialize_capabilities": [
+   "flat",
+   "enum",
+   "namespace"
+  ],
+  "models/ai_coworker.py::last_status": [
+   "ok",
+   "error",
+   "skipped"
+  ],
+  "models/ai_coworker.py::watch_trigger": [
+   "on_stage_set",
+   "on_user_set",
+   "on_tag_set",
+   "on_state_set",
+   "on_priority_set",
+   "on_archive",
+   "on_unarchive",
+   "on_create_or_write",
+   "on_create",
+   "on_write",
+   "on_unlink",
+   "on_change",
+   "on_time",
+   "on_time_created",
+   "on_time_updated",
+   "on_webhook"
+  ],
+  "models/ai_coworker.py::watch_trg_date_range_type": [
+   "minutes",
+   "hour",
+   "day",
+   "month"
+  ],
+  "models/ai_coworker.py::alias_contact": [
+   "everyone",
+   "partners",
+   "followers",
+   "employees"
+  ],
+  "models/ai_coworker.py::role": [
+   "member",
+   "leader",
+   "observer",
+   "on_demand"
+  ],
+  "models/ai_coworker.py::level_personal": [
+   "L0",
+   "L1",
+   "L2",
+   "L3"
+  ],
+  "models/ai_coworker.py::level_company": [
+   "L0",
+   "L1",
+   "L2",
+   "L3"
+  ],
+  "models/ai_coworker.py::level_coworker": [
+   "L0",
+   "L1",
+   "L2",
+   "L3"
+  ],
+  "models/ai_coworker_error.py::error_type": [
+   "tool_error",
+   "search_error",
+   "provider_error",
+   "max_rounds",
+   "timeout",
+   "cancelled",
+   "length",
+   "usage_unreported",
+   "other"
+  ],
+  "models/ai_coworker_hitl.py::state": [
+   "asked",
+   "approved",
+   "rejected",
+   "expired"
+  ],
+  "models/ai_coworker_hitl.py::risk_level": [
+   "safe",
+   "high",
+   "destructive"
+  ],
+  "models/ai_coworker_init_type.py::response_mode": [
+   "always",
+   "mention",
+   "trigger"
+  ],
+  "models/ai_coworker_init_type.py::channel_reply_mode": [
+   "public",
+   "private",
+   "thread"
+  ],
+  "models/ai_coworker_init_type.py::alias_contact": [
+   "everyone",
+   "partners",
+   "followers",
+   "employees"
+  ],
+  "models/ai_coworker_init_type.py::mail_action": [
+   "reply",
+   "create_record",
+   "process",
+   "invoice_ai"
+  ],
+  "models/ai_coworker_init_type.py::cron_interval_type": [
+   "minutes",
+   "hours",
+   "days",
+   "weeks",
+   "months"
+  ],
+  "models/ai_identity.py::scope": [
+   "personal",
+   "organization",
+   "public"
+  ],
+  "models/ai_identity.py::template_category": [
+   "companion",
+   "analyst",
+   "accountant",
+   "developer",
+   "support",
+   "ops",
+   "sales"
+  ],
+  "models/ai_identity.py::memory_profile": [
+   "hermes",
+   "balanced",
+   "session_only"
+  ],
+  "models/ai_identity.py::learning": [
+   "active",
+   "passive"
+  ],
+  "models/ai_identity.py::family": [
+   "knowledge",
+   "code",
+   "companion"
+  ],
+  "models/ai_identity.py::default_permission_mode": [
+   "discuss",
+   "plan",
+   "interactive",
+   "auto",
+   "custom"
+  ],
+  "models/ai_kaizen.py::status": [
+   "pending",
+   "approved",
+   "rejected",
+   "applied"
+  ],
+  "models/ai_kaizen.py::severity": [
+   "low",
+   "medium",
+   "high"
+  ],
+  "models/ai_kaizen.py::category": [
+   "cost",
+   "error",
+   "performance",
+   "skill_gap",
+   "feedback"
+  ],
+  "models/ai_kaizen.py::verification": [
+   "improved",
+   "unchanged",
+   "worse"
+  ],
+  "models/ai_lineage.py::kind": [
+   "concept_injected",
+   "session_to_suggestion",
+   "suggestion_to_action",
+   "concept_evidence"
+  ],
+  "models/ai_mail_test_wizard.py::state": [
+   "input",
+   "done"
+  ],
+  "models/ai_memory.py::memory_type": [
+   "pdf",
+   "website",
+   "markdown",
+   "text",
+   "model",
+   "attachments",
+   "youtube"
+  ],
+  "models/ai_memory.py::category": [
+   "preference",
+   "fact",
+   "correction",
+   "pattern",
+   "feedback"
+  ],
+  "models/ai_memory.py::importance": [
+   "low",
+   "medium",
+   "high"
+  ],
+  "models/ai_model.py::status": [
+   "active",
+   "beta",
+   "deprecated"
+  ],
+  "models/ai_model.py::licence": [
+   "apache-2.0",
+   "mit",
+   "commercial",
+   "llama-community",
+   "deepseek",
+   "gemma",
+   "custom"
+  ],
+  "models/ai_okf_concept.py::scope": [
+   "company",
+   "personal",
+   "coworker"
+  ],
+  "models/ai_okf_concept.py::status": [
+   "draft",
+   "stable",
+   "deprecated"
+  ],
+  "models/ai_okf_concept.py::retention_purpose": [
+   "accounting",
+   "tax",
+   "crm_lead",
+   "employment",
+   "marketing",
+   "none"
+  ],
+  "models/ai_okf_dashboard.py::kind": [
+   "memory",
+   "knowledge"
+  ],
+  "models/ai_okf_dashboard.py::health": [
+   "green",
+   "yellow",
+   "red"
+  ],
+  "models/ai_okf_upload.py::state": [
+   "queued",
+   "working",
+   "done",
+   "error"
+  ],
+  "models/ai_onboard.py::source": [
+   "data_quality",
+   "repetitive_task",
+   "module_gap",
+   "error_pattern",
+   "integration"
+  ],
+  "models/ai_onboard.py::suggested_quest_type": [
+   "monitoring",
+   "automation",
+   "cleanup",
+   "report",
+   "integration"
+  ],
+  "models/ai_onboard.py::status": [
+   "new",
+   "presented",
+   "created_quest",
+   "created_ticket",
+   "created_action",
+   "created_nonconformity",
+   "ignored"
+  ],
+  "models/ai_onboarding.py::state": [
+   "draft",
+   "scanning",
+   "interviewing",
+   "analyzing",
+   "proposal",
+   "adjusting",
+   "creating",
+   "completed",
+   "cancelled"
+  ],
+  "models/ai_org_board.py::status": [
+   "proposed",
+   "voting",
+   "approved",
+   "rejected",
+   "executed"
+  ],
+  "models/ai_org_goal.py::level": [
+   "company",
+   "department",
+   "coworker",
+   "agent"
+  ],
+  "models/ai_org_goal.py::status": [
+   "draft",
+   "active",
+   "completed",
+   "cancelled"
+  ],
+  "models/ai_org_review.py::period": [
+   "weekly",
+   "monthly",
+   "quarterly",
+   "annual"
+  ],
+  "models/ai_org_review.py::score": [
+   "1",
+   "2",
+   "3",
+   "4",
+   "5"
+  ],
+  "models/ai_org_review.py::recommendation": [
+   "promote",
+   "expand",
+   "train",
+   "maintain",
+   "monitor",
+   "restructure",
+   "terminate"
+  ],
+  "models/ai_org_review.py::state": [
+   "draft",
+   "reviewed",
+   "acknowledged"
+  ],
+  "models/ai_org_task.py::status": [
+   "todo",
+   "in_progress",
+   "review",
+   "done",
+   "blocked",
+   "cancelled"
+  ],
+  "models/ai_org_task.py::priority": [
+   "0",
+   "1",
+   "2",
+   "3"
+  ],
+  "models/ai_org_template.py::industry": [
+   "accounting",
+   "consulting",
+   "ecommerce",
+   "manufacturing",
+   "saas",
+   "retail",
+   "custom"
+  ],
+  "models/ai_personal_goal.py::status": [
+   "proposed",
+   "accepted",
+   "active",
+   "completed",
+   "cancelled"
+  ],
+  "models/ai_personal_goal.py::category": [
+   "skill",
+   "knowledge",
+   "relationship",
+   "process",
+   "career",
+   "productivity"
+  ],
+  "models/ai_personal_goal.py::source": [
+   "manual",
+   "ai_suggested",
+   "session_extracted",
+   "weekly_evolution"
+  ],
+  "models/ai_personal_memory.py::source": [
+   "chat",
+   "mail",
+   "mail_graph",
+   "learning",
+   "manual",
+   "skill",
+   "correction",
+   "goal",
+   "calendar_event",
+   "discuss_chat",
+   "joplin_note",
+   "system"
+  ],
+  "models/ai_personal_memory.py::category": [
+   "fact",
+   "preference",
+   "goal",
+   "correction",
+   "pattern",
+   "feedback",
+   "context",
+   "mail",
+   "skill",
+   "insight",
+   "policy"
+  ],
+  "models/ai_personal_memory.py::importance": [
+   "low",
+   "medium",
+   "high"
+  ],
+  "models/ai_provider.py::api_style": [
+   "openai",
+   "anthropic"
+  ],
+  "models/ai_provider.py::status": [
+   "draft",
+   "confirmed",
+   "error"
+  ],
+  "models/ai_session.py::status": [
+   "draft",
+   "active",
+   "done",
+   "error"
+  ],
+  "models/ai_session.py::init_type": [
+   "web_ui",
+   "chat",
+   "channel",
+   "mail",
+   "cron",
+   "server_action",
+   "powerbox",
+   "manual",
+   "webhook",
+   "openai_api",
+   "watch",
+   "heartbeat"
+  ],
+  "models/ai_session.py::user_rating": [
+   "down",
+   "neutral",
+   "up",
+   "unassessed"
+  ],
+  "models/ai_session.py::month_label": [
+   "Jan",
+   "Feb",
+   "Mar",
+   "Apr",
+   "May",
+   "Jun",
+   "Jul",
+   "Aug",
+   "Sep",
+   "Oct",
+   "Nov",
+   "Dec"
+  ],
+  "models/ai_session.py::handover_state": [
+   "none",
+   "offered",
+   "claimed",
+   "done"
+  ],
+  "models/ai_session.py::handover_mode": [
+   "note",
+   "full"
+  ],
+  "models/ai_session.py::title_source": [
+   "prompt",
+   "llm",
+   "summary",
+   "manual"
+  ],
+  "models/ai_session.py::finish_reason": [
+   "stop",
+   "length",
+   "tool_calls",
+   "content_filter",
+   "refusal",
+   "max_rounds",
+   "max_tokens",
+   "timeout",
+   "cancelled",
+   "error",
+   "setup_failed",
+   "idle",
+   "closed",
+   "interrupted",
+   "new_session"
+  ],
+  "models/ai_session_line.py::role": [
+   "user",
+   "assistant",
+   "tool",
+   "system"
+  ],
+  "models/ai_session_line.py::finish_reason": [
+   "stop",
+   "length",
+   "tool_calls",
+   "content_filter",
+   "refusal",
+   "max_rounds",
+   "max_tokens",
+   "timeout",
+   "cancelled",
+   "error",
+   "idle",
+   "closed",
+   "interrupted",
+   "new_session"
+  ],
+  "models/ai_session_object.py::operation": [
+   "created",
+   "updated",
+   "deleted"
+  ],
+  "models/ai_skill.py::source_type": [
+   "odoo",
+   "github",
+   "pi"
+  ],
+  "models/ai_skill.py::compatibility": [
+   "any",
+   "odoo",
+   "pi_python",
+   "pi_node"
+  ],
+  "models/ai_skill.py::category": [
+   "accounting",
+   "development",
+   "infrastructure",
+   "analysis",
+   "communication",
+   "research",
+   "general"
+  ],
+  "models/executive_summary.py::level": [
+   "L2",
+   "L3"
+  ],
+  "models/hr_department.py::health": [
+   "green",
+   "yellow",
+   "red"
+  ],
+  "models/res_config_settings.py::cron_interval_type": [
+   "minutes",
+   "hours",
+   "days",
+   "weeks",
+   "months"
+  ],
+  "models/workspace_activity.py::source": [
+   "gap_okr",
+   "smart_deadline",
+   "pará_project",
+   "meeting_context",
+   "coworker",
+   "manual"
+  ],
+  "models/workspace_activity.py::suggestion_type": [
+   "calendar.event",
+   "mail.activity",
+   "dms.file",
+   "sale.order",
+   "account.move",
+   "other"
+  ],
+  "models/workspace_activity.py::state": [
+   "proposed",
+   "accepted",
+   "rejected",
+   "done"
+  ],
+  "models/workspace_para.py::kind": [
+   "project",
+   "area",
+   "resource",
+   "archive"
+  ],
+  "models/workspace_para.py::state": [
+   "suggested",
+   "active",
+   "archived"
+  ]
+ },
+ "xmlids": {
+  "views/ai_access_resolver_views.xml": [
+   "action_ai_access_resolver",
+   "view_ai_access_resolver_form",
+   "view_ai_access_resolver_list"
+  ],
+  "views/ai_actions.xml": [
+   "action_ai_agent",
+   "action_ai_chat",
+   "action_ai_coworker",
+   "action_ai_identity",
+   "action_ai_memory",
+   "action_ai_model",
+   "action_ai_onboarding",
+   "action_ai_org_board",
+   "action_ai_org_review",
+   "action_ai_org_task",
+   "action_ai_provider",
+   "action_ai_settings",
+   "action_ai_skill",
+   "ir_action_server_ask_ai_about_record"
+  ],
+  "views/ai_agent_views.xml": [
+   "ai_agent_form",
+   "ai_agent_kanban",
+   "ai_agent_list",
+   "ai_agent_search"
+  ],
+  "views/ai_artifact_type_views.xml": [
+   "action_ai_artifact_type",
+   "view_ai_artifact_type_form",
+   "view_ai_artifact_type_search",
+   "view_ai_artifact_type_tree"
+  ],
+  "views/ai_company_memory_category_views.xml": [
+   "action_ai_company_memory_category",
+   "view_ai_company_memory_category_form",
+   "view_ai_company_memory_category_list"
+  ],
+  "views/ai_company_memory_views.xml": [
+   "action_ai_company_memory",
+   "view_ai_company_memory_form",
+   "view_ai_company_memory_list",
+   "view_ai_company_memory_search"
+  ],
+  "views/ai_cost_period_views.xml": [
+   "action_ai_cost_period",
+   "view_ai_cost_period_list",
+   "view_ai_cost_period_pivot"
+  ],
+  "views/ai_coworker_buzz_agent_wizard_views.xml": [
+   "action_ai_coworker_buzz_agent_wizard",
+   "ai_coworker_buzz_agent_wizard_form"
+  ],
+  "views/ai_coworker_error_views.xml": [
+   "action_ai_coworker_error",
+   "menu_ai_coworker_error",
+   "view_ai_coworker_error_form",
+   "view_ai_coworker_error_list"
+  ],
+  "views/ai_coworker_hitl_views.xml": [
+   "ai_coworker_form_inherit_hitl",
+   "ai_coworker_hitl_action",
+   "ai_coworker_hitl_form",
+   "ai_coworker_hitl_list",
+   "ai_coworker_hitl_search",
+   "view_res_users_form_inherit_hitl"
+  ],
+  "views/ai_coworker_init_type_views.xml": [
+   "ai_coworker_init_type_form",
+   "ai_coworker_init_type_list"
+  ],
+  "views/ai_coworker_views.xml": [
+   "ai_coworker_form",
+   "ai_coworker_kanban",
+   "ai_coworker_list",
+   "ai_coworker_search"
+  ],
+  "views/ai_eval_views.xml": [
+   "action_ai_eval_case",
+   "action_ai_eval_run",
+   "menu_ai_eval_case",
+   "menu_ai_eval_run",
+   "view_ai_eval_case_form",
+   "view_ai_eval_case_list",
+   "view_ai_eval_case_search",
+   "view_ai_eval_result_list",
+   "view_ai_eval_run_form",
+   "view_ai_eval_run_list"
+  ],
+  "views/ai_graph_node_views.xml": [
+   "action_graph_node_definition",
+   "view_graph_node_definition_form",
+   "view_graph_node_definition_search",
+   "view_graph_node_definition_tree"
+  ],
+  "views/ai_identity_views.xml": [
+   "view_ai_identity_form",
+   "view_ai_identity_kanban",
+   "view_ai_identity_tree"
+  ],
+  "views/ai_lineage_views.xml": [
+   "action_ai_lineage_link",
+   "view_ai_lineage_link_form",
+   "view_ai_lineage_link_list"
+  ],
+  "views/ai_model_views.xml": [
+   "ai_model_form",
+   "ai_model_kanban",
+   "ai_model_list",
+   "ai_model_search"
+  ],
+  "views/ai_monthly_summary_views.xml": [
+   "ai_monthly_summary_action",
+   "ai_monthly_summary_graph",
+   "ai_monthly_summary_pivot",
+   "ai_monthly_summary_search",
+   "ai_monthly_summary_tree"
+  ],
+  "views/ai_okf_concept_views.xml": [
+   "action_ai_okf_concept",
+   "view_ai_okf_concept_form",
+   "view_ai_okf_concept_list",
+   "view_ai_okf_concept_search"
+  ],
+  "views/ai_okf_dashboard_views.xml": [
+   "action_ai_okf_dashboard",
+   "view_ai_okf_dashboard_form"
+  ],
+  "views/ai_okf_record_views.xml": [
+   "view_okf_record_form"
+  ],
+  "views/ai_okf_upload_views.xml": [
+   "action_ai_okf_upload",
+   "action_ai_okf_upload_archive_errors",
+   "action_ai_okf_upload_retry",
+   "view_ai_okf_upload_form",
+   "view_ai_okf_upload_list"
+  ],
+  "views/ai_onboarding_views.xml": [
+   "action_ai_onboarding",
+   "view_ai_onboarding_form"
+  ],
+  "views/ai_onboarding_wizard_views.xml": [
+   "action_ai_onboarding_wizard",
+   "view_ai_onboarding_wizard_form"
+  ],
+  "views/ai_orchestration_dashboard.xml": [
+   "action_ai_orchestration_dashboard",
+   "ir_action_server_restart_onboarding",
+   "ir_action_server_start_onboarding"
+  ],
+  "views/ai_org_board_views.xml": [
+   "action_ai_org_board",
+   "view_ai_org_board_form",
+   "view_ai_org_board_tree"
+  ],
+  "views/ai_org_goal_views.xml": [
+   "action_ai_org_goal",
+   "view_ai_org_goal_form",
+   "view_ai_org_goal_kanban",
+   "view_ai_org_goal_tree"
+  ],
+  "views/ai_org_review_views.xml": [
+   "action_ai_org_review",
+   "view_ai_org_review_form",
+   "view_ai_org_review_tree"
+  ],
+  "views/ai_org_task_views.xml": [
+   "action_ai_org_task",
+   "view_ai_org_task_form",
+   "view_ai_org_task_tree"
+  ],
+  "views/ai_personal_goal_views.xml": [
+   "action_ai_personal_goal",
+   "view_ai_personal_goal_form",
+   "view_ai_personal_goal_search",
+   "view_ai_personal_goal_tree"
+  ],
+  "views/ai_personal_memory_views.xml": [
+   "action_ai_personal_memory",
+   "view_ai_personal_memory_form",
+   "view_ai_personal_memory_search",
+   "view_ai_personal_memory_tree"
+  ],
+  "views/ai_provider_views.xml": [
+   "action_ai_provider_wizard",
+   "ai_provider_form",
+   "ai_provider_kanban",
+   "ai_provider_list",
+   "ai_provider_search",
+   "ai_provider_wizard_form"
+  ],
+  "views/ai_quest_builder_wizard_views.xml": [
+   "action_ai_coworker_builder_wizard",
+   "ai_coworker_builder_wizard_form"
+  ],
+  "views/ai_session_object_views.xml": [
+   "view_ai_coworker_session_object_form",
+   "view_ai_coworker_session_object_list",
+   "view_ai_coworker_session_object_search"
+  ],
+  "views/ai_session_views.xml": [
+   "action_ai_coworker_session",
+   "view_ai_session_form",
+   "view_ai_session_line_form",
+   "view_ai_session_line_list",
+   "view_ai_session_line_search",
+   "view_ai_session_search",
+   "view_ai_session_tree"
+  ],
+  "views/ai_skill_views.xml": [
+   "view_ai_skill_export_wizard",
+   "view_ai_skill_form",
+   "view_ai_skill_kanban",
+   "view_ai_skill_kanban_inherit",
+   "view_ai_skill_search",
+   "view_ai_skill_tree"
+  ],
+  "views/ai_tag_views.xml": [
+   "action_ai_tag",
+   "ai_tag_view_form",
+   "ai_tag_view_search",
+   "ai_tag_view_tree"
+  ],
+  "views/ai_tool_views.xml": [
+   "action_ai_tool",
+   "action_ai_tool_capability",
+   "view_ai_tool_capability_form",
+   "view_ai_tool_capability_tree",
+   "view_ai_tool_form",
+   "view_ai_tool_search",
+   "view_ai_tool_tree"
+  ],
+  "views/hr_department_views.xml": [
+   "hr_department_hierarchy_view_ai",
+   "hr_department_kanban_inherit_ai",
+   "hr_view_department_form_inherit_ai",
+   "hr_view_department_tree_inherit_ai"
+  ],
+  "views/hr_employee_views.xml": [
+   "hr_view_employee_form_inherit_ai",
+   "hr_view_employee_kanban_inherit_ai",
+   "hr_view_employee_tree_inherit_ai"
+  ],
+  "views/hr_job_views.xml": [
+   "hr_view_job_form_inherit_ai"
+  ],
+  "views/legacy_menu_cleanup.xml": [
+   "ai_agent.ai_agent_config_settings_menu",
+   "ai_agent.menu_ai_agent_configuration",
+   "ai_agent.menu_ai_agent_llm",
+   "ai_agent.menu_ai_agent_menu",
+   "ai_agent.menu_ai_agent_menu_menu",
+   "ai_agent.menu_ai_agent_root",
+   "ai_agent.menu_ai_llm_attribute_value",
+   "ai_agent.menu_ai_memory",
+   "ai_agent.menu_ai_quest",
+   "ai_agent.menu_ai_quest_session",
+   "ai_agent.menu_ai_quest_session_line",
+   "ai_agent.menu_ai_quest_session_message",
+   "ai_agent.menu_ai_session_object",
+   "ai_agent.menu_ai_tool",
+   "ai_agent.menu_product_product"
+  ],
+  "views/mail_test_wizard_views.xml": [
+   "ai_coworker_mail_test_wizard_action",
+   "ai_coworker_mail_test_wizard_form"
+  ],
+  "views/menu.xml": [
+   "menu_ai_access_resolvers",
+   "menu_ai_agent",
+   "menu_ai_company_memory",
+   "menu_ai_company_memory_category",
+   "menu_ai_config_goals",
+   "menu_ai_config_hitl",
+   "menu_ai_config_masterdata",
+   "menu_ai_configuration",
+   "menu_ai_coworker",
+   "menu_ai_graph",
+   "menu_ai_hitl",
+   "menu_ai_identity",
+   "menu_ai_memory",
+   "menu_ai_model",
+   "menu_ai_monthly_summary",
+   "menu_ai_okf_concepts",
+   "menu_ai_okf_dashboard",
+   "menu_ai_okf_uploads",
+   "menu_ai_onboarding",
+   "menu_ai_orchestration_dashboard",
+   "menu_ai_org_board",
+   "menu_ai_org_goal",
+   "menu_ai_org_review",
+   "menu_ai_org_task",
+   "menu_ai_organization",
+   "menu_ai_personal_goals_tech",
+   "menu_ai_personal_memory",
+   "menu_ai_provider",
+   "menu_ai_root",
+   "menu_ai_session",
+   "menu_ai_settings",
+   "menu_ai_skill_menu",
+   "menu_ai_technical_config",
+   "menu_ai_technical_org",
+   "menu_ai_technical_root",
+   "menu_ai_tool",
+   "menu_ai_tool_capability"
+  ],
+  "views/powerbox_templates.xml": [
+   "PowerboxDropdown",
+   "PowerboxOverlay"
+  ],
+  "views/res_company_memory_views.xml": [
+   "view_res_company_form_inherit_memory"
+  ],
+  "views/res_company_views.xml": [
+   "view_company_form_inherit_ai"
+  ],
+  "views/res_config_settings_views.xml": [
+   "agent_default_coworker",
+   "agent_default_identity",
+   "agent_default_tools",
+   "agent_max_rounds",
+   "agent_tool_timeout",
+   "ai_google_api_key",
+   "bg_jobs_display",
+   "company_memory_settings",
+   "company_mission_setting",
+   "company_values_setting",
+   "company_website_setting",
+   "coworker_memory_settings",
+   "heartbeat_enabled",
+   "heartbeat_interval",
+   "heartbeat_max_seconds_per_tick",
+   "heartbeat_max_tasks_per_tick",
+   "nats_restart_window",
+   "nats_restarts",
+   "nats_retries",
+   "odoo_mind_graph_status",
+   "okf_budget_settings",
+   "okf_catalog_settings",
+   "okf_dept_health_settings",
+   "personal_memory_settings",
+   "pi_skills_path",
+   "res_config_settings_view_form"
+  ],
+  "views/res_users_personal_memory_views.xml": [
+   "view_res_users_form_inherit_personal_memory",
+   "view_res_users_preferences_inherit_ai_memory"
+  ],
+  "views/server_action_wizard_views.xml": [
+   "ai_coworker_server_action_wizard_action",
+   "ai_coworker_server_action_wizard_form"
+  ],
+  "views/templates.xml": [
+   "active-quest-name",
+   "chat_ui",
+   "coworker-list",
+   "messages",
+   "prompt-input",
+   "q.id",
+   "send-btn"
+  ],
+  "views/workspace_activity_views.xml": [
+   "action_workspace_agenda_suggestions",
+   "action_workspace_generate_gap",
+   "view_workspace_activity_suggestion_form",
+   "view_workspace_activity_suggestion_list"
+  ],
+  "views/workspace_para_views.xml": [
+   "action_okf_global_search",
+   "action_workspace_agenda",
+   "action_workspace_approvals",
+   "action_workspace_catalog",
+   "action_workspace_coworkers",
+   "action_workspace_inbox",
+   "action_workspace_para",
+   "action_workspace_search",
+   "action_workspace_suggest_areas",
+   "menu_workspace_agenda",
+   "menu_workspace_agenda_suggestions",
+   "menu_workspace_approvals",
+   "menu_workspace_catalog",
+   "menu_workspace_coworkers",
+   "menu_workspace_generate_gap",
+   "menu_workspace_inbox",
+   "menu_workspace_para",
+   "menu_workspace_root",
+   "menu_workspace_search",
+   "menu_workspace_search_hybrid",
+   "menu_workspace_suggest_areas",
+   "view_workspace_para_container_form",
+   "view_workspace_para_container_tree",
+   "view_workspace_para_ref_tree"
+  ],
+  "data/ai_invoice_coworker.xml": [
+   "agent_invoice_analyser",
+   "agent_invoice_partner",
+   "coworker_agent_invoice_analyser",
+   "coworker_agent_invoice_partner",
+   "coworker_invoice_assistant",
+   "coworker_invoice_init_mail",
+   "coworker_invoice_init_webui",
+   "skill_mail_invoice",
+   "skill_mail_partner"
+  ],
+  "data/bridge_config.xml": [
+   "html_editor_coworker_id"
+  ],
+  "data/browser_tools.xml": [
+   "tool_browser_navigate"
+  ],
+  "data/company_memory_categories.xml": [
+   "company_memory_cat_competitor",
+   "company_memory_cat_customer",
+   "company_memory_cat_knowledge",
+   "company_memory_cat_marketing",
+   "company_memory_cat_mgmt_summary",
+   "company_memory_cat_strategy",
+   "company_memory_cat_supplier",
+   "company_memory_cat_website"
+  ],
+  "data/cron_bifrost_sync.xml": [
+   "cron_task_cron_bifrost_sync"
+  ],
+  "data/cron_burn_rate.xml": [
+   "cron_task_cron_budget_summary",
+   "cron_task_cron_burn_rate_check"
+  ],
+  "data/cron_company_memory_indexers.xml": [
+   "cron_task_cron_company_memory_dms",
+   "cron_task_cron_company_memory_knowledge",
+   "cron_task_cron_company_memory_mgmt_summary",
+   "cron_task_cron_company_memory_nightly",
+   "cron_task_cron_company_memory_partners",
+   "cron_task_cron_company_memory_strategy",
+   "cron_task_cron_company_memory_suppliers",
+   "cron_task_cron_company_memory_website"
+  ],
+  "data/cron_cost_aggregate.xml": [
+   "cron_task_cron_cost_aggregate"
+  ],
+  "data/cron_discuss_learning.xml": [
+   "cron_task_cron_discuss_learning"
+  ],
+  "data/cron_eval.xml": [
+   "cron_task_cron_run_evals_weekly"
+  ],
+  "data/cron_external_runtime.xml": [
+   "cron_task_cron_reap_external_agents"
+  ],
+  "data/cron_graph_sync.xml": [
+   "cron_task_graph_sync"
+  ],
+  "data/cron_heartbeat_dispatch.xml": [
+   "cron_task_heartbeat_dispatch"
+  ],
+  "data/cron_heartbeat_process.xml": [
+   "cron_task_cron_heartbeat_process",
+   "cron_task_cron_run_metrics"
+  ],
+  "data/cron_hitl.xml": [
+   "cron_task_cron_hitl_expire"
+  ],
+  "data/cron_kaizen.xml": [
+   "cron_task_cron_kaizen_weekly"
+  ],
+  "data/cron_mail_reply.xml": [
+   "cron_task_mail_reply_due"
+  ],
+  "data/cron_memory_consolidation.xml": [
+   "cron_task_cron_memory_consolidation"
+  ],
+  "data/cron_memory_reembed.xml": [
+   "cron_task_cron_memory_reembed"
+  ],
+  "data/cron_model_drift.xml": [
+   "cron_task_cron_model_drift_check"
+  ],
+  "data/cron_monthly_summary.xml": [
+   "cron_task_cron_monthly_summary"
+  ],
+  "data/cron_okf_index_dirty.xml": [
+   "cron_task_cron_okf_backfill_embeddings",
+   "cron_task_cron_okf_index_dirty"
+  ],
+  "data/cron_okf_process_uploads.xml": [
+   "cron_task_cron_okf_process_uploads"
+  ],
+  "data/cron_okf_retention.xml": [
+   "cron_task_cron_backfill_retention",
+   "cron_task_cron_enforce_retention",
+   "cron_task_cron_warn_retention"
+  ],
+  "data/cron_onboard.xml": [
+   "cron_task_cron_onboard_scan"
+  ],
+  "data/cron_personal_index.xml": [
+   "cron_task_cron_personal_memory_index"
+  ],
+  "data/cron_scheduled_coworkers.xml": [
+   "cron_task_cron_scheduled_coworkers"
+  ],
+  "data/cron_session_idle.xml": [
+   "cron_task_cron_close_idle_sessions"
+  ],
+  "data/cron_skill_improve.xml": [
+   "cron_task_cron_skill_improve_weekly"
+  ],
+  "data/cron_view_guard.xml": [
+   "cron_task_cron_view_translation_guard"
+  ],
+  "data/cron_watch_process.xml": [
+   "cron_task_cron_watch_process"
+  ],
+  "data/cron_website_rag.xml": [
+   "cron_task_cron_website_rag_refresh"
+  ],
+  "data/cron_workspace_distill.xml": [
+   "cron_task_cron_workspace_distill"
+  ],
+  "data/cron_workspace_gap.xml": [
+   "cron_task_cron_workspace_gap"
+  ],
+  "data/default_coworker.xml": [
+   "agent_default_core",
+   "agent_news_watcher",
+   "agent_odoo_business",
+   "agent_office_dokument",
+   "coworker_agent_default_core",
+   "coworker_agent_news_watcher",
+   "coworker_agent_odoo_business",
+   "coworker_agent_office_dokument",
+   "coworker_default_assistent"
+  ],
+  "data/git_identity_skill.xml": [
+   "skill_git_identity"
+  ],
+  "data/graph_base.xml": [
+   "graph_node_company",
+   "graph_node_odoo_partner"
+  ],
+  "data/identity_templates.xml": [
+   "identity_template_accountant",
+   "identity_template_analyst",
+   "identity_template_companion",
+   "identity_template_developer",
+   "identity_template_ops",
+   "identity_template_support",
+   "identity_template_writer"
+  ],
+  "data/memory_scopes.xml": [
+   "memory_scope_company",
+   "memory_scope_coworker",
+   "memory_scope_personal"
+  ],
+  "data/news_skills.xml": [
+   "skill_news_briefing",
+   "skill_news_sources"
+  ],
+  "data/okf_access_resolvers.xml": [
+   "resolver_ir_attachment",
+   "resolver_res_partner"
+  ],
+  "data/okf_artifact_types_personal.xml": [
+   "artifact_type_goal",
+   "artifact_type_role"
+  ],
+  "data/okf_debug_action_template.xml": [
+   "action_okf_website_page"
+  ],
+  "data/okf_default_artifact_types.xml": [
+   "artifact_type_document",
+   "artifact_type_email",
+   "artifact_type_knowledge",
+   "artifact_type_learning",
+   "artifact_type_manual",
+   "artifact_type_mgmt_summary",
+   "artifact_type_note",
+   "artifact_type_partner",
+   "artifact_type_website"
+  ],
+  "data/okf_migrate_legacy.xml": [
+   "cron_task_cron_okf_migrate_legacy_once"
+  ],
+  "data/orchestration_skill.xml": [
+   "skill_orchestration_supervisor"
+  ],
+  "data/partner_enrichment_coworker.xml": [
+   "agent_partner_enrichment",
+   "coworker_partner_enrichment",
+   "init_partner_enrichment_server_action",
+   "link_partner_enrichment_agent",
+   "skill_partner_enrichment"
+  ],
+  "data/partner_enrichment_tools.xml": [
+   "tool_partner_apply_enrichment",
+   "tool_partner_propose_enrichment"
+  ],
+  "data/provider_anthropic.xml": [
+   "provider_anthropic"
+  ],
+  "data/provider_bifrost.xml": [
+   "provider_bifrost"
+  ],
+  "data/provider_cerebras.xml": [
+   "provider_cerebras"
+  ],
+  "data/provider_deepseek.xml": [
+   "provider_deepseek"
+  ],
+  "data/provider_google.xml": [
+   "provider_google"
+  ],
+  "data/provider_groq.xml": [
+   "provider_groq"
+  ],
+  "data/provider_ollama.xml": [
+   "provider_ollama"
+  ],
+  "data/provider_openai.xml": [
+   "provider_openai"
+  ],
+  "data/provider_openrouter.xml": [
+   "provider_openrouter"
+  ],
+  "data/skill_odoo_core.xml": [
+   "skill_odoo_core"
+  ],
+  "data/skill_office_dokument.xml": [
+   "skill_office_dokument"
+  ],
+  "data/skill_sync_cron.xml": [
+   "cron_task_skill_sync"
+  ],
+  "data/vertel_skills.xml": [
+   "skill_okf_summarize",
+   "skill_vertel_clicktest",
+   "skill_vertel_infra",
+   "skill_vertel_openspec",
+   "skill_vertel_skills"
+  ],
+  "data/youtube_tools.xml": [
+   "skill_youtube_channels",
+   "skill_youtube_full",
+   "skill_youtube_playlist",
+   "skill_youtube_search",
+   "skill_youtube_transcript",
+   "tool_youtube_channel",
+   "tool_youtube_get_transcript",
+   "tool_youtube_playlist",
+   "tool_youtube_search"
+  ]
+ },
+ "fields": {
+  "views/ai_access_resolver_views.xml": [
+   "active",
+   "arch",
+   "follower_domain",
+   "model",
+   "model_id",
+   "name",
+   "owner_domain",
+   "res_model",
+   "source_kind",
+   "view_mode"
+  ],
+  "views/ai_actions.xml": [
+   "code",
+   "context",
+   "model_id",
+   "name",
+   "res_model",
+   "state",
+   "target",
+   "url",
+   "view_mode"
+  ],
+  "views/ai_agent_views.xml": [
+   "active",
+   "ai_backstory",
+   "ai_goal",
+   "ai_role",
+   "alias_name",
+   "arch",
+   "coworker_count",
+   "description",
+   "identity_id",
+   "is_buzz_active",
+   "max_rounds",
+   "max_tokens",
+   "memory_id",
+   "memory_ids",
+   "model",
+   "model_id",
+   "model_name",
+   "name",
+   "partner_id",
+   "partner_image_128",
+   "runtime",
+   "sequence",
+   "session_line_count",
+   "session_tokens_last_30d",
+   "skill_ids",
+   "status",
+   "temperature",
+   "tool_ids",
+   "trigger_words"
+  ],
+  "views/ai_artifact_type_views.xml": [
+   "active",
+   "arch",
+   "bridge_module",
+   "group_ids",
+   "kind",
+   "model",
+   "model_id",
+   "name",
+   "okf_contract",
+   "res_model",
+   "search_view_id",
+   "view_mode"
+  ],
+  "views/ai_company_memory_category_views.xml": [
+   "active",
+   "arch",
+   "description",
+   "group_ids",
+   "model",
+   "name",
+   "res_model",
+   "view_mode"
+  ],
+  "views/ai_company_memory_views.xml": [
+   "access_count",
+   "arch",
+   "category",
+   "category_id",
+   "company_id",
+   "content",
+   "content_preview",
+   "create_date",
+   "importance",
+   "model",
+   "name",
+   "res_model",
+   "scope",
+   "source",
+   "source_ref",
+   "view_mode"
+  ],
+  "views/ai_cost_period_views.xml": [
+   "arch",
+   "billing_base",
+   "cost_company",
+   "cost_usd",
+   "granularity",
+   "has_unreported",
+   "line_count",
+   "model",
+   "name",
+   "partner_id",
+   "period_start",
+   "res_model",
+   "unreported_line_count",
+   "view_mode"
+  ],
+  "views/ai_coworker_buzz_agent_wizard_views.xml": [
+   "arch",
+   "coworker_id",
+   "model",
+   "name",
+   "res_model",
+   "target",
+   "topic",
+   "view_mode"
+  ],
+  "views/ai_coworker_error_views.xml": [
+   "action",
+   "arch",
+   "context",
+   "coworker_id",
+   "create_date",
+   "error_type",
+   "help",
+   "message",
+   "model",
+   "name",
+   "parent_id",
+   "res_model",
+   "resolution",
+   "resolved",
+   "sequence",
+   "session_id",
+   "tool_name",
+   "view_mode"
+  ],
+  "views/ai_coworker_hitl_views.xml": [
+   "action_type",
+   "arch",
+   "context",
+   "coworker_id",
+   "create_date",
+   "decided_at",
+   "decided_by",
+   "decision",
+   "hitl_approver_count",
+   "hitl_open_count",
+   "inherit_id",
+   "is_auto_proposal",
+   "model",
+   "name",
+   "object_type",
+   "request_summary",
+   "res_model",
+   "risk_level",
+   "session_id",
+   "standing_rule",
+   "state",
+   "user_id",
+   "view_mode"
+  ],
+  "views/ai_coworker_init_type_views.xml": [
+   "ai_record_chatter_limit",
+   "ai_record_include_chatter",
+   "ai_record_injection_enabled",
+   "ai_record_max_fields",
+   "ai_record_max_records",
+   "alias_contact",
+   "alias_id",
+   "alias_name",
+   "allow_trigger_words",
+   "arch",
+   "channel_id",
+   "chat_history_limit",
+   "chat_trigger_words",
+   "chat_user_id",
+   "coworker_id",
+   "cron_id",
+   "enabled",
+   "filter_domain",
+   "init_type",
+   "model",
+   "name",
+   "openai_context_window",
+   "rate_limit_rpm",
+   "rate_limit_tpm",
+   "sequence",
+   "server_action_id",
+   "use_chat_history"
+  ],
+  "views/ai_coworker_views.xml": [
+   "active",
+   "agent_count",
+   "agent_creator_prompt",
+   "agent_id",
+   "agent_ids",
+   "agent_model_id",
+   "alias_contact",
+   "alias_display",
+   "alias_name",
+   "arch",
+   "base_automation_id",
+   "block_company",
+   "block_coworker",
+   "block_personal",
+   "budget_exhausted",
+   "budget_warning",
+   "burn_rate_mtokens_day",
+   "burn_rate_warning",
+   "channel_id",
+   "channel_reply_mode",
+   "chat_trigger_words",
+   "chat_user_id",
+   "color",
+   "company_id",
+   "company_memory_artifact_types",
+   "company_memory_categories",
+   "conference_mechanism",
+   "context_max_records",
+   "cron_automation_id",
+   "cron_id",
+   "cron_interval_number",
+   "cron_interval_type",
+   "cron_model_id",
+   "cron_model_name",
+   "daily_budget_exhausted",
+   "daily_budget_used_mtokens",
+   "daily_budget_warning",
+   "daily_cap_mtokens",
+   "days_until_budget_empty",
+   "department_id",
+   "description",
+   "employee_id",
+   "example_prompts",
+   "filter_domain",
+   "graph_enrichment",
+   "graph_enrichment_budget",
+   "graph_enrichment_hops",
+   "group_ids",
+   "heartbeat_enabled",
+   "heartbeat_operational",
+   "heartbeat_status",
+   "hitl_threshold",
+   "hybrid_search",
+   "hybrid_semantic_weight",
+   "identity_id",
+   "init_channel",
+   "init_chat",
+   "init_cron",
+   "init_mail",
+   "init_manual",
+   "init_openai_api",
+   "init_powerbox",
+   "init_server_action",
+   "init_type",
+   "init_watch",
+   "init_web_ui",
+   "init_webhook",
+   "inject_company_memory",
+   "inject_nudging",
+   "last_run",
+   "last_status",
+   "last_successful_run",
+   "learning",
+   "level_company",
+   "level_coworker",
+   "level_personal",
+   "mail_action",
+   "mail_find_partner",
+   "mail_reply_delay",
+   "mail_target_model_id",
+   "manual_call_instructions",
+   "max_iterations",
+   "memory_learning_direct",
+   "memory_level",
+   "memory_profile",
+   "memory_scopes",
+   "min_confidence",
+   "model",
+   "model_ids",
+   "monthly_budget_soft",
+   "monthly_cap_mtokens",
+   "name",
+   "okf_concept_count",
+   "openai_context_window",
+   "openai_context_window_manual",
+   "orchestration_mode",
+   "orchestration_mode_help",
+   "partner_id",
+   "partner_image_128",
+   "projected_empty_date",
+   "rate_limit_rpm",
+   "rate_limit_tpm",
+   "response_mode",
+   "role",
+   "run_count",
+   "search_sources",
+   "search_strategy",
+   "sequence",
+   "server_action_automation_id",
+   "server_action_id",
+   "server_action_model_id",
+   "server_action_model_name",
+   "server_action_use_wizard",
+   "session_count",
+   "session_count_label",
+   "session_graph_enabled",
+   "session_ids",
+   "session_line_count",
+   "session_object_count",
+   "skill_ids",
+   "status",
+   "sub_description",
+   "supervisor_model_id",
+   "tag_ids",
+   "token_input",
+   "token_output",
+   "tool_ids",
+   "use_company_info",
+   "use_personal_info",
+   "use_personal_lang",
+   "use_time_context",
+   "watch_active",
+   "watch_domain",
+   "watch_filter_domain",
+   "watch_filter_pre_domain",
+   "watch_model_id",
+   "watch_model_name",
+   "watch_on_change_field_ids",
+   "watch_trg_date_calendar_id",
+   "watch_trg_date_id",
+   "watch_trg_date_range",
+   "watch_trg_date_range_type",
+   "watch_trg_field_ref",
+   "watch_trg_field_ref_model_name",
+   "watch_trg_selection_field_id",
+   "watch_trigger",
+   "watch_trigger_field_ids",
+   "webhook_secret",
+   "webhook_url",
+   "write_date"
+  ],
+  "views/ai_eval_views.xml": [
+   "accuracy",
+   "active",
+   "arch",
+   "case_id",
+   "category",
+   "context",
+   "coworker_id",
+   "errors",
+   "expected_contains",
+   "expected_not_contains",
+   "failed",
+   "input",
+   "latency_ms",
+   "model",
+   "name",
+   "passed",
+   "res_model",
+   "result_ids",
+   "run_date",
+   "run_id",
+   "score",
+   "search_view_id",
+   "source_session_id",
+   "total_cases",
+   "total_cost",
+   "view_mode"
+  ],
+  "views/ai_graph_node_views.xml": [
+   "active",
+   "arch",
+   "edge_definitions",
+   "graph_label",
+   "help",
+   "last_error",
+   "last_sync",
+   "model",
+   "model_id",
+   "module_id",
+   "name",
+   "name_field",
+   "node_count",
+   "node_properties",
+   "res_model",
+   "view_mode"
+  ],
+  "views/ai_identity_views.xml": [
+   "active",
+   "arch",
+   "boundaries",
+   "is_template",
+   "model",
+   "name",
+   "personality",
+   "scope",
+   "skill_ids",
+   "style",
+   "system_prompt",
+   "template_category",
+   "use_count",
+   "user_model",
+   "user_model_enabled",
+   "values"
+  ],
+  "views/ai_lineage_views.xml": [
+   "arch",
+   "create_date",
+   "from_id",
+   "from_model",
+   "from_ref",
+   "kind",
+   "model",
+   "name",
+   "note",
+   "res_model",
+   "to_id",
+   "to_model",
+   "to_ref",
+   "view_mode"
+  ],
+  "views/ai_model_views.xml": [
+   "active",
+   "api_name",
+   "arch",
+   "context_window",
+   "cost_input_1k",
+   "cost_output_1k",
+   "display_name",
+   "has_json_mode",
+   "has_streaming",
+   "has_tools",
+   "is_asr",
+   "is_embedded",
+   "is_multimodal",
+   "is_pdf_input",
+   "is_text2image",
+   "is_tts",
+   "is_video_input",
+   "is_vision",
+   "licence",
+   "llm_count",
+   "max_output_tokens",
+   "model",
+   "name",
+   "provider",
+   "provider_cost_1M",
+   "provider_image_128",
+   "provider_type",
+   "real_provider",
+   "session_line_count",
+   "session_tokens_last_30d",
+   "source_provider",
+   "status",
+   "sys_multiplier",
+   "tag_ids"
+  ],
+  "views/ai_monthly_summary_views.xml": [
+   "arch",
+   "budget_exhausted",
+   "budget_warning",
+   "coworker_id",
+   "help",
+   "model",
+   "month",
+   "monthly_cap_mtokens",
+   "name",
+   "res_model",
+   "session_count",
+   "started_mtokens",
+   "total_input_tokens",
+   "total_output_tokens",
+   "total_sys_tokens",
+   "view_mode"
+  ],
+  "views/ai_okf_concept_views.xml": [
+   "arch",
+   "archived",
+   "artifact_type_id",
+   "attribution",
+   "concept_key",
+   "container_id",
+   "context",
+   "dirty",
+   "distill_html",
+   "entities",
+   "generated",
+   "in_inbox",
+   "l2_summary_id",
+   "l3_summary_id",
+   "model",
+   "name",
+   "owner_company_id",
+   "owner_coworker_id",
+   "owner_user_id",
+   "para_ref_ids",
+   "res_model",
+   "retention_end",
+   "retention_purpose",
+   "retention_warned_at",
+   "scope",
+   "search_view_id",
+   "source_ref",
+   "source_user_id",
+   "sources",
+   "stale_after",
+   "status",
+   "summary",
+   "title",
+   "verified",
+   "view_mode"
+  ],
+  "views/ai_okf_dashboard_views.xml": [
+   "arch",
+   "company_concept_count",
+   "concept_count",
+   "coworker_concept_count",
+   "cron_status",
+   "dirty_count",
+   "graph_status",
+   "graph_version",
+   "health",
+   "health_reason",
+   "help",
+   "indexer_tasks",
+   "kind",
+   "last_run",
+   "line_ids",
+   "model",
+   "name",
+   "node_count",
+   "personal_concept_count",
+   "queue_status",
+   "res_model",
+   "run_result",
+   "size_estimate",
+   "stale_count",
+   "target",
+   "view_id",
+   "view_mode"
+  ],
+  "views/ai_okf_record_views.xml": [
+   "arch",
+   "model",
+   "name",
+   "okf_body",
+   "okf_dirty",
+   "okf_indexed_at",
+   "okf_links",
+   "okf_summary"
+  ],
+  "views/ai_okf_upload_views.xml": [
+   "arch",
+   "attachment_id",
+   "binding_model_id",
+   "binding_view_types",
+   "channel_id",
+   "code",
+   "concept_ids",
+   "coworker_id",
+   "create_date",
+   "error_message",
+   "model",
+   "model_id",
+   "name",
+   "normalized_text",
+   "owner_company_id",
+   "owner_user_id",
+   "res_model",
+   "retry_count",
+   "state",
+   "view_mode"
+  ],
+  "views/ai_onboarding_views.xml": [
+   "adjustments",
+   "answers",
+   "arch",
+   "ceo_user_id",
+   "company_id",
+   "context",
+   "coworker_id",
+   "created_coworker_ids",
+   "created_department_ids",
+   "created_employee_ids",
+   "created_goal_ids",
+   "detected_modules",
+   "interview_session_id",
+   "model",
+   "name",
+   "proposal_json",
+   "res_model",
+   "state",
+   "template_id",
+   "view_mode",
+   "website_summary"
+  ],
+  "views/ai_onboarding_wizard_views.xml": [
+   "adjustment",
+   "answer",
+   "arch",
+   "created_summary",
+   "current_question",
+   "current_question_id",
+   "detected_modules_text",
+   "model",
+   "name",
+   "onboarding_id",
+   "proposal_text",
+   "question_index",
+   "question_options",
+   "res_model",
+   "state",
+   "target",
+   "total_questions",
+   "view_mode",
+   "website_summary"
+  ],
+  "views/ai_orchestration_dashboard.xml": [
+   "code",
+   "help",
+   "model_id",
+   "name",
+   "res_model",
+   "state",
+   "view_ids",
+   "view_mode"
+  ],
+  "views/ai_org_board_views.xml": [
+   "arch",
+   "company_id",
+   "create_date",
+   "decision_count",
+   "decision_ids",
+   "description",
+   "human_member_ids",
+   "member_ids",
+   "model",
+   "name",
+   "proposed_by",
+   "res_model",
+   "status",
+   "title",
+   "view_mode",
+   "votes_abstain",
+   "votes_against",
+   "votes_for"
+  ],
+  "views/ai_org_goal_views.xml": [
+   "achievable",
+   "arch",
+   "coworker_id",
+   "coworker_ids",
+   "current_value",
+   "deadline",
+   "department_id",
+   "description",
+   "help",
+   "key_result_ids",
+   "level",
+   "measurable",
+   "model",
+   "name",
+   "parent_id",
+   "progress",
+   "relevant",
+   "res_model",
+   "specific",
+   "status",
+   "target_value",
+   "unit",
+   "view_mode"
+  ],
+  "views/ai_org_review_views.xml": [
+   "accomplishments",
+   "agent_id",
+   "arch",
+   "areas_for_improvement",
+   "challenges",
+   "goal_ids",
+   "human_reviewer_id",
+   "model",
+   "name",
+   "period",
+   "period_end",
+   "period_start",
+   "recommendation",
+   "res_model",
+   "reviewer_id",
+   "score",
+   "state",
+   "view_mode"
+  ],
+  "views/ai_org_task_views.xml": [
+   "arch",
+   "blocker_ids",
+   "checkout_lock",
+   "coworker_id",
+   "create_date",
+   "description",
+   "goal_id",
+   "job_id",
+   "model",
+   "name",
+   "priority",
+   "res_model",
+   "result_summary",
+   "scheduled_at",
+   "session_ids",
+   "source",
+   "status",
+   "view_mode",
+   "work_product_ids"
+  ],
+  "views/ai_personal_goal_views.xml": [
+   "accept_by_default",
+   "achievable",
+   "arch",
+   "auto_review_interval_days",
+   "category",
+   "coworker_id",
+   "created_by_ai",
+   "description",
+   "help",
+   "implementation_intention",
+   "last_checkin",
+   "linked_memory_ids",
+   "measurable",
+   "model",
+   "name",
+   "nudge_count",
+   "progress",
+   "relevant",
+   "res_model",
+   "source",
+   "source_ref",
+   "specific",
+   "status",
+   "streak_count",
+   "time_bound",
+   "user_id",
+   "view_mode"
+  ],
+  "views/ai_personal_memory_views.xml": [
+   "access_count",
+   "arch",
+   "category",
+   "company_id",
+   "content",
+   "content_preview",
+   "create_date",
+   "help",
+   "importance",
+   "model",
+   "name",
+   "res_model",
+   "source",
+   "source_ref",
+   "user_id",
+   "view_mode"
+  ],
+  "views/ai_provider_views.xml": [
+   "active",
+   "api_key",
+   "arch",
+   "auto_sync",
+   "base_url",
+   "image_128",
+   "is_key_required",
+   "last_checked",
+   "model",
+   "model_count",
+   "name",
+   "provider_type",
+   "res_model",
+   "retry_count",
+   "status",
+   "target",
+   "timeout",
+   "url",
+   "view_mode"
+  ],
+  "views/ai_quest_builder_wizard_views.xml": [
+   "arch",
+   "chat_url",
+   "model",
+   "name",
+   "res_model",
+   "target",
+   "view_mode"
+  ],
+  "views/ai_session_object_views.xml": [
+   "arch",
+   "coworker_id",
+   "datetime",
+   "model",
+   "name",
+   "operation",
+   "res_id",
+   "res_model",
+   "session_id"
+  ],
+  "views/ai_session_views.xml": [
+   "agent_id",
+   "ai_record_chatter",
+   "ai_record_count",
+   "ai_record_id",
+   "ai_record_ids",
+   "ai_record_json",
+   "ai_record_model",
+   "ai_records_json",
+   "ai_task_id",
+   "arch",
+   "attachment_count",
+   "company_id",
+   "content",
+   "context",
+   "cost_usd",
+   "coworker_id",
+   "create_date",
+   "debug_info",
+   "end_date",
+   "error_detail",
+   "external_duration",
+   "external_pid",
+   "external_port",
+   "external_rss_kb",
+   "external_spawn_time",
+   "external_started_at",
+   "finish_reason",
+   "help",
+   "hitl_open_count",
+   "identity_id",
+   "informative",
+   "init_type",
+   "line_count",
+   "model",
+   "model_real",
+   "name",
+   "partner_id",
+   "pi_session_id",
+   "reasoning",
+   "res_model",
+   "resumable",
+   "role",
+   "round_inputs",
+   "rounds",
+   "search_view_id",
+   "session_id",
+   "skill_id",
+   "source_urls",
+   "status",
+   "summary",
+   "summary_message_count",
+   "token_input",
+   "token_output",
+   "token_sys",
+   "tool_call_id",
+   "tool_calls",
+   "tool_id",
+   "tool_name",
+   "usage_reported",
+   "user_id",
+   "user_rating",
+   "view_mode"
+  ],
+  "views/ai_skill_views.xml": [
+   "active",
+   "agent_count",
+   "arch",
+   "category",
+   "color",
+   "compatibility",
+   "description",
+   "failure_cases",
+   "github_url",
+   "image_128",
+   "improvement_guidance",
+   "improvement_proposed_on",
+   "improvement_references",
+   "improvement_suggested_recipe",
+   "inherit_id",
+   "model",
+   "name",
+   "priority",
+   "recipe_text",
+   "session_line_count",
+   "session_tokens_last_30d",
+   "skill_md",
+   "source_type",
+   "success_cases",
+   "trigger_keywords",
+   "use_count",
+   "version"
+  ],
+  "views/ai_tag_views.xml": [
+   "arch",
+   "color",
+   "model",
+   "name",
+   "res_model",
+   "view_mode"
+  ],
+  "views/ai_tool_views.xml": [
+   "active",
+   "agent_ids",
+   "arch",
+   "builtin_name",
+   "call_count",
+   "capabilities",
+   "code",
+   "coworker_ids",
+   "description",
+   "error_count",
+   "executor",
+   "group_ids",
+   "last_called",
+   "member_ids",
+   "model",
+   "name",
+   "nats_agent_id",
+   "nats_skills",
+   "nats_subject",
+   "nats_timeout",
+   "parameters",
+   "res_model",
+   "risk_level",
+   "session_line_count",
+   "session_tokens_last_30d",
+   "verification_enabled",
+   "verification_json",
+   "view_mode"
+  ],
+  "views/hr_department_views.xml": [
+   "active",
+   "ai_coworker_ids",
+   "ai_goal_count",
+   "ai_heartbeat_count",
+   "ai_manager_id",
+   "ai_task_count",
+   "arch",
+   "artifact_type_ids",
+   "color",
+   "employee_ids",
+   "fold",
+   "health",
+   "health_reason",
+   "hitl_open_count",
+   "image",
+   "inherit_id",
+   "manager_id",
+   "model",
+   "name",
+   "total_ai_staff",
+   "write_date"
+  ],
+  "views/hr_employee_views.xml": [
+   "ai_coworker_id",
+   "arch",
+   "inherit_id",
+   "is_ai",
+   "job_id",
+   "model",
+   "name"
+  ],
+  "views/hr_job_views.xml": [
+   "ai_coworker_ids",
+   "arch",
+   "description",
+   "inherit_id",
+   "model",
+   "name",
+   "status"
+  ],
+  "views/mail_test_wizard_views.xml": [
+   "arch",
+   "coworker_id",
+   "eml_file",
+   "eml_filename",
+   "model",
+   "name",
+   "res_model",
+   "result",
+   "target",
+   "view_mode"
+  ],
+  "views/res_company_memory_views.xml": [
+   "arch",
+   "inherit_id",
+   "model",
+   "name",
+   "okf_memory_count"
+  ],
+  "views/res_company_views.xml": [
+   "arch",
+   "company_mission",
+   "company_values",
+   "inherit_id",
+   "model",
+   "name"
+  ],
+  "views/res_config_settings_views.xml": [
+   "ai_agent_default_identity_id",
+   "ai_agent_max_rounds",
+   "ai_agent_tool_timeout",
+   "ai_default_coworker_id",
+   "ai_default_tool_ids",
+   "ai_google_api_key",
+   "arch",
+   "bg_cron_line_ids",
+   "company_memory_auto_extract",
+   "company_memory_consolidation_days",
+   "company_memory_coworker_id",
+   "company_mission",
+   "company_mission_last_review",
+   "company_values",
+   "company_values_last_review",
+   "company_website_rag_last_index",
+   "company_website_url_edit",
+   "coworker_memory_forget_days",
+   "coworker_memory_retention",
+   "coworker_memory_retention_limit",
+   "cron_active",
+   "cron_code",
+   "cron_failure_count",
+   "cron_id",
+   "cron_interval_number",
+   "cron_interval_type",
+   "cron_lastcall",
+   "cron_name",
+   "graph_node_count",
+   "health_active_ratio",
+   "health_heartbeat_stale_days",
+   "health_no_session_days",
+   "health_zero_tokens_days",
+   "heartbeat_enabled",
+   "heartbeat_interval",
+   "heartbeat_max_seconds_per_tick",
+   "heartbeat_max_tasks_per_tick",
+   "inherit_id",
+   "model",
+   "name",
+   "odoomind_sync_batch_size",
+   "okf_artifact_type_count",
+   "okf_concept_count",
+   "okf_resolver_count",
+   "personal_memory_auto_nudge",
+   "personal_memory_char_budget",
+   "personal_memory_consolidation_hours",
+   "personal_memory_coworker_id",
+   "personal_memory_learning_enabled",
+   "personal_memory_nudge_interval",
+   "personal_memory_warn_pct",
+   "pi_nats_max_restarts",
+   "pi_nats_max_retries",
+   "pi_nats_restart_window",
+   "pi_skills_path"
+  ],
+  "views/res_users_personal_memory_views.xml": [
+   "arch",
+   "inherit_id",
+   "learn_from_discuss",
+   "model",
+   "name",
+   "okf_memory_count",
+   "personal_goal_count"
+  ],
+  "views/server_action_wizard_views.xml": [
+   "arch",
+   "coworker_id",
+   "model",
+   "name",
+   "prompt",
+   "res_model",
+   "res_model_name",
+   "result",
+   "state",
+   "target",
+   "view_mode"
+  ],
+  "views/workspace_activity_views.xml": [
+   "arch",
+   "code",
+   "coworker_id",
+   "create_date",
+   "detail",
+   "diff_after",
+   "diff_before",
+   "domain",
+   "evidence_ids",
+   "key_result_id",
+   "meeting_anchor",
+   "model",
+   "model_id",
+   "name",
+   "org_goal_id",
+   "personal_goal_id",
+   "res_model",
+   "result_ref",
+   "source",
+   "state",
+   "suggestion_type",
+   "summary",
+   "user_id",
+   "view_mode"
+  ],
+  "views/workspace_para_views.xml": [
+   "arch",
+   "code",
+   "container_id",
+   "domain",
+   "help",
+   "is_projection",
+   "kind",
+   "model",
+   "model_id",
+   "name",
+   "object_ref",
+   "objective_id",
+   "parent_id",
+   "ref_count",
+   "ref_ids",
+   "res_model",
+   "sequence",
+   "state",
+   "tag",
+   "target",
+   "view_mode"
+  ]
+ }
+}
