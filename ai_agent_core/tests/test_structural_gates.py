@@ -222,6 +222,23 @@ SILENT_EXCEPT_SCOPE = ('core', 'models', 'controllers')
 #: ``fallback:``    = vi faller tillbaka på ett annat värde med flit.
 SILENT_EXCEPT_LABELS = ('best-effort:', 'fallback:')
 
+#: En etikett som bara hänvisar tillbaka till regeln är inget skäl.
+#: Mätt 2026-11-08: 113 av 116 tysta ``except`` i modulen bar exakt
+#: ``"tyst fallback — se etiketteringsregeln"`` — den passerade grinden
+#: eftersom den innehåller ``best-effort:``, men motiverade ingenting.
+#: Regeln (openspec/specs/structural-gates) kräver att etiketten anger
+#: *varför* felet sväljs, inte var regeln finns.
+TAUTOLOGICAL_LABEL_MARKERS = ('etiketteringsregeln',)
+
+#: Känt antal tautologiska etiketter.
+#: Talet är en SKULD, inte ett mål: det får bara minska. Samma princip som
+#: ruff-baselinen för C901/BLE001/S110 — "the numbers describe existing
+#: debt, and a new violation must be a visible decision".
+#:
+#: 2026-11-08: mätt till 113. Samma dag rättades de tre i
+#: _get_quest_memories (stream.py) till riktiga loggrader → 110.
+TAUTOLOGICAL_LABEL_BASELINE = 110
+
 
 def _is_silent(handler):
     """Ett ``except`` är tyst om kroppen bara är ``pass`` eller ``continue``."""
@@ -229,6 +246,43 @@ def _is_silent(handler):
     if len(body) != 1:
         return False
     return isinstance(body[0], (ast.Pass, ast.Continue))
+
+
+def _label_span(handler, source_lines):
+    """Raderna mellan ``except``-raden och första satsen (etiketten bor där)."""
+    first_body_line = handler.body[0].lineno if handler.body else handler.lineno
+    return source_lines[handler.lineno - 1:first_body_line]
+
+
+def _is_tautological(handler, source_lines):
+    """Sant om etiketten hänvisar tillbaka till regeln i stället för att ge skäl."""
+    span = _label_span(handler, source_lines)
+    return any(marker in line for line in span
+               for marker in TAUTOLOGICAL_LABEL_MARKERS)
+
+
+def _find_tautological_labelled_excepts(root):
+    """Returnerar ``[(relpath, lineno)]`` för tysta ``except`` vars skäl är en hänvisning."""
+    hits = []
+    for scope in SILENT_EXCEPT_SCOPE:
+        base = root / scope
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob('*.py')):
+            if 'tests' in path.parts or '__pycache__' in path.parts:
+                continue
+            try:
+                source = path.read_text(encoding='utf-8')
+                tree = ast.parse(source)
+            except (SyntaxError, UnicodeDecodeError):
+                continue
+            lines = source.split('\n')
+            rel = path.relative_to(root).as_posix()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ExceptHandler) and _is_silent(node):
+                    if _is_tautological(node, lines):
+                        hits.append((rel, node.lineno))
+    return sorted(hits)
 
 
 def _has_label(handler, source_lines):
@@ -279,6 +333,27 @@ class StructuralGateSilentExcept(TransactionCase):
     och den har kostat mer felsökningstid än någon annan kodkonstruktion i
     den här modulen (docs/failures.md §10).
     """
+
+    def test_silent_except_labels_give_a_reason(self):
+        """Etiketten ska ange ett skäl — inte hänvisa tillbaka till regeln.
+
+        Mätt 2026-11-08: 113 av 116 tysta ``except`` bar
+        ``"tyst fallback — se etiketteringsregeln"``. Den innehåller
+        ``best-effort:`` och passerade därför den äldre grinden, men säger
+        ingenting om varför felet sväljs. Regeln kräver ett skäl.
+
+        Talet är pinnat som skuld: det får bara minska. En NY tautologisk
+        etikett fäller grinden, vilket är hela poängen — annars fortsätter
+        mönstret att spridas när någon kopierar en granne.
+        """
+        hits = _find_tautological_labelled_excepts(MODULE_ROOT)
+        self.assertLessEqual(
+            len(hits), TAUTOLOGICAL_LABEL_BASELINE,
+            'Fler tautologiska etiketter än baslinjen (%d). Etiketten ska '
+            'ange VARFÖR felet sväljs, inte hänvisa till regeln. Nya '
+            'förekomster:\n  ' % TAUTOLOGICAL_LABEL_BASELINE
+            + '\n  '.join(f'{rel}:{lineno}' for rel, lineno in hits),
+        )
 
     def test_silent_excepts_are_labelled(self):
         violations = [

@@ -6334,18 +6334,33 @@ class AICoworker(models.Model):
         och alla artefakter söks nu med pgvector.
         """
         self.ensure_one()
-        memories = self.env['ai.memory'].search([
-            ('quest_id', '=', self.id),
-            ('archived', '=', False),
-        ])
-        if not memories:
-            return ''
+        try:
+            memories = self.env['ai.memory'].search([
+                ('quest_id', '=', self.id),
+                ('archived', '=', False),
+            ])
+            if not memories:
+                return ''
 
-        results = []
-        for mem in memories:
-            chunks = mem.faiss_search(query, k=k)
-            if chunks:
-                results.extend(chunks)
+            results = []
+            for mem in memories:
+                chunks = mem.faiss_search(query, k=k)
+                if chunks:
+                    results.extend(chunks)
+        except Exception as e:
+            # FÄLLAN (2026-11-08): den här varianten hade inget skydd alls,
+            # till skillnad från controllers/stream.py:s motsvarighet. Ett fel
+            # i faiss_search fällde därmed hela coworker-turen — medan
+            # web-chatten bara tappade kontexten. `faiss_search` returnerade
+            # `[]` i tre veckor (2026-11-01 → 2026-11-02) utan att någon
+            # request misslyckades; här hade samma fel synts som en död tur
+            # utan förklaring.
+            #
+            # En trasig minnessökning ska degradera kontexten, inte avbryta
+            # arbetet. Samma kontrakt som stream.py: tom sträng, ingen raise.
+            _logger.warning(
+                'quest-memory (relevant memories) misslyckades: %s', e)
+            return ''
 
         if results:
             return '## Relevant memories\n' + '\n---\n'.join(results[:5])

@@ -2662,8 +2662,8 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
         if memories:
             items = [f"- {m.content}" for m in memories]
             parts.append("## Lärt om denna quest\n" + "\n".join(items))
-    except Exception:
-        pass  # best-effort: tyst fallback — se etiketteringsregeln
+    except Exception as e:
+        _logger.warning('quest-memory (consolidated) misslyckades: %s', e)
 
     try:
         # 2. Agent-artefakter — via KOPPLINGEN, inte via ai.memory.agent_id
@@ -2689,8 +2689,8 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
                     if chunks:
                         parts.append(
                             "## Agent Knowledge\n" + '\n---\n'.join(chunks[:3]))
-    except Exception:
-        pass  # best-effort: tyst fallback — se etiketteringsregeln
+    except Exception as e:
+        _logger.warning('quest-memory (agent knowledge) misslyckades: %s', e)
 
     try:
         # 3. Session-level memories (uploaded documents)
@@ -2707,8 +2707,8 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
                     chunks = [mem.content[:500]] if mem.content else []
                 if chunks:
                     parts.append("## Uploaded Documents\n" + '\n---\n'.join(chunks[:3]))
-    except Exception:
-        pass  # best-effort: tyst fallback — se etiketteringsregeln
+    except Exception as e:
+        _logger.warning('quest-memory (uploaded documents) misslyckades: %s', e)
 
     return "\n\n".join(parts) if parts else ""
 
