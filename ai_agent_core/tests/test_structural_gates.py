@@ -1346,6 +1346,34 @@ class StructuralGateLanguage(TransactionCase):
             'XML-baslinjen ligger över verkligheten — sänk taket:\n  ' + '\n  '.join(stale),
         )
 
+    def test_sv_po_is_generated_not_hand_written(self):
+        """Varje post i sv.po måste bära en ``#:``-referens.
+
+        En handskriven .po utan referenser laddas men appliceras aldrig på
+        fält — den ser översatt ut och är det inte. Referensen är det som
+        binder msgid till en modell eller en kodrad.
+        """
+        po = MODULE_ROOT / 'i18n' / 'sv.po'
+        if not po.is_file():
+            self.skipTest('i18n/sv.po finns inte i den här utcheckningen')
+        import re as _re
+        text = po.read_text(encoding='utf-8')
+        blocks = text.split('\n\n')
+        missing = []
+        for block in blocks:
+            if 'msgid' not in block or 'msgstr' not in block:
+                continue
+            msgid = _re.search(r'^msgid "(.+)"$', block, _re.M)
+            if not msgid:
+                continue  # header eller flerradig post
+            if not _re.search(r'^#:', block, _re.M):
+                missing.append(msgid.group(1)[:60])
+        self.assertFalse(
+            missing,
+            'sv.po-poster utan #:-referens — filen är handskriven, inte '
+            'genererad med --i18n-export:\n  ' + '\n  '.join(missing[:10]),
+        )
+
     def test_language_data_literals_have_reasons(self):
         """En data-literal utan skäl går inte att skilja från en glömd sträng."""
         missing = [

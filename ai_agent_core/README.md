@@ -548,6 +548,57 @@ Nya tester för sessionsminne och write-verify:
 `test_tool_self_correction.py`, `test_document_page_acceptance.py`
 (körs med `-t`; acceptanstestet hoppas över om `document.page` saknas).
 
+## Språket i källan (core-english-and-sv-po)
+
+Källkoden talar **engelska**. Svenska hör hemma i `i18n/sv.po` som `msgstr`.
+Datakontrakt — fältnamn, xmlid, `selection`-nycklar, modellnamn — översätts
+aldrig.
+
+Regeln är grindad, inte bara dokumenterad. `StructuralGateLanguage` i
+`tests/test_structural_gates.py` fallerar på **tillväxt**:
+
+| Test | Vad det fångar |
+|---|---|
+| `test_no_new_swedish_string_literals` | en ny svensk strängliteral i ett `.py` |
+| `test_baseline_does_not_claim_more_than_reality` | ett tak som ligger över koden (döljer nästa ökning) |
+| `test_no_swedish_xml_ui_text` | svensk `string`/`help`/`placeholder`/`confirm` i en vy |
+| `test_xml_baseline_does_not_claim_more_than_reality` | samma ratchet för XML |
+| `test_language_exemptions_have_reasons` | ett undantag utan skrivet skäl |
+| `test_language_exemptions_match_something` | ett undantag som inte längre träffar något |
+| `test_language_data_literals_have_reasons` | en data-literal utan skäl |
+| `test_language_data_literals_match_something` | en föråldrad data-literal |
+
+Taket ligger i `tests/language_baseline.json` och **får bara sjunka**. Att
+sänka är en medveten commit; att höja är en regression.
+
+### Vad som är data, inte text
+
+`LANGUAGE_DATA_LITERALS` undantar literaler som *måste* vara svenska, med
+skrivet skäl per post:
+
+- translittereringstabellen `{'å': 'a', …}` för HTTP-headers
+- `beställare_ref` / `beställare_trust` — fältnamn i domäner och record-dicts
+- narrerings- och meta-not-regexer som matchar svenska LLM-svar
+  (`"bra fråga"`, `"låt mig"`, `"Notering:"`)
+- proper-noun-regexen `[A-ZÅÄÖ]` som fångar K2/K3/BAS
+- `_BRIDGE` i `core/tool_select.py` — svensk→engelsk tokenbrygga för den
+  lexikala fallback-scorern (verktygsbeskrivningarna är engelska, prompterna
+  ofta svenska)
+
+`migrations/` är undantagen helt: historisk kod som redan kört i drift, där
+literalerna är loggmeddelanden i engångsskript.
+
+### `sv.po` genereras, skrivs inte för hand
+
+```bash
+odoo -c /etc/odoo/odoo.conf -d <db> \
+    --i18n-export=i18n/sv.po --language=sv_SE --modules=ai_agent_core \
+    --stop-after-init
+```
+
+En handskriven `.po` utan `#: model:…`-referenser laddas men appliceras
+aldrig på fält. Grinden fallerar på poster som saknar `#:`-referens.
+
 ## Strukturella grindar (structural-discipline-gates)
 
 Två AST-baserade grindar bevakar **var** kod får byggas — inte vad den gör.
