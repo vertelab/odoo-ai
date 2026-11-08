@@ -19,52 +19,6 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/pwa/sw.js', { scope: '/ai/' }).catch(function () {});
     });
 }
-// Push-opt-in: endast för inloggade användare (anonyma har inga notiser).
-// Registrerar enheten mot mail.push.device (samma RPC som webclienten).
-var PWA_USER_AUTH = <!-- USER_AUTH_FLAG -->;
-if (PWA_USER_AUTH && 'PushManager' in window && 'serviceWorker' in navigator) {
-    var pushBtn = document.getElementById('push-enable-btn');
-    if (pushBtn) {
-        var vapidKey = '';
-        pushBtn.addEventListener('click', function () {
-            pushBtn.disabled = true;
-            fetch('/pwa/vapid-public-key')
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    vapidKey = data.vapid_public_key;
-                    return navigator.serviceWorker.ready.then(function (reg) {
-                        return reg.pushManager.subscribe({
-                            userVisibleOnly: true,
-                            applicationServerKey: vapidKey
-                        });
-                    });
-                })
-                .then(function (sub) {
-                    return fetch('/web/dataset/call_kw/mail.push.device/register_devices', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            id: 1, jsonrpc: '2.0', method: 'call',
-                            params: {
-                                model: 'mail.push.device', method: 'register_devices', args: [],
-                                kwargs: Object.assign({}, sub.toJSON(), {
-                                    vapid_public_key: vapidKey
-                                }),
-                                context: {}
-                            }
-                        })
-                    });
-                })
-                .then(function () {
-                    pushBtn.textContent = '✓ Notiser aktiverade';
-                })
-                .catch(function () {
-                    pushBtn.disabled = false;
-                    pushBtn.textContent = '🔔 Aktivera notiser';
-                });
-        });
-    }
-}
 </script>
 <style>
 /* === DARK THEME (default) === */
@@ -1532,6 +1486,97 @@ if(autoInitSkill||contextQuest){
         }
     },2000)
 }
+// === PUSH-OPT-IN ===
+// Ligger EFTER markupen: knappen måste finnas i DOM när scriptet körs
+// (låg tidigare i <head> och hittade då inget element — opt-in gick
+// aldrig att aktivera).
+var PWA_USER_AUTH = <!-- USER_AUTH_FLAG -->;
+(function () {
+    if (!PWA_USER_AUTH) return;
+    if (!('PushManager' in window) || !('serviceWorker' in navigator)) return;
+    var pushBtn = document.getElementById('push-enable-btn');
+    if (!pushBtn) return;
+    // ?debugPush=1 visar knappen även när enheten redan är registrerad.
+    var forceShow = location.search.indexOf('debugPush=1') !== -1;
+    var vapidKey = '';
+
+    function showLabel(text, enabled) {
+        pushBtn.textContent = text;
+        pushBtn.disabled = !enabled;
+        pushBtn.style.display = 'inline-block';
+    }
+
+    function isRegisteredHere() {
+        // Prenumerationen lever i SW-scopet /ai/. mail.push.device är globalt
+        // (per partner) och säger inget om just den här ytans SW.
+        return navigator.serviceWorker.ready
+            .then(function (reg) { return reg.pushManager.getSubscription(); })
+            .then(function (sub) { return !!sub; })
+            .catch(function () { return false; });
+    }
+
+    isRegisteredHere().then(function (already) {
+        if (already && !forceShow) return;
+        showLabel(already ? '🔔 Notiser aktiva (registrera om)' : '🔔 Aktivera notiser', true);
+    });
+
+    pushBtn.addEventListener('click', function () {
+        pushBtn.disabled = true;
+        pushBtn.textContent = '⏳ Aktiverar…';
+        var permission = ('Notification' in window)
+            ? Promise.resolve(Notification.permission)
+            : Promise.resolve('granted');
+        permission.then(function (perm) {
+            if (perm === 'denied') {
+                throw new Error('Notiser blockerade i webbläsaren');
+            }
+            if (perm === 'default' && 'Notification' in window) {
+                return Notification.requestPermission();
+            }
+        })
+            .then(function () {
+                return fetch('/pwa/vapid-public-key');
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                vapidKey = data.vapid_public_key;
+                if (!vapidKey) throw new Error('Ingen VAPID-nyckel på servern');
+                return navigator.serviceWorker.ready;
+            })
+            .then(function (reg) {
+                return reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: vapidKey
+                });
+            })
+            .then(function (sub) {
+                return fetch('/web/dataset/call_kw/mail.push.device/register_devices', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: 1, jsonrpc: '2.0', method: 'call',
+                        params: {
+                            model: 'mail.push.device', method: 'register_devices', args: [],
+                            kwargs: Object.assign({}, sub.toJSON(), {
+                                vapid_public_key: vapidKey
+                            }),
+                            context: {}
+                        }
+                    })
+                });
+            })
+            .then(function () {
+                showLabel('✓ Notiser aktiverade', false);
+            })
+            .catch(function (err) {
+                pushBtn.disabled = false;
+                pushBtn.textContent = '🔔 Försök igen';
+                pushBtn.style.display = 'inline-block';
+                pushBtn.title = 'Fel: ' + (err && err.message ? err.message : err);
+                console.error('push opt-in failed:', err);
+            });
+    });
+})();
 </script>
 </body>
 </html>
