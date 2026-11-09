@@ -870,17 +870,27 @@ def post_init_hook(env):
 
     # Kanal-registreringen (channel-adapter-wiring 4.5).
     #
-    # `channel_registry` är en process-global singleton. Att registrera vid
-    # import hade räckt för en worker som importerar modulen, men hooken är
-    # den plats där modulen redan säkrar annat som ska finnas efter en
-    # (upp)installation — och registreringen är idempotent.
+    # ⚠ Den RIKTIGA registreringen sker nu vid modulimport
+    # (`core/channels.py::_register_channels_on_import`) — inte här.
+    #
+    # Fällan (mätt 2026-11-09): `channel_registry` är process-global och
+    # töms vid varje processstart, men `post_init_hook` körs bara vid
+    # (upp)installation. Efter en omstart var registret tomt,
+    # `process_item()` gav 'no_processor' och `dispose()` anropades aldrig
+    # — mail-svar skickades aldrig i drift, tyst. Att bara registrera här
+    # räckte alltså inte.
+    #
+    # Anropet nedan är kvar som en idempotent försäkran (register()
+    # skriver över samma nyckel) och för att logga att kanalerna finns.
     try:
-        from .core.channels import register_mail_channel
+        from .core.channels import (
+            register_chat_channel, register_mail_channel)
         register_mail_channel()
-        _logger.info('channel_registry: mail-kanalen registrerad')
+        register_chat_channel()
+        _logger.info('channel_registry: mail- och chat-kanalerna registrerade')
     except Exception as e:
         _logger.warning(
-            'channel_registry: kunde inte registrera mail-kanalen: %s', e)
+            'channel_registry: kunde inte registrera kanalerna: %s', e)
 
     # Quest Builder
     if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):

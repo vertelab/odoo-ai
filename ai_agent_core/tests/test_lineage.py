@@ -113,8 +113,19 @@ class TestLineage(TransactionCase):
         vilka moduler som råkade installeras — välj därför en typ som
         finns.
         """
-        for candidate in ('calendar.event', 'dms.file', 'project.task'):
-            if candidate in self.env:
+        # Bara typer som BÅDE finns i `suggestion_type`-selectionen OCH har
+        # en modell i den här databasen. `project.task` fanns tidigare med i
+        # listan och valdes när `project` var installerad — men den är inte
+        # ett giltigt Selection-värde, så `create()` kastade
+        # "Wrong value for suggestion_type: 'project.task'".
+        #
+        # `_materialize()` hanterar dessutom bara calendar.event och
+        # dms.file (se models/workspace_activity.py), så en typ utan
+        # materialisering ger ingen `result_ref` och ingen kant.
+        valid = {key for key, _label
+                 in self.Sugg._fields['suggestion_type'].selection}
+        for candidate in ('calendar.event', 'dms.file'):
+            if candidate in valid and candidate in self.env:
                 return candidate
         self.skipTest('ingen materialiserbar suggestion_type i den här databasen')
 

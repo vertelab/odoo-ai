@@ -67,8 +67,10 @@ Module ai_agent_core: 1 failures, 4 errors of 667 tests
 | `channel-performance-measurement` | +25 (`test_channel_timing`, `test_measure_channels`) | 2 422 totalt |
 | `test-baseline-determinism` | +16 (`test_baseline_gate`) | 2 438 totalt, modul-fas 667 |
 
-`Module ai_agent_core: 1 failures, 4 errors of 667 tests` är oförändrat mot
-baslinjen — samma fem klasser, alla i tabellen nedan.
+`Module ai_agent_core: 0 failures, 0 errors of 667 tests` — modul-fasen är
+**grön**. De fyra fel som tidigare stod här är åtgärdade (se
+"Åtgärdade fel 2026-11-09" nedan). Kvar i hela sviten är ett enda känt fel,
+`TestClassifyCacheWeak`, som ligger i modul-fasen men är ordningsberoende.
 
 Ett fel som tidigare stod här är **miljöberoende, inte ett kodfel**, och
 räknas inte mot baslinjen:
@@ -103,14 +105,11 @@ importerades; samtliga var antingen döda tester eller riktiga kodfel (se
 
 ## Kända fel
 
-Fyra kända fel, alla dokumenterade med orsak. **Ingen ändring får öka antalet.**
+**Ett** känt fel (2026-11-09). **Ingen ändring får öka antalet.**
 
 | Test | Fel | Orsak | Stabilitet |
 |---|---|---|---|
 | `TestClassifyCacheWeak.test_entry_disappears_when_cursor_is_gc` | `3 != 1` | `_CLASSIFY_CACHE` är modulglobal och delas mellan tester i samma process — en tidigare testpost ligger kvar. Testet antar en tom cache. | stabil |
-| `TestLineage` (3 st) | `ValueError: Wrong value for suggestion_type: 'project.task'` | Testet skickar ett modellnamn där fältet väntar en `Selection`-nyckel. Testfixturen är fel, inte koden. | stabil |
-| `MailChannelCharacterization.test_reply_is_sent_via_send_mail_reply` | `0 != 1` | Karaktäriseringstest mot en patchad `run()`; anropet når inte `send_mail_reply` i den här miljön. | stabil |
-| `MailChannelCharacterization.test_reply_is_truncated_to_4000_chars` | följdfel av ovanstående | Samma rot. | stabil |
 
 ### Sviten är icke-deterministisk — läs det här innan du tolkar en röd körning
 
@@ -181,6 +180,21 @@ De 44 felen var inte brus. De föll i tre klasser:
 **Tester som beskröev ett önskemål, inte koden — rättade till vad som
 faktiskt gäller:** `_check_quest_error` auto-skapa en agent, avdelning
 injiceras inte i prompten, partnernamnet bär badge-prefix.
+
+## Åtgärdade fel 2026-11-09
+
+Fyra fel som stod som "kända, stabila" var **inte** acceptabla — de dolde
+riktiga buggar:
+
+| Fel | Vad som var fel | Fix |
+|---|---|---|
+| `MailChannelCharacterization.test_reply_is_sent_via_send_mail_reply` | **Produktionsbugg.** `channel_registry` är process-global och töms vid varje processstart, men kanalerna registrerades BARA i `post_init_hook` (som körs en gång vid installation). Efter en omstart var registret tomt, `process_item()` gav `'no_processor'` och `dispose()` anropades aldrig — **mail-svar skickades aldrig i drift**, utan ett enda fel i loggen. | Registrering vid modulimport i `__init__.py` (alla `core.*`-importer i modellen är lata, så `core/channels.py` importerades aldrig annars). |
+| `MailChannelCharacterization.test_reply_is_truncated_to_4000_chars` | Samma rot som ovan. | Samma fix. |
+| `TestLineage` (3 st) | `_materializable_type()` valde `project.task` när `project` var installerad — men den är inte ett giltigt `Selection`-värde, så `create()` kastade `Wrong value for suggestion_type`. | Listan begränsad till typer som både finns i selectionen OCH har en modell: `calendar.event`, `dms.file`. |
+| `TestApprovalsSpecConsistency` | Kraschade på `PermissionError` (se ovan). | `_read_openspec_spec()` (18.0.2.0.47). |
+
+**Lärdomen:** ett fel som stått som "stabilt" i baslinjen kan vara en riktig
+bugg som grinden tyst accepterat. Baslinjen ska krympa — inte förklara.
 
 ## Regeln
 

@@ -499,3 +499,34 @@ def register_chat_channel():
 def process_chat_item(item):
     """Kör ett chat-item genom den gemensamma loopen (synkront)."""
     return run_coroutine_sync(process_item(item))
+
+
+# ── Process-start ───────────────────────────────────────────────────
+# Registreringen får INTE bara ligga i `post_init_hook`.
+#
+# Fällan (mätt 2026-11-09): `channel_registry` är en process-global
+# singleton som töms när processen startar. `post_init_hook` körs EN gång
+# vid (upp)installation — inte vid omstart. Efter varje omstart var
+# registret därför tomt, `process_item()` returnerade 'no_processor' och
+# `dispose()` anropades aldrig. Följden i drift: **mail-svar skickades
+# aldrig**, och chat-svar postades aldrig via kanalvägen — utan ett enda
+# fel i loggen, eftersom 'no_processor' var en tyst retur.
+#
+# Modulnivå-koden nedan körs när modulen importeras, alltså en gång per
+# process — precis vad ett process-globalt register behöver. Den är
+# idempotent (register() skriver över samma nyckel), så en hook som kör
+# igen är ofarlig.
+def _register_channels_on_import():
+    """Registrera alla kanaler när modulen importeras (en gång per process)."""
+    for register in (register_mail_channel, register_chat_channel):
+        try:
+            register()
+        except Exception:
+            # best-effort: en trasig kanal får inte hindra modulimporten.
+            # Felet syns i process_item() som 'no_processor' med en varning.
+            _logger.warning(
+                '%s misslyckades vid import — kanalen är oregistrerad',
+                register.__name__, exc_info=True)
+
+
+_register_channels_on_import()
