@@ -393,6 +393,36 @@ class GraphExecutor(models.Model):
     _abstract = True
 
     @api.model
+    def _load_age_extension(self):
+        """Ladda AGE-biblioteket i den här sessionen (``LOAD 'age'``).
+
+        Fällan (2026-11-09): ``ag_catalog.cypher()`` svarar
+        ``unhandled cypher(cstring) function call`` om AGE:s bibliotek inte
+        är laddat i sessionen — även när extensionen finns, grafen finns och
+        ``search_path`` innehåller ``ag_catalog``. Verifierat manuellt:
+
+            SET search_path = ag_catalog, public;
+            SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$);
+            -- ERROR:  unhandled cypher(cstring) function call
+
+            LOAD 'age';                       -- ← den här raden krävs
+            SET search_path = ag_catalog, public;
+            SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$);
+            -- 1
+
+        ``LOAD`` är sessionslokalt och billigt (biblioteket är redan laddat
+        andra gången). Vi sväljer fel: saknas extensionen ska anroparen få
+        sitt eget, tydligare fel från ``cypher()``.
+        """
+        try:
+            self.env.cr.execute("LOAD 'age'")
+        except Exception:
+            # best-effort: extensionen kan saknas i databasen. cypher()
+            # rapporterar det med ett tydligare fel; att kasta här skulle
+            # bara byta ut det mot ett sämre.
+            pass
+
+    @api.model
     def cypher(self, query, read_only=True, timeout=10):
         """Execute a Cypher query against the odoo_mind AGE graph.
 
@@ -422,6 +452,7 @@ class GraphExecutor(models.Model):
         try:
             # Use savepoint to avoid aborting the entire transaction on error
             self.env.cr.execute("SAVEPOINT graph_executor")
+            self._load_age_extension()
             # AGE:s operatorer (@>, som MERGE/SET/DELETE och
             # property-matchning använder) är OQUALIFICERADE inuti
             # Cypher-kroppen. Utan ag_catalog i search_path resolvas de
@@ -512,6 +543,7 @@ class GraphExecutor(models.Model):
             # (samma mönster som cypher() nedan).
             self.env.cr.execute("SAVEPOINT age_available")
             try:
+                self._load_age_extension()
                 self.env.cr.execute("""
                     SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$)
                     AS (x ag_catalog.agtype)
