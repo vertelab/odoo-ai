@@ -228,6 +228,9 @@ from . import test_standing_rules
 # test-suite-baseline 2.1/2.2: grinden som jämför en svitkörning mot
 # BASELINE.md. Utan den är baslinjen en påminnelse, inte en grind.
 from . import test_baseline
+# Grindens egen mekanism (test-baseline-determinism 4.1-4.5): stabilitet
+# ur flera loggar, vandrande fäller inte, befordran fäller.
+from . import test_baseline_gate
 
 # De två filerna nedan saknades här helt — verifierat med `git log -S`:
 # noll träffar i hela historiken, alltså hade de aldrig kört. Red-team-sviten

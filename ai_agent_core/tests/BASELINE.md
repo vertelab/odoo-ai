@@ -18,6 +18,30 @@ sudo -n -u odoo odoo --config /etc/odoo/odoo.conf --database tst_suite \
 grep -E 'Module ai_agent_core: [0-9]+ failures' /tmp/suite.log
 ```
 
+### Grinden läser flera loggar (krävs för att avgöra stabilitet)
+
+Med **en** logg kan grinden inte skilja stabilt från vandrande — allt som
+fallerar klassas då som `stabil` (den konservativa riktningen). Kör sviten
+N gånger, spara varje logg, och peka ut dem:
+
+```bash
+for i in 1 2 3; do
+  AI_AGENT_CORE_SUITE_LOGS= \
+  odoo --config /etc/odoo/odoo.conf --database tst_suite \
+    --update ai_agent_core --test-enable --test-tags /ai_agent_core \
+    --stop-after-init --log-level=test --logfile=/tmp/suite_$i.log
+done
+
+AI_AGENT_CORE_SUITE_LOGS=/tmp/suite_1.log,/tmp/suite_2.log,/tmp/suite_3.log \
+  odoo --config /etc/odoo/odoo.conf --database tst_suite \
+  --update ai_agent_core --test-enable --test-tags /ai_agent_core:TestSuiteBaseline \
+  --stop-after-init --log-level=test --logfile=/tmp/gate.log
+```
+
+`$AI_AGENT_CORE_SUITE_LOG` (en logg) finns kvar som bakåtkompatibel
+fallback. En sökväg i listan som inte finns hoppas över med en varning — en
+felstavad sökväg får inte tyst göra listan till en enda logg.
+
 **Krav:** `CREATE EXTENSION age, vector` FÖRE `--init`. Utan dem kraschar
 registry-load på `schema "ag_catalog" does not exist`.
 
@@ -32,15 +56,22 @@ omgångar av "försök 1/3").
 `tests/__init__.py` och rättats (se nedan).
 
 ```
-ai_agent_core: 2293 tester, 119 s, 140296 queries
-Module ai_agent_core: 1 failures, 4 errors of 649 tests
+ai_agent_core: 2422 tester, 108 s, 140755 queries
+Module ai_agent_core: 1 failures, 4 errors of 667 tests
 ```
 
-**Uppdaterat 2026-11-09** (kanalprestanda, `18.0.2.0.45`): de tre nya
-testfilerna (`test_channel_timing`, `test_measure_channels`) lade till 25
-tester — 2 422 totalt. Modul-fasen är grön: `Module ai_agent_core: 0
-failures, 0 errors of 667 tests`. Två fel som tidigare stod här är
-**miljöberoende, inte kodfel**, och räknas inte mot baslinjen:
+**Uppdaterat 2026-11-09** (`18.0.2.0.46`). Två ändringar landade samma dag:
+
+| Ändring | Tester | Not |
+|---|---|---|
+| `channel-performance-measurement` | +25 (`test_channel_timing`, `test_measure_channels`) | 2 422 totalt |
+| `test-baseline-determinism` | +16 (`test_baseline_gate`) | 2 438 totalt, modul-fas 667 |
+
+`Module ai_agent_core: 1 failures, 4 errors of 667 tests` är oförändrat mot
+baslinjen — samma fem klasser, alla i tabellen nedan.
+
+Två fel som tidigare stod här är **miljöberoende, inte kodfel**, och räknas
+inte mot baslinjen:
 
 | Fel | Orsak | Åtgärd i miljön |
 |---|---|---|
@@ -61,13 +92,39 @@ importerades; samtliga var antingen döda tester eller riktiga kodfel (se
 
 Fyra kända fel, alla dokumenterade med orsak. **Ingen ändring får öka antalet.**
 
-| Test | Fel | Orsak |
+| Test | Fel | Orsak | Stabilitet |
+|---|---|---|---|
+| `TestClassifyCacheWeak.test_entry_disappears_when_cursor_is_gc` | `3 != 1` | `_CLASSIFY_CACHE` är modulglobal och delas mellan tester i samma process — en tidigare testpost ligger kvar. Testet antar en tom cache. | stabil |
+| `TestLineage` (3 st) | `ValueError: Wrong value for suggestion_type: 'project.task'` | Testet skickar ett modellnamn där fältet väntar en `Selection`-nyckel. Testfixturen är fel, inte koden. | stabil |
+| `MailChannelCharacterization.test_reply_is_sent_via_send_mail_reply` | `0 != 1` | Karaktäriseringstest mot en patchad `run()`; anropet når inte `send_mail_reply` i den här miljön. | stabil |
+| `MailChannelCharacterization.test_reply_is_truncated_to_4000_chars` | följdfel av ovanstående | Samma rot. | stabil |
+| `TestApprovalsSpecConsistency.test_spec_requires_the_same_gate_not_a_silent_denial` | `PermissionError` på `/home/waland/plan/odoo-ai/openspec/specs/approvals/spec.md` | Testet läser en spec utanför modulen. `/home/waland` är `drwxr-x---` — `odoo` kan inte traversera den. Miljöfel, inte kodfel. | stabil |
+
+### Sviten är icke-deterministisk — läs det här innan du tolkar en röd körning
+
+**En enstaka röd körning bevisar inte en regression.** Mätt 2026-11-05 gav
+tre körningar av samma kod tre olika feluppsättningar (se
+`test-baseline-determinism`). Orsaken är ordningsberoende i
+testfixturerna — modulglobala cachar, modell-id som skiftar mellan
+databaser, `HttpCase` som kräver en körande server.
+
+Kolumnen **Stabilitet** säger vad en post är:
+
+| Värde | Betydelse | Grindens hållning |
 |---|---|---|
-| `TestClassifyCacheWeak.test_entry_disappears_when_cursor_is_gc` | `3 != 1` | `_CLASSIFY_CACHE` är modulglobal och delas mellan tester i samma process — en tidigare testpost ligger kvar. Testet antar en tom cache. |
-| `TestLineage` (3 st) | `ValueError: Wrong value for suggestion_type: 'project.task'` | Testet skickar ett modellnamn där fältet väntar en `Selection`-nyckel. Testfixturen är fel, inte koden. |
-| `MailChannelCharacterization.test_reply_is_sent_via_send_mail_reply` | `0 != 1` | Karaktäriseringstest mot en patchad `run()`; anropet når inte `send_mail_reply` i den här miljön. |
-| `MailChannelCharacterization.test_reply_is_truncated_to_4000_chars` | följdfel av ovanstående | Samma rot. |
-| `TestCompactionWithoutSession` (setUpClass) | `'PreforkServer' object has no attribute 'httpd'` | `HttpCase` kräver en körande HTTP-server. Räknas normalt utanför baslinjen (se nedan) men ligger i `ai_agent_core` så det syns här. |
+| `stabil` | Fallerar i **alla** mätta körningar | Räknas mot baslinjen; en post som slutar fallera ska bort. |
+| `vandrande` | Fallerar i **några** körningar men inte alla | **Rapporteras** som varning (`_logger.warning`), fäller inte grinden. |
+
+⚠ **Vandrande fel är buggar i testfixturerna, inte acceptabla.** Att en
+klass står som `vandrande` är ett kvitto på att buggen finns — inte ett
+tillstånd. Varje vandrande klass ska åtgärdas **en i taget, med ett test
+som bevisar fixen**; att grinden tolererar dem får aldrig bli skälet att
+sluta åtgärda dem.
+
+En klass markerad `vandrande` som fallerar i **alla** lästa loggar har
+blivit stabil — då fallerar grinden med ett meddelande om att posten ska
+flyttas till `stabil`. Det är den enda vägen en felklass får byta karaktär
+utan att någon tittar.
 
 De 20 fel som fanns när baslinjen först skrevs (2026-11-02) är åtgärdade:
 
