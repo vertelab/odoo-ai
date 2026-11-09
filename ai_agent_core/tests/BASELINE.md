@@ -70,13 +70,26 @@ Module ai_agent_core: 1 failures, 4 errors of 667 tests
 `Module ai_agent_core: 1 failures, 4 errors of 667 tests` är oförändrat mot
 baslinjen — samma fem klasser, alla i tabellen nedan.
 
-Två fel som tidigare stod här är **miljöberoende, inte kodfel**, och räknas
-inte mot baslinjen:
+Ett fel som tidigare stod här är **miljöberoende, inte ett kodfel**, och
+räknas inte mot baslinjen:
 
 | Fel | Orsak | Åtgärd i miljön |
 |---|---|---|
 | `TestGraphPartnerEdges.test_sync_batch_sets_last_error_on_undefined_label` | `age`-extensionen saknades i databasen → `ag_catalog.cypher()` finns inte, och det första felet blir SQL-felet i stället för det förväntade label-felet. | `apt-get install postgresql-16-age` + `CREATE EXTENSION age` i testdatabasen. |
-| `TestApprovalsSpecConsistency.test_spec_requires_the_same_gate_not_a_silent_denial` | Läser `/home/waland/plan/odoo-ai/openspec/specs/approvals/spec.md`; `/home/waland` är `drwxr-x---` och `odoo` kan inte traversera den. | Kör sviten som en användare som kan läsa sökvägen, eller kopiera specen till en läsbar plats. |
+
+`TestApprovalsSpecConsistency` **kraschade** tidigare här (`PermissionError`):
+sökvägen var hårdkodad till `/home/waland/plan/odoo-ai/...` och `/home/waland`
+är `drwxr-x---`, så `Path.exists()` kastade `EACCES` när sviten kördes som
+`odoo`. Sedan `18.0.2.0.47` läses specen via `_read_openspec_spec()`, som
+returnerar `None` i stället för att kasta — testet **hoppar över** med ett
+tydligt skäl. Planen pekas ut med:
+
+```bash
+AI_AGENT_CORE_OPENSPEC_ROOT=/home/waland/plan/odoo-ai/openspec
+```
+
+Sätts den (och katalogen är läsbar för den användare sviten körs som) körs
+testet på riktigt. Ligger planen på standardplatsen behövs ingen variabel.
 
 De 649 är modul-fasen; de 2 293 (nu 2 422) är hela sviten inklusive
 beroenden.
@@ -98,7 +111,6 @@ Fyra kända fel, alla dokumenterade med orsak. **Ingen ändring får öka antale
 | `TestLineage` (3 st) | `ValueError: Wrong value for suggestion_type: 'project.task'` | Testet skickar ett modellnamn där fältet väntar en `Selection`-nyckel. Testfixturen är fel, inte koden. | stabil |
 | `MailChannelCharacterization.test_reply_is_sent_via_send_mail_reply` | `0 != 1` | Karaktäriseringstest mot en patchad `run()`; anropet når inte `send_mail_reply` i den här miljön. | stabil |
 | `MailChannelCharacterization.test_reply_is_truncated_to_4000_chars` | följdfel av ovanstående | Samma rot. | stabil |
-| `TestApprovalsSpecConsistency.test_spec_requires_the_same_gate_not_a_silent_denial` | `PermissionError` på `/home/waland/plan/odoo-ai/openspec/specs/approvals/spec.md` | Testet läser en spec utanför modulen. `/home/waland` är `drwxr-x---` — `odoo` kan inte traversera den. Miljöfel, inte kodfel. | stabil |
 
 ### Sviten är icke-deterministisk — läs det här innan du tolkar en röd körning
 

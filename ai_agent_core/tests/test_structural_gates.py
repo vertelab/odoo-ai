@@ -36,6 +36,7 @@ Dessutom bor två grindar som bevakar *mekanismer* i ``core/``:
 """
 
 import ast
+import os
 import pathlib
 import re
 import unittest
@@ -45,6 +46,39 @@ from odoo.tests.common import TransactionCase, tagged
 
 MODULE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 """Rot för ai_agent_core (tests/ ligger ett steg ner)."""
+
+#: OpenSpec-planen ligger utanför modulen. Den läses av
+#: `TestApprovalsSpecConsistency` — en grind mot specen, inte mot koden.
+#:
+#: Fällan (2026-11-09): sökvägen var hårdkodad till
+#: `/home/waland/plan/odoo-ai/...`. `/home/waland` är `drwxr-x---`, så när
+#: sviten körs som `odoo` kastar `Path.exists()` `PermissionError` (EACCES
+#: propagerar från en icke-traverserbar förälderkatalog) — testet kraschade
+#: i stället för att hoppa över. Nu går den att peka ut via miljövariabel
+#: och en oläsbar sökväg hoppar över testet med ett tydligt skäl.
+OPENSPEC_ROOT_ENV = 'AI_AGENT_CORE_OPENSPEC_ROOT'
+DEFAULT_OPENSPEC_ROOT = pathlib.Path('/home/waland/plan/odoo-ai/openspec')
+
+
+def _read_openspec_spec(relative_path):
+    """Läs en spec ur OpenSpec-planen, eller ``None`` om den inte går att läsa.
+
+    Returnerar ``None`` (inte ett undantag) när sökvägen saknas, är
+    oläsbar eller ligger bakom en katalog vi inte får traversera — testet
+    ska hoppa över, inte krascha. Miljövariabeln
+    ``$AI_AGENT_CORE_OPENSPEC_ROOT`` pekar ut planen när den inte ligger på
+    standardplatsen.
+    """
+    root = pathlib.Path(
+        os.environ.get(OPENSPEC_ROOT_ENV) or DEFAULT_OPENSPEC_ROOT)
+    path = root / relative_path
+    try:
+        if not path.is_file():
+            return None
+        return path.read_text(encoding='utf-8')
+    except (OSError, PermissionError):
+        # OSError täcker EACCES från en icke-traverserbar förälderkatalog.
+        return None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1020,12 +1054,11 @@ class TestApprovalsSpecConsistency(TransactionCase):
         säger `needs_user` frågar ytan i stället för att neka. Grinden är
         oförändrad; det är svaret som nu kan lämnas.
         """
-        import pathlib
-        spec = pathlib.Path(
-            '/home/waland/plan/odoo-ai/openspec/specs/approvals/spec.md')
-        if not spec.exists():
-            self.skipTest('approvals-specen finns inte i den här miljön')
-        text = spec.read_text()
+        text = _read_openspec_spec('specs/approvals/spec.md')
+        if text is None:
+            self.skipTest(
+                'approvals-specen går inte att läsa i den här miljön '
+                '(sätt %s om planen ligger någon annanstans)' % OPENSPEC_ROOT_ENV)
         self.assertIn('SHALL evaluate the same gate', text)
         # Ingen formulering får kräva att en yta UTAN kanal ska neka —
         # det vore att göra kanalen otillåten.
