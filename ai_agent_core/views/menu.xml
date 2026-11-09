@@ -114,6 +114,20 @@
               parent="menu_ai_configuration" sequence="20"
               groups="ai_agent_core.group_ai_admin"
               action="action_ai_coworker_session"/>
+    <!-- Spåret (session-observability): agentkörningar, verktygsanrop och
+         stängningar. Samma nivå som Session — de läses tillsammans. -->
+    <menuitem id="menu_ai_session_agent_run" name="Agent Runs"
+              parent="menu_ai_configuration" sequence="21"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_session_agent_run"/>
+    <menuitem id="menu_ai_session_tool_call" name="Tool Calls"
+              parent="menu_ai_configuration" sequence="22"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_session_tool_call"/>
+    <menuitem id="menu_ai_session_close_event" name="Close Events"
+              parent="menu_ai_configuration" sequence="23"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_session_close_event"/>
     <menuitem id="menu_ai_monthly_summary" name="Monthly Summary"
               parent="menu_ai_configuration" sequence="25"
               action="ai_monthly_summary_action"/>

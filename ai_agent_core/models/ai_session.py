@@ -120,6 +120,76 @@ class AICoworkerSession(models.Model):
     ], string='Start via', index=True, readonly=True, tracking=True,
         help='How the session was started (channel/source). Filled when the '
              'session is created, where the source is known.')
+
+    # ── Livscykel (session-observability) ───────────────────────────────
+    # `init_type` säger VILKEN yta som startade sessionen (kanal/källa).
+    # `start_reason` säger VARFÖR just den här sessionen skapades — Pi:s
+    # `session_start` bär `startup|new|resume|fork`, och det är skillnaden
+    # mellan en färsk konversation och en återupptagen som gör statistiken
+    # meningsfull. Fälten kompletterar varandra; ingen ersätter den andra.
+    start_reason = fields.Selection([
+        ('startup', 'Startup'),
+        ('new', 'New Session'),
+        ('resume', 'Resume'),
+        ('fork', 'Fork'),
+        ('api', 'API'),
+        ('cron', 'Scheduled'),
+        ('mail', 'Incoming Mail'),
+        ('webhook', 'Webhook'),
+        ('heartbeat', 'Heartbeat'),
+        ('manual', 'Manual'),
+    ], string='Start Reason', index=True, readonly=True,
+        help='Why this session was created. Distinct from init_type, which '
+             'says which surface started it.')
+
+    close_event_ids = fields.One2many(
+        'ai.coworker.session.close_event', 'session_id',
+        string='Close Events',
+        help='Every closure of this session, oldest first. A session may be '
+             'closed and reopened many times; each closure is its own row.')
+    close_event_count = fields.Integer(
+        'Closures', compute='_compute_close_event_count', store=False)
+    last_close_reason = fields.Selection(
+        related='close_event_ids.reason', string='Last Close Reason',
+        readonly=True,
+        help='Why the session was closed most recently. The full history is '
+             'in the close events.')
+    last_close_at = fields.Datetime(
+        related='close_event_ids.at', string='Last Closed',
+        readonly=True)
+
+    # ── Spår-översikt (session-observability) ────────────────────────────
+    # Räknare för sessionens formulär. De läser spår-tabellerna, inte
+    # `line`, och påverkar därför ingen budget.
+    agent_run_ids = fields.One2many(
+        'ai.coworker.session.agent_run', 'session_id',
+        string='Agent Runs', readonly=True)
+    tool_call_ids = fields.One2many(
+        'ai.coworker.session.tool_call', 'session_id',
+        string='Tool Calls', readonly=True)
+    agent_run_count = fields.Integer(
+        'Agent Runs', compute='_compute_trace_counts', store=False)
+    tool_call_count = fields.Integer(
+        'Tool Calls', compute='_compute_trace_counts', store=False)
+    tool_error_count = fields.Integer(
+        'Tool Errors', compute='_compute_trace_counts', store=False)
+    trace_agent_count = fields.Integer(
+        'Agents', compute='_compute_trace_counts', store=False)
+
+    @api.depends('close_event_ids', 'close_event_ids.at')
+    def _compute_close_event_count(self):
+        for rec in self:
+            rec.close_event_count = len(rec.close_event_ids)
+
+    @api.depends('agent_run_ids', 'tool_call_ids', 'tool_call_ids.is_error')
+    def _compute_trace_counts(self):
+        for rec in self:
+            rec.agent_run_count = len(rec.agent_run_ids)
+            rec.tool_call_count = len(rec.tool_call_ids)
+            rec.tool_error_count = len(
+                rec.tool_call_ids.filtered('is_error'))
+            rec.trace_agent_count = len(
+                rec.agent_run_ids.mapped('agent_id'))
     user_rating = fields.Selection([
         ('down', 'Unsatisfied'),
         ('neutral', 'Neutral'),
@@ -776,7 +846,7 @@ class AICoworkerSession(models.Model):
     @api.model
     def _lookup_or_create_pi_session(self, pi_session_id,
                                      copy_from_pi_session_id='',
-                                     prompt=''):
+                                     prompt='', start_reason=''):
         """Find-or-create session via pi_session_id (session-cost-context).
 
         Används av POST /ai/v1/sessions/lookup och openai_api-vägen.
@@ -802,12 +872,21 @@ class AICoworkerSession(models.Model):
             # _maybe_set_title avgör).
             if prompt:
                 session._maybe_set_title(prompt, source='prompt')
+            # En stängd session som återupptas ska bli aktiv igen — annars
+            # ser den ut att vara avslutad samtidigt som den tar emot turer
+            # (session-observability).
+            session._reopen_if_closed(reason='resume')
             return session, False
         title = self._clean_title(prompt) if prompt else ''
         vals = {
             'pi_session_id': pi_session_id,
             'status': 'active',
             'init_type': 'openai_api',
+            # Klientens `session_start.reason` (session-observability).
+            # Default `api`: vägen hit är alltid ett API-anrop, och `fork`
+            # sätts av anroparen när kontexten kopieras.
+            'start_reason': start_reason or (
+                'fork' if copy_from_pi_session_id else 'api'),
             # Fallback när prompt saknas eller inte ger ett namn
             # (chat-session-limits-and-names D4): ett läsbart namn, inte ett
             # uuid-fragment. `pi_session_id[:8]` gav trådnamn som `01a1ac59`
@@ -1256,6 +1335,8 @@ class AICoworkerSession(models.Model):
                 # som openai_api så filtrering/statistik blir korrekt.
                 if not session.init_type:
                     session.sudo().write({'init_type': 'openai_api'})
+                # Stängd men återupptagen → aktiv igen (session-observability).
+                session._reopen_if_closed(reason='resume')
                 # Självläkning (kostnadskontext-injektion-stream 1.1): en
                 # session skapad via sessions-lookup bär ingen coworker
                 # (coworkern är inte vald vid Pi:s session_start). Utan
@@ -1268,6 +1349,7 @@ class AICoworkerSession(models.Model):
                 'coworker_id': coworker_id,
                 'status': 'active',
                 'init_type': 'openai_api',
+                'start_reason': 'api',
                 'name': (prompt or 'API')[:80],
                 'user_id': int(user_id or 0),
                 'pi_session_id': pi_session_id,
@@ -1290,6 +1372,7 @@ class AICoworkerSession(models.Model):
             'coworker_id': coworker_id,
             'status': 'active',
             'init_type': 'openai_api',
+            'start_reason': 'api',
             'name': (prompt or 'API')[:80],
             'user_id': int(user_id or 0),
         }), True
@@ -1757,9 +1840,19 @@ class AICoworkerSession(models.Model):
                 except Exception:
                     pass  # best-effort: tyst fallback — se etiketteringsregeln
 
+            # Samma rollnormalisering som meddelandekonverteringen använder
+            # (`normalize_role_name`), så de två vägarna inte kan glida isär.
+            from odoo.addons.ai_agent_core.core.provider import (
+                normalize_role_name)
+
             # Index för sista nya user-/assistant-raden (token-bokföring).
             def _norm_role(m):
-                role = (m.get('role') or '').strip()
+                # Pi:s interna vokabulär: `toolResult` är en verktygsrad, inte
+                # en användartur (session-observability). Utan den här
+                # mappningen föll resultaten tillbaka på `user` nedan, och
+                # sessionen visade verktygets utdata som om användaren skrivit
+                # det — medan `tool_call_id` tappades.
+                role = normalize_role_name(m.get('role') or '')
                 if role == 'developer':
                     role = 'system'
                 if role not in ('user', 'assistant', 'tool', 'system'):
@@ -1858,8 +1951,15 @@ class AICoworkerSession(models.Model):
                 # namnet, och id:t slängdes — kommentaren sa till och med
                 # "spara som namn".
                 if role == 'tool':
-                    vals['tool_name'] = m.get('name') or ''
-                    vals['tool_call_id'] = m.get('tool_call_id') or ''
+                    # Pi:s egen post bär `toolCallId`/`toolName` (camelCase);
+                    # OpenAI-formatet bär `tool_call_id`/`name`. Läs båda —
+                    # annars tappas id:t på Pi-vägen och verktygsraden kan
+                    # inte paras med assistant-radens `tool_calls[].id`
+                    # (session-observability).
+                    vals['tool_name'] = (m.get('name')
+                                         or m.get('toolName') or '')
+                    vals['tool_call_id'] = (m.get('tool_call_id')
+                                            or m.get('toolCallId') or '')
                 if m.get('tool_calls'):
                     vals['tool_calls'] = json.dumps(
                         m.get('tool_calls'), ensure_ascii=False)
@@ -2021,6 +2121,43 @@ class AICoworkerSession(models.Model):
             'target': 'current',
             'domain': [('res_model', '=', 'ai.coworker.session'),
                        ('res_id', '=', self.id)],
+        }
+
+    # ── Spår-knappar (session-observability) ────────────────────────────
+
+    def action_open_agent_runs(self):
+        """Öppna sessionens agentkörningar."""
+        self.ensure_one()
+        return {
+            'name': _('Agent Runs'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.agent_run',
+            'view_mode': 'list,form',
+            'domain': [('session_id', '=', self.id)],
+            'context': {'default_session_id': self.id},
+        }
+
+    def action_open_tool_calls(self):
+        """Öppna sessionens verktygsanrop."""
+        self.ensure_one()
+        return {
+            'name': _('Tool Calls'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.tool_call',
+            'view_mode': 'list,form',
+            'domain': [('session_id', '=', self.id)],
+            'context': {'default_session_id': self.id},
+        }
+
+    def action_open_close_events(self):
+        """Öppna sessionens stängningshistorik."""
+        self.ensure_one()
+        return {
+            'name': _('Close Events'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.close_event',
+            'view_mode': 'list',
+            'domain': [('session_id', '=', self.id)],
         }
 
     def action_open_hitl(self):
@@ -2484,10 +2621,37 @@ class AICoworkerSession(models.Model):
                 # skulle en session som aldrig kan sammanfattas (t.ex. för
                 # kort) bli liggande i kön för evigt och svälta ut alla
                 # nyare sessioner ur batchen.
+                _now = fields.Datetime.now()
+                # Stängningen blir en händelse i historiken, inte bara ett
+                # tillstånd (session-observability). Utan raden skulle en
+                # cron-stängning se ut som en klientstängning i statistiken
+                # — och "hur ofta överges en session?" gick inte att svara på.
+                try:
+                    CloseEvent = self.env[
+                        'ai.coworker.session.close_event'].sudo()
+                    # Redan registrerad (t.ex. klienten hann före, eller en
+                    # tidigare cron-körning i samma sekund) → ingen ny rad.
+                    # Sökningen är idempotensen nu när UNIQUE togs bort.
+                    if not CloseEvent.search([
+                            ('session_id', '=', session.id),
+                            ('reason', '=', 'idle'),
+                            ('at', '=', _now)], limit=1):
+                        CloseEvent.create({
+                            'session_id': session.id,
+                            'reason': 'idle',
+                            'at': _now,
+                            'pi_session_id': session.pi_session_id or False,
+                        })
+                except Exception:
+                    # Redan registrerad (t.ex. klienten hann före) — inte ett
+                    # fel. Spåret får aldrig hindra stängningen.
+                    _logger.debug(
+                        'idle cron: close event already recorded for '
+                        'session %s', session.id)
                 session.sudo().write({
                     'status': 'done',
                     'finish_reason': 'idle',
-                    'end_date': fields.Datetime.now(),
+                    'end_date': _now,
                 })
                 closed += 1
             except Exception:
@@ -2756,6 +2920,95 @@ class AICoworkerSession(models.Model):
         self.finish_reason = reason
         self.end_date = fields.Datetime.now()
         self._push_done_notification()
+
+    # ── Klientdriven stängning (session-observability) ────────────────────
+    #
+    # `mark_done` anropas bara från webhook-vägen, och `mark_interrupted`
+    # aldrig i drift. Pi:s `session_shutdown` är därför den ENDA signalen om
+    # varför en session tar slut — och den nådde aldrig hit. Här tas den
+    # emot: stängningen blir en `close_event`-rad (historik, append-only),
+    # inte bara ett tillstånd som skrivs över.
+
+    #: Vilken `finish_reason` en stängningsorsak motsvarar. `quit`/`reload`
+    #: är normala avslut; `new`/`fork`/`resume` betyder att Pi bytte session.
+    CLOSE_TO_FINISH = {
+        'quit': 'closed',
+        'reload': 'closed',
+        'new': 'new_session',
+        'resume': 'new_session',
+        'fork': 'new_session',
+        'timeout': 'timeout',
+        'idle': 'idle',
+        'error': 'error',
+        'unknown': 'closed',
+    }
+
+    def _close_from_client(self, reason='unknown', at=None):
+        """Stäng sessionen på klientens begäran. Returnerar skapade rader.
+
+        Idempotent: samma `(session, reason, at)` ger ingen ny rad. En
+        stängning som redan finns rör sessionen inte heller — annars skulle
+        en upprepad signal skriva om `end_date` och se ut som en ny
+        stängning i statistiken.
+
+        `at` är klientens tidsstämpel (när Pi faktiskt stängdes), inte när
+        Odoo tog emot anropet — nätverksfördröjning ska inte flytta
+        händelsen.
+        """
+        self.ensure_one()
+        at = at or fields.Datetime.now()
+        CloseEvent = self.env['ai.coworker.session.close_event'].sudo()
+        existing = CloseEvent.search([
+            ('session_id', '=', self.id),
+            ('reason', '=', reason),
+            ('at', '=', at),
+        ], limit=1)
+        if existing:
+            _logger.debug(
+                'session %s: close event %s at %s already recorded',
+                self.id, reason, at)
+            return 0
+        CloseEvent.create({
+            'session_id': self.id,
+            'reason': reason,
+            'at': at,
+            'pi_session_id': self.pi_session_id or False,
+        })
+        finish = self.CLOSE_TO_FINISH.get(reason, 'closed')
+        # `end_date` är sessionens slut-tidsstämpel (det finns inget
+        # `end_at`-fält; tidsstämpeln bor i `close_event.at`).
+        self.sudo().write({
+            'status': 'done',
+            'finish_reason': finish,
+            'end_date': at,
+        })
+        _logger.info(
+            'session %s closed by client: reason=%s at=%s',
+            self.id, reason, at)
+        return 1
+
+    def _reopen_if_closed(self, reason='resume'):
+        """Återöppna en `done`-session när en ny tur kommer.
+
+        VARFÖR (session-observability): `_find_or_create_coworker_session`
+        hittar sessionen på `pi_session_id` och skriver nya turer UTAN att
+        röra status. En session som en gång stängts (av cronen eller
+        klienten) låg därför kvar som `done` med en `end_date` som inte
+        längre stämde — och idle-cronen, som letar `status='active'`, hittade
+        den ALDRIG igen. Det var mekanismen bakom "vi stänger nästan aldrig".
+
+        `error` lämnas orörd: ett fel ska inte maskeras av att användaren
+        frågar igen. En ny session skapas då hellre än att felraden skrivs
+        över.
+        """
+        self.ensure_one()
+        if not self.exists() or self.status != 'done':
+            return False
+        self.sudo().write({'status': 'active', 'end_date': False})
+        _logger.info(
+            'session %s reopened by a new turn (reason=%s)',
+            self.id, reason)
+        return True
 
     #: Rangordning av finish_reason — hÖgre vinner när två källor säger olika.
     #: Gatewayens `stop_reason` kan vara starkare än sessionens egen (t.ex. en

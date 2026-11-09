@@ -90,6 +90,35 @@ class Role(Enum):
     TOOL = "tool"
 
 
+#: Rollnamn som en klient kan skicka men som Odoo/OpenAI inte känner igen.
+#: Pi:s egen session kallar verktygsresultatet `toolResult`; OpenAI-formatet
+#: (och Pi:s egen openai-completions-adapter) kallar det `tool`. Klientens
+#: interna vokabulär får inte läcka in i `Role` — då skulle `to_openai()`
+#: skicka `toolResult` till providern, vilket formatet inte accepterar.
+ROLE_ALIASES = {
+    "toolresult": "tool",
+    "tool_result": "tool",
+}
+
+
+def normalize_role_name(role):
+    """Mappa ett rollnamn till Odoos vokabulär (sträng).
+
+    EN källa för aliasen, så att meddelandekonverteringen (till providern)
+    och persisteringen (till databasen) aldrig kan glida isär — de två
+    vägarna måste ge samma roll, annars blir historiken inkonsekvent vid
+    replay (session-observability).
+
+    Ett tomt värde eller en icke-sträng returneras oförändrat; okända namn
+    returneras också oförändrade så att anroparen kan avgöra om de ska
+    hoppas över eller falla tillbaka.
+    """
+    if not isinstance(role, str):
+        return role
+    role = role.strip()
+    return ROLE_ALIASES.get(role.lower(), role)
+
+
 @dataclass
 class Message:
     role: Role

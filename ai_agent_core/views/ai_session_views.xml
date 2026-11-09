@@ -147,6 +147,33 @@
                                 <span class="o_stat_text">external run</span>
                             </div>
                         </button>
+                        <!-- Spåret (session-observability): vad som GJORDES,
+                             inte bara vad som sades. Räknarna läser
+                             agent_run/tool_call — ingen budget påverkas. -->
+                        <button name="action_open_agent_runs" type="object"
+                                class="oe_stat_button" icon="fa-sitemap"
+                                invisible="agent_run_count == 0">
+                            <div class="o_stat_info">
+                                <field name="agent_run_count"
+                                       widget="statinfo" string="Runs"/>
+                            </div>
+                        </button>
+                        <button name="action_open_tool_calls" type="object"
+                                class="oe_stat_button" icon="fa-wrench"
+                                invisible="tool_call_count == 0">
+                            <div class="o_stat_info">
+                                <field name="tool_call_count"
+                                       widget="statinfo" string="Tools"/>
+                            </div>
+                        </button>
+                        <button name="action_open_close_events" type="object"
+                                class="oe_stat_button" icon="fa-flag-checkered"
+                                invisible="close_event_count == 0">
+                            <div class="o_stat_info">
+                                <field name="close_event_count"
+                                       widget="statinfo" string="Close Events"/>
+                            </div>
+                        </button>
                     </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Thread name..."/></h1>
@@ -170,6 +197,26 @@
                             <field name="token_sys" readonly="1"/>
                             <field name="line_count" readonly="1"/>
                             <field name="resumable" readonly="1"/>
+                        </group>
+                    </group>
+                    <!-- Livscykel + spår-översikt (session-observability):
+                         en blick ska räcka för att se hur sessionen
+                         startade, slutade och vad den gjorde. -->
+                    <group>
+                        <group string="Lifecycle">
+                            <field name="start_reason" readonly="1"/>
+                            <field name="last_close_reason" readonly="1"
+                                   invisible="close_event_count == 0"/>
+                            <field name="last_close_at" readonly="1"
+                                   invisible="close_event_count == 0"/>
+                        </group>
+                        <group string="Trace (work, not budget)"
+                               invisible="agent_run_count == 0 and tool_call_count == 0">
+                            <field name="trace_agent_count" readonly="1"/>
+                            <field name="agent_run_count" readonly="1"/>
+                            <field name="tool_call_count" readonly="1"/>
+                            <field name="tool_error_count" readonly="1"
+                                   decoration-danger="tool_error_count &gt; 0"/>
                         </group>
                     </group>
                     <!-- Rekordkontext (ai-coworker-record-context): vilken
@@ -341,6 +388,69 @@
                             <field name="tool_calls" readonly="1"/>
                             <separator string="Resultat"/>
                             <field name="content" readonly="1"/>
+                        </page>
+                        <!-- ── Spåret (session-observability) ────────────────
+                             Konversationen säger VAD som sades; de här
+                             flikarna säger VAD SOM GJORDES. De läses via
+                             related-fält på raden så att detaljerna nås
+                             från meddelandet de hör till, utan att gå via
+                             sessionen. `invisible` när det inte finns något
+                             att visa — en tom flik är brus. -->
+                        <page string="Exekvering" name="agent_runs"
+                              invisible="not agent_run_ids">
+                            <field name="agent_run_ids" readonly="1">
+                                <list>
+                                    <field name="kind" widget="badge"/>
+                                    <field name="agent_id"/>
+                                    <field name="model_requested"/>
+                                    <field name="model_served"/>
+                                    <field name="turn_index"/>
+                                    <field name="tokens_in" sum="1"/>
+                                    <field name="tokens_out" sum="1"/>
+                                    <field name="cost_usd" sum="1"/>
+                                    <field name="finish_reason"
+                                           widget="badge"/>
+                                    <field name="aborted"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Verktyg" name="tool_calls_trace"
+                              invisible="not tool_call_ids">
+                            <field name="tool_call_ids" readonly="1">
+                                <list>
+                                    <field name="tool_name"/>
+                                    <field name="executor"
+                                           widget="badge"/>
+                                    <field name="tool_call_id"/>
+                                    <field name="parent_tool_call_id"
+                                           optional="hide"/>
+                                    <field name="is_error"/>
+                                    <field name="duration_ms" sum="1"/>
+                                    <field name="started_at"/>
+                                    <field name="result_preview"/>
+                                </list>
+                            </field>
+                        </page>
+                        <!-- Gateway-fliken visar sessionens gateway-mått
+                             (retries, fallbacks, faktisk kostnad). Fälten
+                             nås via `related` på raden, så de är alltid i
+                             synk med sessionen.
+                             ⚠ `bifrost_cost` är GATEWAYENS kostnad — den
+                             slås aldrig ihop med `cost_usd` (faktisk
+                             kostnad) eller `token_sys` (debiteringsgrund). -->
+                        <page string="Gateway" name="gateway"
+                              invisible="not bifrost_synced_at">
+                            <group>
+                                <field name="gateway_session_id"
+                                       readonly="1"/>
+                                <field name="bifrost_synced_at"
+                                       readonly="1"/>
+                            </group>
+                            <group>
+                                <field name="bifrost_cost" readonly="1"/>
+                                <field name="bifrost_retries" readonly="1"/>
+                                <field name="bifrost_fallbacks" readonly="1"/>
+                            </group>
                         </page>
                     </notebook>
                 </sheet>

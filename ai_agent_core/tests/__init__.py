@@ -73,6 +73,13 @@ from . import test_gateway_session_identity
 from . import test_gateway_catalog_breaker
 # pi-message-persist-dedup: samma Pi-post ger en rad, retry-anrop bevaras.
 from . import test_pi_message_dedup
+# session-observability: Pi:s `toolResult` normaliseras till `tool` i BÅDA
+# riktningarna (till providern och till databasen).
+from . import test_pi_role_normalization
+# session-observability: stängning är en händelse (close_event) och en stängd
+# session återöppnas när en ny tur kommer — annars fångar idle-cronen den
+# aldrig igen.
+from . import test_session_lifecycle
 # tools/run coworker-kontext (T/11533): steg 1-prioritering + de
 # separerade felmeddelandena (Unknown tool vs not available).
 from . import test_tools_run_coworker_context

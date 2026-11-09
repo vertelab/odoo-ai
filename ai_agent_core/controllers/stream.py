@@ -101,6 +101,128 @@ _ROLE_MARKER_RE = re.compile(
     re.IGNORECASE)
 
 
+def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
+                      executor='odoo', line=None):
+    """Skriv en `tool_call`-rad per exekverat verktyg (session-observability).
+
+    EN källa för spårningen, delad av `/ai/v1/tools/run` (kör Odoo-verktyg)
+    och `pi_trace`-persisteringen (Pi:s lokala verktyg) — annars kan de två
+    vägarna glida isär i vilka fält de fyller.
+
+    `tool_calls` är anropen som de kom in (OpenAI-format: `id`, `name`,
+    `arguments`); `results` är svaren i samma ordning (`name`, `result`,
+    `is_error` och eventuellt `_duration_ms`/`_args` från tools_run).
+
+    Dedup på `tool_call_id`: samma anrop två gånger ger en rad (Pi skickar
+    hela historiken varje tur). Rader utan id får ingen dedup-nyckel och
+    skrivs därför bara när de bär ett id — annars skulle en tom sträng
+    kollidera med sig själv i UNIQUE-constrainten.
+
+    Returnerar antalet skapade rader. Kastar vid fel; anroparen fångar.
+    """
+    Trace = sess.env['ai.coworker.session.tool_call'].sudo()
+    results = results or []
+    created = 0
+    for i, tc in enumerate(tool_calls or []):
+        call_id = (tc.get('id') or tc.get('tool_call_id') or '').strip()
+        name = tc.get('name') or ''
+        if not name:
+            continue
+        res = results[i] if i < len(results) else {}
+        if not isinstance(res, dict):
+            res = {'result': str(res), 'is_error': False}
+        # Två former av samma post:
+        #   * `/ai/v1/tools/run`  → `result` + `is_error` + `_duration_ms`/`_args`
+        #   * Pi:s `pi_trace.tools[]` → `result_preview` + `is_error` +
+        #     `duration_ms` + `args` direkt på posten
+        # Läs båda, annars tappas duration/args från Pi-vägen (de hamnade på 0
+        # i drift: `_duration_ms` fanns bara i tools_run-formen).
+        args = res.get('_args')
+        if args is None:
+            args = res.get('args')
+        if args is None:
+            raw_args = tc.get('arguments')
+            if isinstance(raw_args, str):
+                try:
+                    args = json.loads(raw_args)
+                except Exception:
+                    args = {'raw': raw_args[:500]}
+            else:
+                args = raw_args if isinstance(raw_args, dict) else {}
+        preview = res.get('result_preview')
+        if preview is None:
+            preview = res.get('result')
+        duration = res.get('_duration_ms')
+        if duration is None:
+            duration = res.get('duration_ms')
+        parent = (tc.get('parent_tool_call_id')
+                  or res.get('parent_tool_call_id') or False)
+        vals = {
+            'session_id': sess.id,
+            'agent_run_id': agent_run.id if agent_run else False,
+            'line_id': line.id if line else False,
+            'tool_name': name,
+            'tool_call_id': call_id or False,
+            'parent_tool_call_id': parent or False,
+            'executor': res.get('executor') or executor,
+            'args': args or {},
+            'result_preview': str(preview or '')[:2000],
+            'is_error': bool(res.get('is_error')),
+            'duration_ms': int(duration or 0),
+            'started_at': fields.Datetime.now(),
+        }
+        if call_id:
+            exists = Trace.search([
+                ('session_id', '=', sess.id),
+                ('tool_call_id', '=', call_id)], limit=1)
+            if exists:
+                continue
+        Trace.create(vals)
+        created += 1
+    return created
+
+
+def _to_message_list(raw_messages):
+    """Konvertera en OpenAI-format meddelandelista till `Message`-objekt.
+
+    Behöver HELA historiken (inkl. `role:'tool'`, `tool_calls`,
+    `tool_call_id`) så att klientens loop kan fortsätta korrekt.
+
+    ⚠ Pi:s roll heter `toolResult` i Pi:s egen session, men serialiseras till
+    `role:"tool"` i OpenAI-formatet (verifierat i Pi:s
+    openai-completions-adapter). Skickar en klient den interna vokabulären
+    rakt igenom blir `Role('toolResult')` ett ValueError och posten kastas
+    TYST — verktygsresultatet når då aldrig LLM:en, som tappar kopplingen
+    mellan `tool_calls` och deras svar. Normaliseringen bor i
+    `normalize_role_name` (core/provider.py) så att den är SAMMA som
+    persisteringens (`_persist_pi_messages._norm_role`).
+
+    Modulnivå (inte en closure) så att beteendet kan testas direkt.
+    """
+    from odoo.addons.ai_agent_core.core.provider import (
+        Message, Role, normalize_role_name)
+    out = []
+    for m in raw_messages:
+        role = normalize_role_name(m.get('role') or '')
+        try:
+            role_enum = Role(role)
+        except ValueError:
+            continue  # best-effort: tyst fallback — se etiketteringsregeln
+        content = _content_to_text(m.get('content'))
+        tool_call_id = m.get('tool_call_id')
+        name = m.get('name')
+        tool_calls = m.get('tool_calls') or None
+        if role == 'tool' and not tool_call_id:
+            # OpenAI kräver tool_call_id på tool-roles
+            continue
+        out.append(Message(
+            role=role_enum, content=content,
+            tool_call_id=tool_call_id, tool_calls=tool_calls,
+            name=name,
+        ))
+    return out
+
+
 def _clean_user_message(text):
     """Extrahera användarens faktiska meddelande ur en ev. inbakad konversation.
 
@@ -3951,11 +4073,20 @@ class AIOpenAIAPI(http.Controller):
         # sessionen döps efter den i stället för efter UUID:ns åtta första
         # tecken (som inte gick att skilja från någon annan session).
         prompt = (body.get('prompt') or '').strip()
+        # Livscykel (session-observability): Pi:s `session_start.reason`
+        # (`startup|new|resume|fork`) säger VARFÖR sessionen skapades.
+        # Okänt/tomt värde faller tillbaka på modellens default.
+        start_reason = (body.get('start_reason') or '').strip()
+        valid_reasons = {
+            'startup', 'new', 'resume', 'fork', 'api', 'cron', 'mail',
+            'webhook', 'heartbeat', 'manual'}
+        if start_reason not in valid_reasons:
+            start_reason = ''
 
         Session = request.env['ai.coworker.session'].sudo()
         session, _created = Session._lookup_or_create_pi_session(
             pi_session_id, copy_from_pi_session_id=copy_from,
-            prompt=prompt)
+            prompt=prompt, start_reason=start_reason)
 
         def _field_id(name):
             return (session[name].id
@@ -3969,6 +4100,85 @@ class AIOpenAIAPI(http.Controller):
             'task_id': _field_id('task_id'),
             'partner_id': session.partner_id.id if session.partner_id else None,
             'cost_context_confirmed': session.cost_context_confirmed,
+        }), content_type='application/json')
+
+    @http.route('/ai/v1/sessions/close', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def session_close(self, **kw):
+        """POST /ai/v1/sessions/close — klienten stänger sin session.
+
+        Body: {"pi_session_id": "<uuid>", "reason": "quit", "at": "<ISO>"}
+        Svar: {"session_id": N, "created": bool}
+
+        Varför endpointen finns (session-observability): Pi:s
+        `session_shutdown` vet varför en session tar slut (quit/reload/new/
+        resume/fork), men den signalen nådde aldrig Odoo. Utan den förblev
+        idle-cronen (60 min) enda svaret, och `end_reason` gick inte att
+        skilja från "övergiven".
+
+        Idempotent på `(session, reason, at)`: Pi kan skicka samma stängning
+        två gånger (reload under avslut) utan att historiken dubbleras.
+
+        Okänt `pi_session_id` ger HTTP 200 med `created=false` — stängningen
+        är en signal, inte ett krav, och får aldrig fälla klienten.
+        """
+        if not self._check_api_key():
+            return Response(json.dumps({
+                'error': {'message': 'Unauthorized',
+                          'type': 'authentication_error'}}),
+                status=401, content_type='application/json')
+        body = self._parse_json_body()
+        if body is None:
+            return self._error_json(
+                ValueError('Invalid JSON body'))
+        pi_session_id = (body.get('pi_session_id') or '').strip().lower()
+        if not pi_session_id:
+            return Response(json.dumps({
+                'error': {'message': 'Missing pi_session_id',
+                          'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
+
+        # Vokabulär: Pi:s shutdown-reasons + de interna (idle/timeout/error).
+        # Ett okänt värde blir `unknown` — inte ett fel, och inte en gissning.
+        reason = (body.get('reason') or '').strip().lower()
+        valid = {'quit', 'reload', 'new', 'resume', 'fork', 'timeout',
+                 'idle', 'error'}
+        if reason not in valid:
+            _logger.info(
+                'sessions/close: unknown reason %r — logged as "unknown"',
+                reason)
+            reason = 'unknown'
+
+        at = None
+        raw_at = body.get('at')
+        if raw_at:
+            try:
+                at = fields.Datetime.to_datetime(raw_at)
+            except Exception:
+                _logger.warning(
+                    'sessions/close: could not parse at=%r — using now',
+                    raw_at)
+        if not at:
+            at = fields.Datetime.now()
+
+        Session = request.env['ai.coworker.session'].sudo()
+        session = Session.search(
+            [('pi_session_id', '=', pi_session_id)], limit=1)
+        if not session:
+            # Ingen gissning: en stängning för en session vi inte känner
+            # igen är inte ett fel (sessionen kan ha skapats i en annan
+            # databas, eller aldrig hunnit få en tur).
+            _logger.info(
+                'sessions/close: no session for pi_session_id %s — ignored',
+                pi_session_id)
+            return Response(json.dumps({
+                'session_id': 0, 'created': False}),
+                content_type='application/json')
+
+        created = session._close_from_client(reason=reason, at=at)
+        return Response(json.dumps({
+            'session_id': session.id,
+            'created': bool(created),
         }), content_type='application/json')
 
     @staticmethod
@@ -4347,6 +4557,29 @@ class AIOpenAIAPI(http.Controller):
                     'the pi_session_id marker could not be extracted: %s', e)
                 pi_session_id = ''
 
+        # Turn-trace (session-observability): Pi kan skicka denna turs
+        # verktygsanrop och tidsstämplar. Tolerant läsning — ett trasigt
+        # fält får aldrig fälla requesten (samma mönster som
+        # `pi_session_id`: klientens auto-kompaktering saknar det helt).
+        pi_trace = None
+        _raw_trace = body.get('pi_trace')
+        if isinstance(_raw_trace, dict):
+            tools = _raw_trace.get('tools')
+            if tools is not None and not isinstance(tools, list):
+                _logger.warning(
+                    'pi_trace.tools is not a list (%s) — ignored',
+                    type(tools).__name__)
+                tools = []
+            pi_trace = {
+                'turn': _raw_trace.get('turn') or 0,
+                'started_at': _raw_trace.get('started_at') or None,
+                'tools': [t for t in (tools or []) if isinstance(t, dict)],
+            }
+        elif _raw_trace is not None:
+            _logger.warning(
+                'pi_trace is not an object (%s) — ignored',
+                type(_raw_trace).__name__)
+
         return self._run_coworker_chat(
             quest, messages, body.get('model', coworker), stream,
             pi_session_id=pi_session_id,
@@ -4354,6 +4587,7 @@ class AIOpenAIAPI(http.Controller):
             tools=body.get('tools', []),
             temperature=body.get('temperature', 0.7),
             max_tokens=body.get('max_tokens', 0),
+            pi_trace=pi_trace,
         )
 
     # ── Coworker helpers ──────────────────────────────────────────────
@@ -4572,7 +4806,7 @@ class AIOpenAIAPI(http.Controller):
 
     def _run_coworker_chat(self, quest, messages, model_ref, stream,
                            pi_session_id='', session_id=0, tools=None,
-                           temperature=0.7, max_tokens=0):
+                           temperature=0.7, max_tokens=0, pi_trace=None):
         """Execute a chat completion through a coworker as Pi's LLM backend.
 
         HYBRID (pi+odoo, 2026-08): istället för att köra Odoos egen AgentLoop
@@ -4588,9 +4822,12 @@ class AIOpenAIAPI(http.Controller):
         import asyncio
         from odoo.addons.ai_agent_core.core.provider import (
             ProviderFactory, get_default_provider, Message, Role,
-            resolve_coworker_or_default)
+            normalize_role_name, resolve_coworker_or_default)
 
         tools = tools or []
+        # Turn-trace från klienten (session-observability). None = ingen
+        # trace (äldre Pi, kompakterings-anrop) — aldrig ett fel.
+        kwargs_trace = pi_trace if isinstance(pi_trace, dict) else {}
 
         # Extract last user message (för sessionens name + init-prompt)
         user_messages = [m for m in messages if m.get('role') == 'user']
@@ -4602,31 +4839,22 @@ class AIOpenAIAPI(http.Controller):
             _content_to_text(user_messages[-1].get('content')))
         system_prompt = quest.description or ''
 
+        # Spår-context för turen (session-observability): urvalet av skills,
+        # klientens `pi_trace` och turens metadata samlas här och skrivs som
+        # en `agent_run` när turen persisteras. Utan den här hållaren fanns
+        # skill-urvalet bara i loggen — det gick inte att läsa i efterhand
+        # vilka skills som faktiskt aktiverades.
+        _selected_skills = {
+            'skills': [],
+            'model_requested': '',
+            'turn': int(kwargs_trace.get('turn') or 0),
+            'started_at': kwargs_trace.get('started_at') or None,
+            'pi_trace': kwargs_trace,
+        }
+
         # ── Konvertera Pi:s messages → Message-objekt (ren generering) ──
         # Behovar HELA historiken (inkl. role:'tool', tool_calls,
         # tool_call_id) så att Pi:s loop kan fortsätta korrekt.
-        def _to_message_list(raw_messages):
-            out = []
-            for m in raw_messages:
-                role = (m.get('role') or '').strip()
-                try:
-                    role_enum = Role(role)
-                except ValueError:
-                    continue  # best-effort: tyst fallback — se etiketteringsregeln
-                content = _content_to_text(m.get('content'))
-                tool_call_id = m.get('tool_call_id')
-                name = m.get('name')
-                tool_calls = m.get('tool_calls') or None
-                if role == 'tool' and not tool_call_id:
-                    # OpenAI kräver tool_call_id på tool-roles
-                    continue
-                out.append(Message(
-                    role=role_enum, content=content,
-                    tool_call_id=tool_call_id, tool_calls=tool_calls,
-                    name=name,
-                ))
-            return out
-
         msgs = _to_message_list(messages)
         # Sista assistant-meddelandet får alltid korrekt content om det tomt
         if not msgs:
@@ -4652,6 +4880,7 @@ class AIOpenAIAPI(http.Controller):
             if skill_recs:
                 _chosen = AIOpenAIAPI._select_relevant_skills(
                     messages, skill_recs)
+                _selected_skills['skills'] = list(_chosen)
                 _logger.info('supervisor skill-select: %d/%d skills (%s)',
                              len(_chosen), len(skill_recs),
                              ','.join(s.name or '?' for s in _chosen)[:200])
@@ -4756,6 +4985,63 @@ class AIOpenAIAPI(http.Controller):
                     if 'coworker_id' in getattr(sess, '_fields', {}) else None)
                 return ''
 
+        def _write_agent_run(env, sess, input_t, output_t, model_real,
+                             tool_history):
+            """Skriv turens `agent_run` (session-observability).
+
+            `kind='pi_generation'`: den här vägen är REN generering — Odoo
+            exekverar ingen agentloop, Pi äger verktygsexekveringen. Att
+            sätta coworkerns första agent som `agent_id` är en DIMENSION för
+            aggregering ("vilken medarbetare/modell svarade?"), inte ett
+            påstående om att en agent körde; `kind` skiljer fallen åt.
+
+            Best-effort: spåret får aldrig fälla turen.
+            """
+            try:
+                if not sess:
+                    return
+                agent = (sess.coworker_id.agent_ids[:1].agent_id
+                         if sess.coworker_id and sess.coworker_id.agent_ids
+                         else False)
+                skills = _selected_skills.get('skills') or []
+                # Knyt körningen till turens assistant-rad (den senaste), så
+                # spåret kan läsas per meddelande i UI:t. Saknas raden (t.ex.
+                # ett kompakterings-anrop utan ny assistant-rad) lämnas
+                # `line_id` tom — körningen finns ändå på sessionen.
+                _last_line = env['ai.coworker.session.line'].sudo().search(
+                    [('session_id', '=', sess.id)],
+                    order='sequence desc, id desc', limit=1)
+                run = env['ai.coworker.session.agent_run'].sudo().create({
+                    'session_id': sess.id,
+                    'line_id': _last_line.id if _last_line else False,
+                    'kind': 'pi_generation',
+                    'agent_id': agent.id if agent else False,
+                    'skill_ids': [(6, 0, [s.id for s in skills])],
+                    'model_requested': _selected_skills.get(
+                        'model_requested') or '',
+                    'model_served': model_real or '',
+                    'turn_index': int(_selected_skills.get('turn') or 0),
+                    'started_at': _selected_skills.get('started_at')
+                                  or fields.Datetime.now(),
+                    'ended_at': fields.Datetime.now(),
+                    'tokens_in': int(input_t or 0),
+                    'tokens_out': int(output_t or 0),
+                    'finish_reason': _selected_skills.get('finish_reason')
+                                     or 'stop',
+                })
+                # Verktygsanropen (om klienten skickade ett spår) knyts till
+                # körningen. Utan spår finns inget att skriva — Pi:s egna
+                # verktyg syns då bara som text i historiken.
+                _pi_trace = _selected_skills.get('pi_trace') or {}
+                if _pi_trace.get('tools'):
+                    _trace_tool_calls(
+                        sess, _pi_trace['tools'], _pi_trace['tools'],
+                        agent_run=run, executor='pi_local')
+            except Exception as e:
+                _logger.warning(
+                    'agent_run persist failed (session=%s): %s',
+                    getattr(sess, 'id', None), e)
+
         def _persist_session(env, sess, response_text, input_t, output_t,
                              model_real='', tool_history=None, messages=None):
             """Persistera körningen till sessionen.
@@ -4765,6 +5051,9 @@ class AIOpenAIAPI(http.Controller):
             ingen duplicering trots att Pi skickar hela historiken varje
             anrop. Fallback (utan messages): den äldre user+assistant+
             tools-scheman.
+
+            Utöver konversationen skrivs spåret (session-observability):
+            en `agent_run` för turen och en `tool_call`-rad per verktyg.
             """
             try:
                 # Tom session (kompakterings-anrop utan pi_session_id):
@@ -4800,6 +5089,8 @@ class AIOpenAIAPI(http.Controller):
                         except Exception as e:
                             _logger.warning(
                                 'assistant response persist failed: %s', e)
+                    _write_agent_run(env, sess, input_t, output_t,
+                                     model_real, tool_history)
                     return
                 Line = env['ai.coworker.session.line']
                 sys_mult = 1.0
@@ -4842,6 +5133,8 @@ class AIOpenAIAPI(http.Controller):
                     'token_input': (sess.token_input or 0) + input_t,
                     'token_output': (sess.token_output or 0) + output_t,
                 })
+                _write_agent_run(env, sess, input_t, output_t,
+                                 model_real, tool_history)
             except Exception as e:
                 _logger.warning('session persist failed: %s', e)
 
@@ -4856,6 +5149,9 @@ class AIOpenAIAPI(http.Controller):
         if not model_name:
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
             model_name = get_default_model_name()
+        # Modellen som EFTERFRÅGADES hör till turens spår. `model_served`
+        # sätts ur providerns svar och kan skilja sig (gateway-fallback).
+        _selected_skills['model_requested'] = model_name
 
         coworker_id = quest.id
         # Request-kontext för generatorn (körs efter teardown)
@@ -5295,6 +5591,12 @@ class AIOpenAIAPI(http.Controller):
                                         '(max_tokens=%s, coworker=%s) — svaret '
                                         'avslutades av tokenbudgeten',
                                         max_tokens, quest.id)
+                                # Utfallet hör till turens spår
+                                # (session-observability): `agent_run` skrivs
+                                # efter strömmen och behöver veta varför den
+                                # slutade.
+                                _selected_skills['finish_reason'] = \
+                                    _finish_reason
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": _finish_reason}]})}\n\n'
                                 # Session-info (session-cost-context 3.3)
                                 yield f'data: {json.dumps({"session_id": _sess.id, "cost_context": {"project_id": _sess.project_id.id if "project_id" in _sess._fields and _sess.project_id else None, "task_id": _sess.task_id.id if "task_id" in _sess._fields and _sess.task_id else None, "partner_id": _sess.partner_id.id if _sess.partner_id else None, "cost_context_confirmed": _sess.cost_context_confirmed}})}\n\n'
@@ -5871,6 +6173,9 @@ class AIOpenAIAPI(http.Controller):
                                            + _decision.reason),
                                 'is_error': True}
 
+                # Körtid mäts för spåret (session-observability). `_t0`
+                # sätts före execute() så även ett kastat fel får en tid.
+                _t0 = time.time()
                 try:
                     result = await tool.execute(**args)
                     # Verktygen RETURNERAR ToolError(...).to_json() i stallet
@@ -5882,18 +6187,26 @@ class AIOpenAIAPI(http.Controller):
                     if isinstance(result, ToolError):
                         return {'name': name,
                                 'result': result.to_json(),
-                                'is_error': True}
+                                'is_error': True,
+                                '_duration_ms': int((time.time() - _t0) * 1000),
+                                '_args': args}
                     text = str(result)
                     if _looks_like_tool_error(text):
                         return {'name': name,
                                 'result': text,
-                                'is_error': True}
+                                'is_error': True,
+                                '_duration_ms': int((time.time() - _t0) * 1000),
+                                '_args': args}
                     return {'name': name, 'result': text,
-                            'is_error': False}
+                            'is_error': False,
+                            '_duration_ms': int((time.time() - _t0) * 1000),
+                            '_args': args}
                 except Exception as e:
                     return {'name': name,
                             'result': f'Tool error ({name}): {e}',
-                            'is_error': True}
+                            'is_error': True,
+                            '_duration_ms': int((time.time() - _t0) * 1000),
+                            '_args': args}
 
             try:
                 results = aloop.run_until_complete(asyncio.gather(
@@ -5911,16 +6224,37 @@ class AIOpenAIAPI(http.Controller):
                     pass  # best-effort: tyst fallback — se etiketteringsregeln
                 aloop.close()
 
+            # ── Spåret (session-observability) ────────────────────────
+            # Den här vägen är Pi:s mest trafikerade: den exekverar Odoo:s
+            # verktyg men skrev tidigare INGEN session line — arbetet var
+            # helt ospårat. Nu skrivs en `tool_call`-rad per exekverat
+            # verktyg (`executor='odoo'`), även vid fel.
+            #
+            # Best-effort: spåret får aldrig fälla verktygssvaret. Ett fel
+            # här loggas och resultaten returneras ändå.
+            if sess.exists():
+                try:
+                    _trace_tool_calls(sess, tool_calls, results)
+                except Exception as _trace_err:
+                    _logger.warning(
+                        'tools/run: could not write the tool trace '
+                        '(session %s): %s', sess.id, _trace_err)
+
             # `session_uuid` krävs av godkännandekanalen: klienten pollar
             # `/ai/interrupt/poll` och svarar på `/ai/interrupt/respond`
             # med den nyckeln. Utan den i svaret kan Pi inte svara på en
             # `needs_approval`-begäran — kanalen vore verkningslös.
             _approval_uuid = (
                 _approval_key(sess) if sess.exists() else '')
+            # `_duration_ms`/`_args` är spår-interna och ska inte läcka ut
+            # i API-svaret.
+            _public = [
+                {k: v for k, v in r.items() if not k.startswith('_')}
+                for r in results]
             return Response(json.dumps({
                 'session_id': sess.id if sess.exists() else 0,
                 'session_uuid': _approval_uuid,
-                'results': results,
+                'results': _public,
             }), content_type='application/json')
         except Exception as e:
             _logger.error('tools/run error: %s', e, exc_info=True)

@@ -362,6 +362,39 @@ class AICoworkerSessionLine(models.Model):
         raise UserError(
             'Session lines are append-only and cannot be deleted.')
 
+    # ── Spåret på raden (session-observability) ─────────────────────────
+    # Konversationen säger VAD som sades; dessa två samlingar säger VAD SOM
+    # GJORDES. De är One2many (inte related) eftersom en rad kan ha flera
+    # körningar och flera verktygsanrop, och de skrivs av spår-vägen
+    # (`_trace_tool_calls` / `_write_agent_run`) — inte av `line.create`.
+    #
+    # ⚠ De påverkar INGEN budget: `informative`-regeln och
+    # `_token_totals` läser bara radens egna tokenfält.
+    agent_run_ids = fields.One2many(
+        'ai.coworker.session.agent_run', 'line_id',
+        string='Agent Runs', readonly=True)
+    tool_call_ids = fields.One2many(
+        'ai.coworker.session.tool_call', 'line_id',
+        string='Tool Calls', readonly=True)
+    # Gateway-måtten bor på sessionen men nås från meddelandet (Gateway-
+    # fliken). `related` här är rätt plats: vyn kan då läsa dem som vanliga
+    # fält på raden, och de är alltid i synk med sessionen.
+    gateway_session_id = fields.Char(
+        related='session_id.gateway_session_id', string='Gateway Session ID',
+        readonly=True)
+    bifrost_cost = fields.Float(
+        related='session_id.bifrost_cost', string='Gateway Cost (USD)',
+        readonly=True)
+    bifrost_retries = fields.Integer(
+        related='session_id.bifrost_retries', string='Gateway Retries',
+        readonly=True)
+    bifrost_fallbacks = fields.Integer(
+        related='session_id.bifrost_fallbacks', string='Gateway Fallbacks',
+        readonly=True)
+    bifrost_synced_at = fields.Datetime(
+        related='session_id.bifrost_synced_at', string='Gateway Synced',
+        readonly=True)
+
     # ── Token-totaler (coworker-form-performance D1) ─────────────────────
     # EN grupperad fråga för alla perioder som formuläret frågar efter.
     # Tidigare hade fyra computes var sin Python-loop över alla rader, vilket

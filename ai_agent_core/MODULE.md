@@ -96,6 +96,59 @@ Status-/livscykel (`/new`-semantik):
   `finish_reason`, `debug_info`, `tool_calls`, `model_real`, `token_input`,
   `token_output`, `token_sys`.
 
+## Sessionens spår — utförandet, inte bara konversationen (session-observability)
+
+`ai.coworker.session.line` loggar **vad som sades**. Tre sidotabeller loggar
+**vad som gjordes**:
+
+| Tabell | En rad per | Nycklar |
+|--------|-----------|---------|
+| `ai.coworker.session.agent_run` | agentkörning | `kind`, `agent_id`, `skill_ids`, `model_requested`/`model_served`, `turn_index`, tokens, `finish_reason` |
+| `ai.coworker.session.tool_call` | verktygsanrop | `tool_name`, `tool_call_id`, `parent_tool_call_id`, `executor`, `args`, `is_error`, `duration_ms` |
+| `ai.coworker.session.close_event` | stängning | `reason`, `at`, `pi_session_id` |
+
+### De är spår, inte budget
+
+⚠ Ingen av de tre får räknas in i `session_line_count`,
+`burn_rate_mtokens_day` eller `monthly_cap_mtokens`. Budgeten läser fortsatt
+`ai.coworker.session.line`. `agent_run.tokens_in` OCH `line.token_input`
+beskriver **samma** anrop — att summera båda dubbelräknar varje tur.
+
+`agent_run.cost_usd` är faktisk kostnad. Den slås aldrig ihop med
+`token_sys` (debiteringsgrund) eller `bifrost_cost` (gateway-mätning).
+
+### Konversationen bor kvar i `line`
+
+Sidotabellerna pekar på `line` (`line_id`) i stället för att ersätta den, så
+web-UI:t, historiken till LLM:en och tokenredovisningen är oförändrade.
+
+### `kind='pi_generation'` betyder ren generering
+
+På `/ai/v1/chat/completions` exekverar Odoo **ingen** agentloop — Pi äger
+verktygsexekveringen. `agent_run.agent_id` sätts då till coworkerns första
+agent som en **dimension för aggregering** ("vilken medarbetare/modell
+svarade?"), inte som ett påstående om att en agent körde. `kind` skiljer
+fallen åt: `odoo_loop`, `pi_generation`, `specialist`, `conference`.
+
+### En session kan stängas många gånger
+
+`close_event` är append-only. Sessionens `status` är *nuvarande* tillstånd;
+historiken bor i tabellen. En `done`-session som tar emot en ny tur
+**återöppnas** (`status='active'`, `end_at` nollställs) — annars hittar
+idle-cronen den aldrig igen (`_cron_close_idle_sessions` letar bara
+`status='active'`).
+
+Skillnaden mot `finish_reason`: `finish_reason` säger varför **turen** slutade,
+`close_event.reason` varför **sessionen** stängdes.
+
+### Pi:s roll heter `toolResult`
+
+Pi:s egen session kallar verktygsresultatet `toolResult`; OpenAI-formatet
+kallar det `tool`. `normalize_role_name()` (`core/provider.py`) är EN källa för
+aliasen, använd av både meddelandekonverteringen och persisteringen. Utan den
+kastades resultaten tyst (`Role(role)` → `ValueError` → `continue`), och
+persisteringen förklädde dem till `user`.
+
 ## Felkontraktet — en regel per feltyp (T/50830, 18.0.1.315)
 
 Systemets felkontrakt finns i **[`docs/failures.md`](docs/failures.md)**:
