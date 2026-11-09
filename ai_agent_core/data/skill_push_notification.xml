@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Skill: push-notification — när agenten ska avisera, och när den ska låta bli.
+
+    Bär OMDÖMET, inte mekaniken (push-notification design D6): verktygets
+    parametrar finns i verktygsdefinitionen, och hur en ai.org.task skapas
+    finns i organisation-skillen. Det som upprepas här är beslutet.
+-->
+<odoo>
+    <data noupdate="1">
+        <record id="skill_push_notification" model="ai.skill">
+            <field name="name">push-notification</field>
+            <field name="category">general</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Avisera användaren när ett arbete är klart: push direkt under en tur, eller schemalägg jobbet och låt heartbeat köra det. Beslutstabell för när en notis är rätt och när den är spam.</field>
+            <field name="trigger_keywords">push, notis, notifikation, avisera, meddela, påminn, när det är klart, när du är klar, hör av dig, säg till, i bakgrunden, senare, schemalägg, meddela mig, underrätta, ping</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: push-notification
+
+## Scope
+
+Moduler: web_pwa_push (alltid installerad), ai_agent_core.
+
+Verktyg: `push_notification(title, body, url)`.
+
+## Grundregeln
+
+En notis finns för den som **lämnat** chatten. Sitter användaren kvar och
+tittar är notisen i vägen — den avbryter läsningen av svaret som just kom.
+
+Notiströtthet är den verkliga risken. En användare som får en notis för
+varje fråga stänger av push, och då dör även godkännande-notiserna (HITL)
+— som är de som faktiskt spelar roll.
+
+## Beslutstabell
+
+| Situation | Gör | Varför |
+|---|---|---|
+| Användaren ber om att bli aviserad, och arbetet tar **minuter** | `push_notification` **innan** du börjar | Användaren kan lämna chatten medan du arbetar |
+| Användaren vill ha besked **senare** ("om en timme", "i natt") | Skapa `ai.org.task` med `scheduled_at` | Heartbeat kör den; du behöver inte hålla tråden |
+| Svaret är **kort** (sekunder) | Låt bli | Användaren väntar redan; notisen är brus |
+| Användaren sitter i chatten och följer med | Låt bli | Turen aviserar ändå om hen lämnar (aktivitetsgrinden) |
+| Du ska bara bekräfta att du förstått | Låt bli | Ett svar i chatten räcker |
+
+## Direkt notis — under turen
+
+Anropa `push_notification` **först**, sedan arbetet:
+
+1. `push_notification(title="Analyserar 400 ordrar", body="Hör av mig när
+   rapporten är klar.")`
+2. Gör arbetet.
+3. Svara i chatten som vanligt.
+
+Turen aviserar dessutom **automatiskt** när den avslutas — men bara om
+användaren varit borta längre än gränsen. Den manuella notisen i steg 1
+täcker väntetiden; du behöver inte skicka en till i slutet.
+
+## Schemalagt jobb — när användaren vill ha besked senare
+
+Skapa en `ai.org.task` med:
+
+- `name` — kort rubrik
+- `description` — **vad som ska göras**, i klartext. Det här blir prompten
+  som körs senare; en tom beskrivning gör uppgiften okörbar.
+- `coworker_id` — vem som ska utföra den (oftast du själv)
+- `scheduled_at` — tidigaste tidpunkt. Heartbeat plockar den inte förrän då.
+- `beställare_ref` — `res.users,<id>` för den som beställde. **Utan den
+  aviseras ingen när jobbet är klart.**
+
+När uppgiften checkas in aviseras beställaren automatiskt med uppgiftens
+namn och resultatsammanfattningen. Du behöver inte pusha själv.
+
+## Verktygshintar
+
+- `push_notification(title, body, url)` — mottagaren är **alltid**
+  sessionens användare. Det finns ingen parameter för att välja någon
+  annan, och det är avsiktligt: en agent ska inte kunna skicka notiser som
+  ser ut att komma från någon annan.
+- `odoo_create('ai.org.task', {...})` — för det schemalagda jobbet. Kräver
+  godkännande (HITL) som alla skrivningar.
+- `odoo_search('ai.org.task', [...])` — för att se status på ett jobb du
+  lagt.
+
+## Vad du INTE ska göra
+
+- **Kompensera inte för en misslyckad notis.** Svaret
+  `{"queued": false, "reason": "..."}` betyder att användaren saknar
+  registrerade enheter eller att servern saknar push-nycklar. Att försöka
+  igen, skicka flera, eller hitta på en annan mottagare hjälper inte —
+  säg det till användaren i chatten i stället.
+- **Skicka inte en notis för att du är klar med ett kort svar.** Det är
+  det vanligaste misstaget: agenten vill "vara hjälpsam" och aviserar allt.
+- **Skapa inte en `ai.org.task` för något du kan göra på tio sekunder.**
+  En schemalagd uppgift är för arbete som ska ske senare eller ta tid.
+]]></field>
+        </record>
+    </data>
+</odoo>

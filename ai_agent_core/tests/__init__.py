@@ -228,6 +228,14 @@ from . import test_standing_rules
 # test-suite-baseline 2.1/2.2: grinden som jämför en svitkörning mot
 # BASELINE.md. Utan den är baslinjen en påminnelse, inte en grind.
 from . import test_baseline
+# Verktyget push_notification (push-notification 1.1): mottagare,
+# negativa svar, ingen påhittad leverans.
+from . import test_push_notification_tool
+# Push vid tur-slut (push-notification 2.1-2.3): aktivitetsgrinden,
+# stream-finaliseringen och dubblettskyddet.
+from . import test_turn_end_push
+# Avisering när ett schemalagt jobb är klart (push-notification 3.1-3.3).
+from . import test_task_requester_notification
 # Grindens egen mekanism (test-baseline-determinism 4.1-4.5): stabilitet
 # ur flera loggar, vandrande fäller inte, befordran fäller.
 from . import test_baseline_gate

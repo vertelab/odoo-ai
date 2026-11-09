@@ -3332,6 +3332,24 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
             except Exception:
                 _logger.warning(
                     'persist stream answer failed', exc_info=True)
+            # ── Avisering vid tur-slut (push-notification 2.2) ─────────
+            # Här, inte i _persist_stream_answer: den körs i `finally` med
+            # egen cursor och får inte göra mer arbete. Efter raden finns
+            # "turen är slut"-semantiken, och aktivitetsgrinden i
+            # _push_done_notification avgör om användaren är kvar.
+            #
+            # Kast-säkert: pushen får aldrig hindra att raden skrivs eller
+            # att commit körs. _push_user_notification köar bara (ingen
+            # nätverks-I/O i den här tråden).
+            try:
+                _sess = _env['ai.coworker.session'].sudo().browse(
+                    int(session_id))
+                if _sess.exists():
+                    _sess._push_done_notification()
+            except Exception:
+                _logger.warning(
+                    'stream turn push notification failed (session %s)',
+                    session_id, exc_info=True)
             _cr.commit()
         return True
     except Exception as e:

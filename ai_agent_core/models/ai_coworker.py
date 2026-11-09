@@ -9706,6 +9706,57 @@ class AICoworker(models.Model):
                      self.name, self.env.user.login)
         return True
 
+    def _notify_task_requester(self, task, session=None):
+        """Avisera den som beställde ett schemalagt jobb (push-notification 3.1).
+
+        Mottagaren löses enligt design D5:
+
+        1. `task.beställare_ref` när den pekar på en `res.users`,
+        2. annars sessionens `user_id` (beställaren i sista led),
+        3. annars ingen — en uppgift utan beställare aviserar ingen.
+
+        Aldrig den coworker som utförde arbetet: en agent har ingen enhet,
+        och att skicka notisen till utföraren vore att berätta för
+        hantverkaren att jobbet är klart.
+
+        Kastar aldrig. En misslyckad avisering får inte påverka att
+        uppgiften redan checkats in.
+        """
+        self.ensure_one()
+        if not task:
+            return False
+        try:
+            if 'web.pwa.push' not in self.env:
+                return False
+            user = None
+            ref = task.beställare_ref
+            if ref and ref._name == 'res.users':
+                user = ref
+            if not user and session is not None and session.user_id:
+                user = session.user_id
+            if not user:
+                return False
+
+            name = task.name or 'Uppgift'
+            summary = (task.result_summary or '').strip()
+            body = summary[:200] if summary else 'Jobbet är klart.'
+            queued = self.env['web.pwa.push']._push_user_notification(
+                user,
+                title='Klart: %s' % name[:60],
+                body=body,
+                url='/odoo/action-ai_agent_core.action_ai_org_task',
+            )
+            if not queued:
+                _logger.info(
+                    'push-notification: task %s klar men beställaren %s har '
+                    'inga enheter — ingen notis', task.id, user.id)
+            return queued
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                'push-notification: kunde inte avisera beställaren för '
+                'task %s: %s', getattr(task, 'id', '?'), e, exc_info=True)
+            return False
+
     @api.model
     def _process_heartbeat_sessions(self, batch_size=10):
         """Cron: processa heartbeat-kön (bevakning-over-tid 5.4).
@@ -9750,6 +9801,12 @@ class AICoworker(models.Model):
                 if session.ai_task_id:
                     session.ai_task_id.action_checkin(
                         session.summary or '')
+                    # Avisera beställaren EFTER incheckningen, så att
+                    # result_summary finns med i notisen (push-notification
+                    # 3.2, design D5). Kast-säkert — en misslyckad push får
+                    # aldrig rulla tillbaka incheckningen.
+                    coworker._notify_task_requester(
+                        session.ai_task_id, session)
                 processed += 1
             except Exception as e:
                 _logger.warning('Heartbeat-session %s misslyckades: %s',

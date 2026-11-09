@@ -1103,6 +1103,71 @@ def apply_capability_serialization(registry, capabilities, mode):
     return ''
 
 
+def _tool_push_notification(env, title='', body='', url=None):
+    """Skicka en push-notis till sessionens användare (push-notification 1.1).
+
+    Mottagaren är ALLTID sessionens `user_id` — verktyget tar ingen
+    mottagare. Ett verktyg som tog en mottagare vore en kanal för spam och
+    för notiser som ser ut att komma från någon annan (design D1).
+
+    Sessionen läses ur `env.context` med samma två nycklar som HITL:s
+    `_resolve_session`: `_ai_context_model`/`_ai_context_id` (kanonisk
+    aktuell session) eller `ai_lineage_session_id`.
+
+    Returnerar JSON med `queued` (bool) och, när notisen inte kunde köas,
+    en `reason` som säger varför. Vi påstår aldrig att en notis levererats:
+    `_push_user_notification` köar den bara, och returnerar False när
+    användaren saknar enheter eller VAPID-nycklarna saknas.
+    """
+    import json as _json
+    if not title or not (title or '').strip():
+        return _json.dumps({'queued': False,
+                            'reason': 'title is required'})
+    if 'web.pwa.push' not in env:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'web push is not installed in this database'})
+
+    sess_id = 0
+    if env.context.get('_ai_context_model') == 'ai.coworker.session':
+        sess_id = env.context.get('_ai_context_id') or 0
+    if not sess_id:
+        sess_id = env.context.get('ai_lineage_session_id') or 0
+    if not sess_id:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'no session in context - the notification needs a '
+                      'session to know its recipient'})
+
+    try:
+        session = env['ai.coworker.session'].sudo().browse(int(sess_id))
+        if not session.exists():
+            return _json.dumps({'queued': False,
+                                'reason': 'session not found'})
+        user = session.user_id
+        if not user:
+            return _json.dumps({
+                'queued': False,
+                'reason': 'the session has no user to notify'})
+        queued = env['web.pwa.push']._push_user_notification(
+            user,
+            title=(title or '').strip(),
+            body=(body or '').strip(),
+            url=(url or '/ai/chat'),
+        )
+    except Exception as e:  # noqa: BLE001
+        _logger.warning('push_notification failed: %s', e, exc_info=True)
+        return _json.dumps({'queued': False,
+                            'reason': 'push failed: %s' % e})
+
+    if not queued:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'the user has no registered device, or the server '
+                      'has no VAPID keys - nothing was sent'})
+    return _json.dumps({'queued': True, 'recipient': user.display_name})
+
+
 def builtin_tools() -> list[Tool]:
     """Return the tools this module offers (seedningskälla).
 
@@ -1849,6 +1914,40 @@ def builtin_tools() -> list[Tool]:
                 "required": ["target_coworker", "description"],
             },
             handler=_tool_delegate_task,
+            risk_level="write",
+            source="builtin",
+        ),
+        Tool(
+            name="push_notification",
+            description=(
+                "Send a push notification to the user who owns this "
+                "session. Use it BEFORE a long job so the user can leave "
+                "the chat, or when a background job finishes. The "
+                "recipient is always the session's user - you cannot "
+                "address anyone else. Returns whether the notification "
+                "could be queued; a user without registered devices gets "
+                "a clear negative answer, not a claim that it was sent."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short heading (max ~60 chars)",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "One or two sentences of context",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": (
+                            "Path opened on click, e.g. /ai/chat. "
+                            "Defaults to /ai/chat."),
+                    },
+                },
+                "required": ["title", "body"],
+            },
+            handler=_tool_push_notification,
             risk_level="write",
             source="builtin",
         ),

@@ -3046,10 +3046,33 @@ class AICoworkerSession(models.Model):
         """Web push "svar klart" till sessionens användare (via web_pwa_push).
 
         Tyst om användaren saknar enheter eller VAPID-nycklar saknas.
+
+        ── Aktivitetsgrinden (push-notification 2.1, design D3) ──────────
+        Notisen finns för den som LÄMNAT chatten. En användare som sitter
+        kvar och tittar ska inte få en notis — då blir varje chattur en
+        notis, användaren stänger av push, och HITL-notiserna dör med dem.
+
+        Gränsen är tidsbaserad: sessionens senaste rad som inte är ett
+        assistantsvar måste ligga längre tillbaka än
+        `ai_agent_core.push_idle_seconds` (default 120 s). En user-rad som
+        skapades för tre minuter sedan betyder att användaren skrev och
+        sedan lämnade.
         """
+        if not self:
+            return
+        from odoo.addons.ai_agent_core.core import runtime as _rt
+        try:
+            idle_seconds = _rt.get_int(
+                self.env, 'ai_agent_core.push_idle_seconds', 120)
+        except Exception:
+            idle_seconds = 120
         try:
             for session in self:
                 if not session.user_id:
+                    continue
+                if not session._is_user_idle(idle_seconds):
+                    continue
+                if not session._claim_push_notification():
                     continue
                 coworker_name = session.coworker_id.name or 'AI-medarbetare'
                 self.env['web.pwa.push']._push_user_notification(
@@ -3059,6 +3082,96 @@ class AICoworkerSession(models.Model):
                     url='/ai/chat')
         except Exception:
             _logger.exception('web_pwa_push: session done push failed')
+
+    def _claim_push_notification(self):
+        """Ta spärren för "svar klart"-notisen — True om den här får köa.
+
+        En tur kan avslutas från två vägar: `_finalize_stream_turn` (chatten)
+        och `mark_done()` (webhook). Båda anropar
+        `_push_done_notification()`, och utan spärr fick användaren två
+        notiser för samma svar.
+
+        Spärren är tidsstämpeln för senaste assistentraden: har den redan
+        aviserats är `push_notified_at` >= radens `create_date`. En NY tur
+        skapar en ny assistentrad, vars `create_date` ligger efter
+        tidsstämpeln — då får nästa tur avisera igen utan att fältet behöver
+        nollställas.
+
+        Atomiskt via villkorad UPDATE: två samtidiga anrop ska ge exakt en
+        vinnare (samma mönster som `ai.org.task.action_checkout`).
+        """
+        self.ensure_one()
+        try:
+            last_assistant = self.env['ai.coworker.session.line'].sudo().search(
+                [('session_id', '=', self.id), ('role', '=', 'assistant')],
+                order='id desc', limit=1)
+            if not last_assistant:
+                # Ingen assistentrad alls (t.ex. en session som stängs efter
+                # ett fel innan svaret skrevs). Då finns inget att ankra
+                # spärren på — men en notis är fortfarande motiverad, och
+                # en enda sådan kan inte dubbleras för samma tur.
+                return True
+            # Radens ID, inte en tidsstämpel. Två turer i samma transaktion
+            # får SAMMA `create_date` (PostgreSQLs NOW() är transaktionens
+            # starttid), så en tidsjämförelse kan inte skilja dem — och
+            # `clock_timestamp()` ligger efter båda. Sekvensen är strikt
+            # monoton och avgör saken exakt.
+            self.env.cr.execute("""
+                UPDATE ai_coworker_session
+                   SET push_notified_line_id = %s
+                 WHERE id = %s
+                   AND (push_notified_line_id IS NULL
+                        OR push_notified_line_id < %s)
+            """, (last_assistant.id, self.id, last_assistant.id))
+            claimed = self.env.cr.rowcount > 0
+            if claimed:
+                self.invalidate_recordset(['push_notified_line_id'])
+            return claimed
+        except Exception:
+            _logger.warning(
+                'push notification claim failed for session %s',
+                self.id, exc_info=True)
+            # Hellre en dubbel notis än ingen notis alls.
+            return True
+
+    def _is_user_idle(self, idle_seconds):
+        """Har användaren varit borta från sessionen i `idle_seconds`?
+
+        Mäter mot sessionens senaste rad som INTE är ett assistantsvar —
+        assistentens eget svar skapas just nu och säger inget om var
+        användaren är. Saknas en sådan rad (en session som bara består av
+        assistentens arbete) räknas användaren som borta: det finns ingen
+        aktivitet att vänta på.
+
+        Returnerar True när en notis är motiverad.
+        """
+        self.ensure_one()
+        if idle_seconds <= 0:
+            return True
+        try:
+            last_user_line = self.env['ai.coworker.session.line'].sudo().search(
+                [('session_id', '=', self.id), ('role', '!=', 'assistant')],
+                order='create_date desc, id desc', limit=1)
+        except Exception:
+            return True
+        if not last_user_line or not last_user_line.create_date:
+            return True
+        cutoff = fields.Datetime.now() - timedelta(seconds=idle_seconds)
+        return last_user_line.create_date < cutoff
+
+    # ── Aviseringsspärr (push-notification 2.3) ──
+    # En tur kan aviseras från två vägar: _finalize_stream_turn (chatten)
+    # och mark_done() (webhook). Utan en spärr får användaren två notiser
+    # för samma svar. Fältet sätts när en notis KÖATS och nollställs när
+    # sessionen får en ny user-rad (nästa tur ska kunna avisera igen).
+    push_notified_line_id = fields.Many2one(
+        'ai.coworker.session.line', 'Push Notified Line',
+        readonly=True, copy=False, ondelete='set null',
+        help='Den assistentrad som senast aviserades. Hindrar dubbel '
+             'notis när både stream- och webhook-vägen avslutar samma tur. '
+             'Radens id är strikt monotont — en tidsstämpel duger inte, '
+             'eftersom två turer i samma transaktion får samma '
+             'create_date (transaktionens NOW()).')
 
     # ── Durable Resume (OpenWorker-inspired) ──
     resumable = fields.Boolean('Resumable', default=True,
