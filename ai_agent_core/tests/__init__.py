@@ -106,6 +106,12 @@ from . import test_ssrf_guard
 from . import test_extract
 from . import test_content_verification
 from . import test_stream_turn_persist
+# Tidsmätning per tur (kanalprestanda): TTFT, längsta uppehåll,
+# strömningstid på assistentraden + aggregerbarhet per init_type.
+from . import test_channel_timing
+# Jämförelseverktyget tests/perf/measure_channels.py (kanalprestanda 5.1-5.5):
+# insamling, rapport och omätt-grind — annars är "reproducerbart" ett påstående.
+from . import test_measure_channels
 from . import test_message_role
 from . import test_tool_name_sanitization
 # WebUI:s token-/kostnadsvisning (restore-webui-token-usage 6.1-6.3).

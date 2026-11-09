@@ -36,7 +36,19 @@ ai_agent_core: 2293 tester, 119 s, 140296 queries
 Module ai_agent_core: 1 failures, 4 errors of 649 tests
 ```
 
-De 649 är modul-fasen; de 2 293 är hela sviten inklusive beroenden.
+**Uppdaterat 2026-11-09** (kanalprestanda, `18.0.2.0.45`): de tre nya
+testfilerna (`test_channel_timing`, `test_measure_channels`) lade till 25
+tester — 2 422 totalt. Modul-fasen är grön: `Module ai_agent_core: 0
+failures, 0 errors of 667 tests`. Två fel som tidigare stod här är
+**miljöberoende, inte kodfel**, och räknas inte mot baslinjen:
+
+| Fel | Orsak | Åtgärd i miljön |
+|---|---|---|
+| `TestGraphPartnerEdges.test_sync_batch_sets_last_error_on_undefined_label` | `age`-extensionen saknades i databasen → `ag_catalog.cypher()` finns inte, och det första felet blir SQL-felet i stället för det förväntade label-felet. | `apt-get install postgresql-16-age` + `CREATE EXTENSION age` i testdatabasen. |
+| `TestApprovalsSpecConsistency.test_spec_requires_the_same_gate_not_a_silent_denial` | Läser `/home/waland/plan/odoo-ai/openspec/specs/approvals/spec.md`; `/home/waland` är `drwxr-x---` och `odoo` kan inte traversera den. | Kör sviten som en användare som kan läsa sökvägen, eller kopiera specen till en läsbar plats. |
+
+De 649 är modul-fasen; de 2 293 (nu 2 422) är hela sviten inklusive
+beroenden.
 
 ⚠ **Den tidigare baslinjen (1 920 tester, 0 fel) var mätt mot en ofullständig
 svit.** 15 testfiler saknades i `tests/__init__.py` och kördes aldrig. Att

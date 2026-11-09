@@ -1013,6 +1013,21 @@ class AIStreamController(http.Controller):
                         _register_webui_handler(session_uuid, handler)
                         # Låt finally se nyckeln — avregistreringen hör dit.
                         _handler_key['session_uuid'] = session_uuid
+                        # ── Tidsmätning (kanalprestanda 2.1) ──────────────
+                        # Stämpeln tas vid KONSUMTION i den här generatorn,
+                        # inte i _drive_stream-tråden: det är här hela
+                        # händelseserien ses i tidsordning, och den tid som
+                        # mäts är den användaren väntar. core/loop.py lämnas
+                        # orörd — den är kanal-blind (D2).
+                        _turn_started = time.perf_counter()
+                        _timing_marks = []
+                        # Dela starttid + stämpelserien med finaliseringen:
+                        # kopplar klienten ner mitt i strömmen når _stream()
+                        # aldrig sin sista rad, och då är det HÄRIFRÅN
+                        # finally räknar de mått som hann mätas (kravet
+                        # "avbruten strömning tappar inte måtten").
+                        state['timing_started'] = _turn_started
+                        state['timing_marks'] = _timing_marks
                         yield f"data: {json.dumps({'type': 'session', 'session_uuid': session_uuid})}\n\n"
 
                         provider = gen_provider
@@ -1137,6 +1152,13 @@ class AIStreamController(http.Controller):
                                     'session_uuid': session_uuid,
                                 })}\n\n")
                             data = {"type": event.type}
+                            if event.type in ("token", "thinking"):
+                                # Innehållshändelse — underlag för TTFT, längsta
+                                # uppehåll och strömningstid (kanalprestanda
+                                # 2.1). Bara en tidsstämpel per händelse: ingen
+                                # allokering utöver tupeln.
+                                _timing_marks.append(
+                                    (event.type, time.perf_counter()))
                             if event.type == "token":
                                 data["token"] = event.token
                                 full_response.append(event.token)
@@ -1228,6 +1250,13 @@ class AIStreamController(http.Controller):
                         # den här raden är kvar som snabbväg på den lyckliga
                         # vägen, men den är inte längre garanten. `pop(key,
                         # None)` är idempotent, så dubbleringen är ofarlig.
+
+                        # Tidsmåtten bärs i `state` (D3) — samma väg som
+                        # finish_reason och tokens. Sätts även när serien är
+                        # tom (alla nollor): en tur utan innehållshändelser
+                        # ska skriva 0, inte lämna fälten oskrivna.
+                        state['timing'] = _compute_turn_timing(
+                            _timing_marks, _turn_started)
 
                     # Fresh cursor + env for the post-teardown phase:
                     # tool handlers run ORM calls while streaming.
@@ -2850,6 +2879,45 @@ async def _collect(agen):
     return result
 
 
+def _compute_turn_timing(marks, started=None):
+    """Räkna de tre tidsmåtten ur en serie stämpelpar (kanalprestanda 2.2).
+
+    Indata: ``marks`` — lista av ``(kind, t)`` där ``kind`` är ``'token'``
+    eller ``'thinking'`` (en innehållshändelse) och ``t`` är
+    ``time.perf_counter()``. ``started`` — när turen började behandlas;
+    saknas den används första stämpeln.
+
+    Utdata: ``{'first_token': s, 'longest_gap': s, 'stream': s}`` i sekunder
+    med tre decimaler.
+
+    Gränsfallen (2.2):
+    * tom serie → alla tre 0 (inget att mäta — inte "snabb").
+    * en enda händelse → gap 0, stream 0, first_token = t − started.
+    * ett långt uppehåll → gap = det LÄNGSTA enskilda intervallet, inte
+      summan av alla.
+
+    ``first_token`` är en övre gräns: stämpeln tas när chunk-konsumenten ser
+    händelsen, vilket är den tid användaren faktiskt väntar (kön är kort —
+    en ``Queue.get`` per chunk).
+    """
+    if not marks:
+        return {'first_token': 0.0, 'longest_gap': 0.0, 'stream': 0.0}
+    first_t = marks[0][1]
+    last_t = marks[-1][1]
+    base = started if started is not None else first_t
+    longest_gap = 0.0
+    for (_kind_a, t_a), (_kind_b, t_b) in zip(marks, marks[1:]):
+        gap = t_b - t_a
+        if gap > longest_gap:
+            longest_gap = gap
+    return {
+        'first_token': round(max(first_t - base, 0.0), 3),
+        'longest_gap': round(max(longest_gap, 0.0), 3),
+        'stream': round(max(last_t - first_t, 0.0), 3),
+    }
+
+
+
 def _openai_tool_call(name, preview, call_id, arguments=None):
     """Bygg ett OpenAI-format tool_call för assistant-radens tool_calls.
 
@@ -3021,7 +3089,8 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
                            finish_reason='', error='', token_input=0,
                            token_output=0, model_real='', cached_tokens=0,
                            rounds=0, round_inputs=None,
-                           source_urls='', debug_info='', tool_calls=''):
+                           source_urls='', debug_info='', tool_calls='',
+                           timing=None):
     """Persistera turens avslutande assistantsvar server-side.
 
     Servern är garanten (web-ui-stream-turn-persistens 2.1): klienten kan
@@ -3033,6 +3102,11 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
     Idempotent: om sessionens sista rad redan är ett assistantsvar skrivs
     ingen ny rad (klientens POST hanteras separat och dedupas i
     `_save_client_response`).
+
+    ``timing`` (kanalprestanda D3): valfri dict med ``first_token``,
+    ``longest_gap`` och ``stream`` i sekunder. ``None`` ⇒ fälten skrivs inte
+    alls (befintliga anropare och tester är oförändrade). En dict ⇒ de tre
+    måtten skrivs på raden — det är den ENDA platsen en tur får sina mått.
 
     Returnerar antalet skapade rader (0 eller 1). Tyst no-op vid fel —
     persist får aldrig krascha en avslutad körning.
@@ -3104,6 +3178,17 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
             'debug_info': (debug_info or '').strip() or False,
             'tool_calls': (tool_calls or '').strip() or False,
         }
+        # Tidsmåtten (kanalprestanda D3): bara när en dict gavs. `timing=None`
+        # lämnar fälten på sina default (0) — samma beteende som före
+        # ändringen, så alla befintliga anropsplatser är oförändrade.
+        if timing:
+            line_vals.update({
+                'first_token_seconds': float(
+                    timing.get('first_token', 0.0) or 0.0),
+                'longest_gap_seconds': float(
+                    timing.get('longest_gap', 0.0) or 0.0),
+                'stream_seconds': float(timing.get('stream', 0.0) or 0.0),
+            })
         # Prisögonblickbild (utfall-och-tokenmatning 4.1–4.4): frys
         # modellens priser vid radens skapande så en historisk rad visar
         # vad den faktiskt kostade.
@@ -3146,6 +3231,28 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
     except Exception as e:
         _logger.warning('persist stream answer failed: %s', e, exc_info=True)
         return 0
+
+
+def _timing_from_state(state):
+    """Plocka ut tidsmåtten ur en SSE-turs `state` (kanalprestanda 2.3).
+
+    Tre fall:
+    * ``state['timing']`` finns — `_stream()` hann räkna ut måtten.
+    * bara ``state['timing_marks']`` finns — klienten kopplade ner mitt i
+      strömmen. Måtten räknas ur den delade stämpelserien, så det som hann
+      mätas sparas (kravet "avbruten strömning tappar inte måtten").
+    * ingen av dem — ingen mätning gjordes (t.ex. en annan kanal). ``None``
+      ⇒ `_persist_stream_answer` skriver inga tidsfält alls.
+
+    Returnerar en dict eller ``None``.
+    """
+    timing = state.get('timing')
+    if timing:
+        return timing
+    marks = state.get('timing_marks')
+    if marks is None:
+        return None
+    return _compute_turn_timing(marks, state.get('timing_started'))
 
 
 def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
@@ -3191,8 +3298,7 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
             try:
                 _persist_stream_answer(
                     _env, session_id,
-                    ''.join(full_response),
-                    # reasoning_log är en lista av ENSKILDA TOKENS (loop.py
+                    ''.join(full_response),                    # reasoning_log är en lista av ENSKILDA TOKENS (loop.py
                     # appendar varje `event.token` för sig). Att sätta ihop
                     # dem med '\n' gav ett token per rad i den sparade
                     # texten — t.ex. "The\n user\n is\n asking\n ..." — medan
@@ -3215,6 +3321,13 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
                     tool_calls=_tool_calls_json(state.get('loop_obj')),
                     model_real=state.get('model_real', '') or '',
                     cached_tokens=state.get('cached_tokens', 0) or 0,
+                    # Tidsmåtten (kanalprestanda 2.3). `_stream()` sätter
+                    # state['timing'] när den är klar; kopplar klienten ner
+                    # före det räknas måtten här ur den delade
+                    # stämpelserien, så det som hann mätas ändå sparas.
+                    # `timing_marks is None` ⇒ ingen mätning alls ⇒ None ⇒
+                    # fälten skrivs inte (befintliga anrop oförändrade).
+                    timing=_timing_from_state(state),
                 )
             except Exception:
                 _logger.warning(

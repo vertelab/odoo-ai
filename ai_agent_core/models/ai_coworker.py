@@ -8170,6 +8170,15 @@ class AICoworker(models.Model):
                 'session_id': session.id,
                 'role': 'assistant',
                 'content': result_text,
+                # Tidsmåtten (kanalprestanda D4): `run()` returnerar ett
+                # FÄRDIGT svar — det finns inget första tecken att tidsätta.
+                # 0 = "ej tillämpligt", inte "snabb". Att skriva totaltiden
+                # här vore en lögn som gör att DM ser ut att ha perfekt TTFT
+                # i varje aggregering. Total väggklocka läses ur
+                # user-radens create_date → denna rads create_date.
+                'first_token_seconds': 0.0,
+                'longest_gap_seconds': 0.0,
+                'stream_seconds': 0.0,
                 # Assistant-raden bokför output; input ligger på user-raden
                 # (token_sys per rad = (input|output) × multiplier, summan
                 # över raderna = (input+output) × multiplier som förr).

@@ -231,6 +231,39 @@ class AICoworkerSessionLine(models.Model):
                 + (line.token_output or 0) / 1000.0 * (line.cost_output_1k or 0.0)
             )
 
+    # ── Tidsmått per tur (kanalprestanda D1) ────────────────────────────
+    # Måtten bor på assistentraden — den enda raden som skapas exakt en gång
+    # per tur i ALLA kanaler. På sessionen skulle varje tur skriva över
+    # föregående (precis vad `end_date` redan gör).
+    #
+    # `0` betyder EJ TILLÄMPLIGT/INTE MÄTT — inte "snabb". En synkron kanal
+    # (DM, webhook, cron) har inget första tecken att tidsätta och skriver 0;
+    # att skriva den totala tiden i TTFT-fältet vore en lögn som gör att DM
+    # ser ut att ha perfekt TTFT i varje aggregering (kanalprestanda D4).
+    # Aggregeringar som vill ha strömdata filtrerar på `> 0`.
+    #
+    # Total väggklocka kräver inget fält: user-radens `create_date` →
+    # assistentradens `create_date` (båda `_log_access`, indexerade).
+    first_token_seconds = fields.Float(
+        'Tid till första tecken (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Sekunder från att turen började behandlas till att första '
+             'innehållstecknet var tillgängligt för kanalen. 0 = ej '
+             'tillämpligt (kanalen strömmar inte) eller ej mätt. En övre '
+             'gräns: stämpeln tas när chunk-konsumenten ser händelsen, '
+             'vilket är den tid användaren väntar.')
+    longest_gap_seconds = fields.Float(
+        'Längsta uppehåll (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Den längsta sammanhängande tystnaden mellan två på varandra '
+             'följande innehållshändelser under turen. 0 = ej tillämpligt '
+             'eller ej mätt.')
+    stream_seconds = fields.Float(
+        'Strömningstid (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Sekunder från första till sista innehållshändelse. 0 = ej '
+             'tillämpligt (kanalen strömmar inte) eller ej mätt.')
+
     # ── Informativa rader (utfall-och-tokenmatning) ────────────────────
     # Rader som bär spårbarhet men INTE ska räknas i budgeten (t.ex.
     # per-agent-tokens från supervisor/konsensus, där den aggregerade
