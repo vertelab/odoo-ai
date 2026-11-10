@@ -736,7 +736,7 @@ class StructuralGateCoreWiring(TransactionCase):
 
 #: Prefixet varje rad från fallback-kedjan bär i `message`.
 #: Används för att skilja grindens rader från andra fel i samma tabell.
-DETECT_ERROR_PREFIX = 'kontextkälla'
+DETECT_ERROR_PREFIX = 'context source'
 
 
 @tagged('post_install', '-at_install')

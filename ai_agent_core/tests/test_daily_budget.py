@@ -103,7 +103,7 @@ class TestDailyBudget(TransactionCase):
 
     def test_exhausted_takes_precedence_over_warning(self):
         """6.2: slut-varianten används när taket nåtts, inte varningen."""
-        cw = self._coworker('Dagsbudget slut')
+        cw = self._coworker('Daily budget exhausted')
         with patch.object(type(cw), 'daily_budget_warning',
                           new_callable=lambda: property(lambda s: True)), \
              patch.object(type(cw), 'daily_budget_exhausted',
@@ -149,7 +149,7 @@ class TestDailyBudget(TransactionCase):
             self.assertTrue(
                 daily.called,
                 'dagsbudget-kontrollen ska anropas när taket är nått')
-            self.assertIn('Dagsbudget slut', str(result),
+            self.assertIn('Daily budget exhausted', str(result),
                           'körningen ska stoppas mjukt vid dagstaket')
 
     def test_run_does_not_check_daily_cap_below_threshold(self):

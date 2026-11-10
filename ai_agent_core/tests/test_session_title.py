@@ -236,7 +236,7 @@ class TestSessionTitle(common.TransactionCase):
         session = self._session()
         prompt = session._title_prompt('user: Hej\nassistant: Hej')
         self.assertIn('EXACTLY one sentence', prompt)
-        self.assertIn('utan rubrik', prompt)
+        self.assertIn('no heading', prompt)
         self.assertIn('user: Hej', prompt)
 
     def test_run_title_llm_cleans_output(self):

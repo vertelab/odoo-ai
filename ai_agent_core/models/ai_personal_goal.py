@@ -181,7 +181,7 @@ class AIPersonalGoal(models.Model):
         """Markera mål-konceptet i OKF som deprecated.
 
         VARFÖR (companion-memory-completeness 4.6): L2-blocket väljer
-        `artifact_type='mål'` med `status not in ['deprecated']`. Utan den
+        `artifact_type='goal'` med `status not in ['deprecated']`. Utan den
         här markeringen fångar filtret aldrig avslutade mål — de blir kvar i
         L2 för evigt och konkurrerar med aktiva mål om budgeten.
 

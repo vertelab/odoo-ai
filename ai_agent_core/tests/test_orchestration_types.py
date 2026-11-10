@@ -387,7 +387,7 @@ class TestKaizenSkillSuggestion(TransactionCase):
         import json
         data = json.loads(f.skill_suggestion)
         self.assertEqual(data['skill_id'], skill.id)
-        self.assertIn('Felhantering', data['suggested_recipe'])
+        self.assertIn('Error handling', data['suggested_recipe'])
 
     def test_apply_skill_suggestion(self):
         """Approved suggestion applied to skill increments version."""

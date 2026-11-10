@@ -195,7 +195,7 @@ class TestDistill(TransactionCase):
     def test_01_attribution_html_clickable_and_uncertain(self):
         html = self.concept.render_attribution_html()
         self.assertIn('res.partner,1', html)          # klickbar källa
-        self.assertIn('osäker', html)                  # rad 2 utan källa flaggas
+        self.assertIn('uncertain', html)                  # rad 2 utan källa flaggas
 
     def test_02_distill_l2_l3_creates_rows(self):
         self.concept.distill_l2_l3(

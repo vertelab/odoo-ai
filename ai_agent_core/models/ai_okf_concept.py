@@ -2910,13 +2910,13 @@ class AIOkfConcept(models.Model):
         # (D6). Kriteriet är TYP, inte innehåll — annars blir det en
         # LLM-dom som kan flippra mellan körningar. Bara två typer lyfts:
         #   - artifact_type 'roll' → L2 (vem användaren är)
-        #   - artifact_type 'mål'  → L2 (vart de är på väg)
+        #   - artifact_type 'goal' → L2 (vart de är på väg)
         #
         # FYND (test 2026-10-14): `status` på ai.okf.concept är
         # draft/stable/deprecated — INTE active/completed (de
         # tillhör ai.personal.goal). Ett OKF-koncept för ett mål skapas
         # bara för mål med active=True (_index_user_goals), så ett
-        # icke-deprecated 'mål'-koncept ÄR ett aktivt mål. Att filtrera på
+        # icke-deprecated 'goal'-koncept ÄR ett aktivt mål. Att filtrera på
         # status='active' här hade tystat regeln helt.
         if scope == 'personal':
             personal_l2 = self.search(domain + [

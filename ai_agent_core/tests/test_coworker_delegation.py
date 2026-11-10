@@ -227,7 +227,7 @@ class TestDelegationCreate(DelegationTestBase):
         env2, _ = self._requester_env(self.worker, task=parent)
         with self.assertRaises(ValidationError) as cm:
             env2._delegate_task_to(self.chief, 'Steg 2')
-        self.assertIn('maxdjup', str(cm.exception))
+        self.assertIn('max depth', str(cm.exception))
 
     def test_quota_blocks(self):
         self.env['ir.config_parameter'].sudo().set_param(
@@ -236,7 +236,7 @@ class TestDelegationCreate(DelegationTestBase):
         env._delegate_task_to(self.worker, 'Första')
         with self.assertRaises(ValidationError) as cm:
             env._delegate_task_to(self.worker, 'Andra')
-        self.assertIn('kvot', str(cm.exception))
+        self.assertIn('daily quota', str(cm.exception))
 
     def test_empty_description_rejected(self):
         env, _ = self._requester_env(self.chief)

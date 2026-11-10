@@ -219,20 +219,20 @@ class AISkill(models.Model):
         # Redan känd erfarenhet? Öka räknaren och flytta fram källhänvisningen.
         for i, line in enumerate(lines):
             if note in line:
-                m = re.search(r'\(sedd (\d+) ggr', line)
+                m = re.search(r'\(seen (\d+) times', line)
                 count = (int(m.group(1)) if m else 1) + 1
-                lines[i] = '[%s] %s (sedd %d ggr; senast %s)' % (
+                lines[i] = '[%s] %s (seen %d times; last %s)' % (
                     today, note, count, source or '-')
                 self[field_name] = '\n'.join(lines)
                 return True
 
-        lines.append('[%s] %s (senast %s)' % (today, note, source or '-'))
+        lines.append('[%s] %s (last %s)' % (today, note, source or '-'))
         # Tak på antalet rader: fältet skickas med i prompten. Behåll de
         # senaste — äldre erfarenheter har lägre värde än de som är aktuella.
         if len(lines) > self._MAX_EXPERIENCE_LINES:
             lines = lines[-self._MAX_EXPERIENCE_LINES:]
         self[field_name] = '\n'.join(lines)
-        _logger.info('Skill %s: erfarenhet (%s) loggad', self.name, verdict)
+        _logger.info('Skill %s: experience (%s) logged', self.name, verdict)
         return True
 
     _MAX_EXPERIENCE_LINES = 40

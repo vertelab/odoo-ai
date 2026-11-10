@@ -260,7 +260,7 @@ class TestSearchSettings(TransactionCase):
             self.assertIn('okf_concept', diag['per_source'],
                           'den felande källan ska synas i diagnostiken')
             self.assertTrue(
-                any('misslyckades' in m for m in cm.output),
+                any('failed' in m for m in cm.output),
                 'felet ska loggas som warning, inte sväljas')
 
     def test_unwired_source_is_skipped_without_error(self):

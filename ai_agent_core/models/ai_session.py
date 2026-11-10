@@ -3167,11 +3167,11 @@ class AICoworkerSession(models.Model):
     push_notified_line_id = fields.Many2one(
         'ai.coworker.session.line', 'Push Notified Line',
         readonly=True, copy=False, ondelete='set null',
-        help='Den assistentrad som senast aviserades. Hindrar dubbel '
-             'notis när både stream- och webhook-vägen avslutar samma tur. '
-             'Radens id är strikt monotont — en tidsstämpel duger inte, '
-             'eftersom två turer i samma transaktion får samma '
-             'create_date (transaktionens NOW()).')
+        help='The assistant line that was last notified. Prevents a double '
+             'notification when both the stream and the webhook path close '
+             'the same turn. The line id is strictly monotonic - a timestamp '
+             'will not do, because two turns in one transaction share '
+             'create_date (the transaction NOW()).')
 
     # ── Durable Resume (OpenWorker-inspired) ──
     resumable = fields.Boolean('Resumable', default=True,

@@ -126,7 +126,7 @@ class TestDispatchOwnerResolution(TransactionCase):
         })
         with self.assertRaises(ValidationError) as ctx:
             coworker._resolve_dispatch_user(init_type='cron')
-        self.assertIn('systemuser', str(ctx.exception))
+        self.assertIn('system user', str(ctx.exception))
 
 
 class TestRepairMissingChatUsers(TransactionCase):

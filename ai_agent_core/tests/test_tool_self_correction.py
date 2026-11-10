@@ -223,7 +223,7 @@ class TestToolSelfCorrection(common.TransactionCase):
         run = coworker._correct_failed_tool(
             'fab_tool', contract, data, result)
         self.assertTrue(run.escalated)
-        self.assertIn('Saknat värde', run.escalation_reason)
+        self.assertIn('Missing value', run.escalation_reason)
         # Namnet är fortfarande tomt — inget fabricerat värde skrevs.
         self.assertEqual(partner.name or '', '')
         # Ingen post med 'avto'-mönster existerar.

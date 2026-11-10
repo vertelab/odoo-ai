@@ -275,12 +275,12 @@ class TestCompanionQuality(TransactionCase):
         src = inspect.getsource(
             type(self.coworker)._extract_concepts_from_conversation)
         self.assertIn('DO NOT SAVE', src)
-        for needle in ('triviala', 'återfinnas', 'rådata',
-                       'uppgiftsframsteg', 'loggar', 'TODO'):
+        for needle in ('trivial', 'easy to look up', 'raw data',
+                       'task progress', 'logs', 'TODO'):
             self.assertIn(needle, src,
                           'kategorin %r saknas i prompten' % needle)
-        self.assertIn('SPARA ALLTID', src)
-        self.assertIn('preferens', src)
+        self.assertIn('ALWAYS SAVE', src)
+        self.assertIn('preference', src)
 
     # ── 4.2 kind-normalisering ────────────────────────────────────────
 
@@ -390,9 +390,9 @@ class TestCompanionQuality(TransactionCase):
         """
         self._make_concept('roll', 'user.%s.role' % self.user.id,
                            'Användaren är ekonomichef')
-        self._make_concept('mål', 'user.%s.goal.1' % self.user.id,
+        self._make_concept('goal', 'user.%s.goal.1' % self.user.id,
                            'Målet är att stänga boken i tid', status='stable')
-        self._make_concept('mål', 'user.%s.goal.2' % self.user.id,
+        self._make_concept('goal', 'user.%s.goal.2' % self.user.id,
                            'Avslutat mål', status='deprecated')
         block = self.Okf._okf_build_system_prompt_block(
             'personal', self.user.id, query='roll', max_chars=4000,

@@ -9739,7 +9739,7 @@ class AICoworker(models.Model):
 
             name = task.name or 'Uppgift'
             summary = (task.result_summary or '').strip()
-            body = summary[:200] if summary else 'Jobbet är klart.'
+            body = summary[:200] if summary else 'The job is done.'
             queued = self.env['web.pwa.push']._push_user_notification(
                 user,
                 title='Klart: %s' % name[:60],
@@ -9748,12 +9748,12 @@ class AICoworker(models.Model):
             )
             if not queued:
                 _logger.info(
-                    'push-notification: task %s klar men beställaren %s har '
-                    'inga enheter — ingen notis', task.id, user.id)
+                    'push-notification: task %s is done but the requester '
+                    '%s has no devices - no notification', task.id, user.id)
             return queued
         except Exception as e:  # noqa: BLE001
             _logger.warning(
-                'push-notification: kunde inte avisera beställaren för '
+                'push-notification: could not notify the requester for '
                 'task %s: %s', getattr(task, 'id', '?'), e, exc_info=True)
             return False
 

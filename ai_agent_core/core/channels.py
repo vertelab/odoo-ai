@@ -525,7 +525,7 @@ def _register_channels_on_import():
             # best-effort: en trasig kanal får inte hindra modulimporten.
             # Felet syns i process_item() som 'no_processor' med en varning.
             _logger.warning(
-                '%s misslyckades vid import — kanalen är oregistrerad',
+                '%s failed at import — the channel is unregistered',
                 register.__name__, exc_info=True)
 
 

@@ -245,24 +245,24 @@ class AICoworkerSessionLine(models.Model):
     # Total väggklocka kräver inget fält: user-radens `create_date` →
     # assistentradens `create_date` (båda `_log_access`, indexerade).
     first_token_seconds = fields.Float(
-        'Tid till första tecken (s)', readonly=True, default=0.0,
+        'Time to first token (s)', readonly=True, default=0.0,
         digits=(12, 3),
-        help='Sekunder från att turen började behandlas till att första '
-             'innehållstecknet var tillgängligt för kanalen. 0 = ej '
-             'tillämpligt (kanalen strömmar inte) eller ej mätt. En övre '
-             'gräns: stämpeln tas när chunk-konsumenten ser händelsen, '
-             'vilket är den tid användaren väntar.')
+        help='Seconds from the turn starting to the first content token '
+             'being available to the channel. 0 = not applicable (the '
+             'channel does not stream) or not measured. An upper bound: '
+             'the stamp is taken when the chunk consumer sees the event, '
+             'which is what the user waits for.')
     longest_gap_seconds = fields.Float(
-        'Längsta uppehåll (s)', readonly=True, default=0.0,
+        'Longest gap (s)', readonly=True, default=0.0,
         digits=(12, 3),
-        help='Den längsta sammanhängande tystnaden mellan två på varandra '
-             'följande innehållshändelser under turen. 0 = ej tillämpligt '
-             'eller ej mätt.')
+        help='The longest continuous silence between two consecutive '
+             'content events during the turn. 0 = not applicable or not '
+             'measured.')
     stream_seconds = fields.Float(
-        'Strömningstid (s)', readonly=True, default=0.0,
+        'Streaming time (s)', readonly=True, default=0.0,
         digits=(12, 3),
-        help='Sekunder från första till sista innehållshändelse. 0 = ej '
-             'tillämpligt (kanalen strömmar inte) eller ej mätt.')
+        help='Seconds from the first to the last content event. 0 = not '
+             'applicable (the channel does not stream) or not measured.')
 
     # ── Informativa rader (utfall-och-tokenmatning) ────────────────────
     # Rader som bär spårbarhet men INTE ska räknas i budgeten (t.ex.

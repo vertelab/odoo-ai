@@ -81,7 +81,7 @@ class TestBudgetBlockMessage(TransactionCase):
         code, msg = self.coworker.budget_block_message()
         self.assertEqual(code, 'daily_budget_exhausted')
         self.assertIn('Daily budget exhausted', msg)
-        self.assertIn('midnatt', msg)
+        self.assertIn('midnight', msg)
         self.assertIn('7.55', msg)
         self.assertIn('755', msg)
 

@@ -221,7 +221,7 @@ class TestFinalSummary(common.TransactionCase):
             self.assertIn(heading, prompt,
                           'rubriken %s saknas i prompten' % heading)
         self.assertIn('never write invented', prompt)
-        self.assertIn('svenska', prompt)
+        self.assertIn('in Swedish', prompt)
 
 
 @tagged('okf', 'session', 'post_install', '-at_install')

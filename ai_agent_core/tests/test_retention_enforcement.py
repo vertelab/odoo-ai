@@ -490,7 +490,8 @@ class TestRetentionKaizen(RetentionBase):
         report = self._report()
         findings = report._analyze_findings(
             report.coworker_id, report, self._empty_data())
-        retention = [f for f in findings if 'Retention' in f['finding']]
+        retention = [f for f in findings
+                     if 'retention backlog' in f['finding']]
         self.assertEqual(len(retention), 1)
         self.assertEqual(retention[0]['category'], 'error')
         self.assertIn('0 → 3', retention[0]['finding'])
@@ -501,7 +502,8 @@ class TestRetentionKaizen(RetentionBase):
         report = self._report()
         findings = report._analyze_findings(
             report.coworker_id, report, self._empty_data())
-        self.assertFalse([f for f in findings if 'Retention' in f['finding']])
+        self.assertFalse([f for f in findings
+                          if 'retention backlog' in f['finding']])
 
     def test_decreasing_backlog_creates_no_finding(self):
         """6.3: minskande overdue ger inget fynd."""
@@ -509,7 +511,8 @@ class TestRetentionKaizen(RetentionBase):
         report = self._report()
         findings = report._analyze_findings(
             report.coworker_id, report, self._empty_data())
-        self.assertFalse([f for f in findings if 'Retention' in f['finding']])
+        self.assertFalse([f for f in findings
+                          if 'retention backlog' in f['finding']])
 
     def test_missing_metrics_creates_no_finding(self):
         """Utan mätvärde finns inget att jämföra — inget fynd."""
@@ -518,7 +521,8 @@ class TestRetentionKaizen(RetentionBase):
         report = self._report()
         findings = report._analyze_findings(
             report.coworker_id, report, self._empty_data())
-        self.assertFalse([f for f in findings if 'Retention' in f['finding']])
+        self.assertFalse([f for f in findings
+                          if 'retention backlog' in f['finding']])
 
     def _empty_data(self):
         """Veckodata utan aktivitet — bara retention-regeln ska slå till."""

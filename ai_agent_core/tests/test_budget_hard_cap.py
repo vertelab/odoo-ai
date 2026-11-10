@@ -113,7 +113,7 @@ class TestBudgetHardCap(common.TransactionCase):
     # ── 7.2 Blockeringsmatris ──
 
     def test_run_returns_budget_message(self):
-        """run() returnerar 'Budget slut' utan att köra LLM."""
+        """run() returnerar 'Budget exhausted' utan att köra LLM."""
         coworker = self._mk_coworker(cap_mtokens=1)
         self._mk_session_line(coworker, token_sys=1_200_000)
         self.env['ai.coworker'].invalidate_model(['session_line_count',
@@ -121,7 +121,7 @@ class TestBudgetHardCap(common.TransactionCase):
         coworker._compute_budget_state()
 
         result = coworker.run(prompt='test prompt')
-        self.assertIn('Budget slut', result)
+        self.assertIn('Budget exhausted', result)
 
     # ── 7.3 mail.activity ──
 

@@ -97,7 +97,7 @@ class TestWarningForAgentsWithoutTools(TransactionCase):
 
         messages = '\n'.join(cm.output)
         self.assertIn(
-            'Agent utan verktyg', messages,
+            'Agent without tools', messages,
             'Varningen för agent utan verktyg loggades inte')
         self.assertIn(agent.name, messages)
 
