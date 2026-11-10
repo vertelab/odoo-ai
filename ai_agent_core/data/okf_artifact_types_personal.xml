@@ -9,7 +9,13 @@
             <field name="okf_contract" eval="{'sources': ['hr.employee'], 'generated_by': 'hr_indexer', 'stale_policy': 'source', 'ttl_days': 30, 'retention_purpose': 'none'}"/>
         </record>
         <record id="artifact_type_goal" model="ai.artifact.type">
-            <field name="name">mål</field>
+            <!-- English, like everything else in the source: the domain in
+                 ai_okf_concept.py looks up 'goal', and this record carried
+                 'mål' after the OKF layer was translated (87ca23e9). The two
+                 never met, so goal concepts were written under a type name
+                 the lookup could not find. Migration 18.0.2.0.52 renames the
+                 existing rows. -->
+            <field name="name">goal</field>
             <field name="kind">memory</field>
             <field name="model_id" ref="base.model_res_users"/>
             <field name="okf_contract" eval="{'sources': ['ai.personal.goal'], 'generated_by': 'goal_indexer', 'stale_policy': 'fixed', 'ttl_days': 30, 'retention_purpose': 'none'}"/>

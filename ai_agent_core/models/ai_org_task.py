@@ -34,30 +34,25 @@ class AIOrgTask(models.Model):
     # Vem
     coworker_id = fields.Many2one('ai.coworker', string='Assignee Coworker',
         index=True,
-        help='AI-medarbetaren som ska utföra uppgiften.')
+        help='The AI Coworker that should carry out the task.')
     beställare_ref = fields.Reference(
         selection=[('res.users', 'User'), ('ai.agent', 'AI Agent')],
         string='Requester',
-        help='Vem som beställde uppgiften.')
+        help='Who requested the task.')
 
     # Delegering (coworker-delegation): ett uppdrag som en coworker lagt hos
     # en kollega via delegate_task. beställare_trust och delegation_depth
     # frystes vid skapandet och kan inte ändras av mottagaren.
     beställare_trust = fields.Integer(
         'Requester Trust Step', readonly=True, default=0,
-        help='Beställarens tillitssteg när uppdraget skapades. Uppdraget '
-             'utförs under min(beställare, utförare) — delegering ger ingen '
-             'ny befogenhet. Readonly: sätts av delegate_task.')
+        help='The requester trust level when the assignment was created. The assignment runs under min(requester, executor) — delegation grants no new authority. Readonly: set by delegate_task.')
     delegation_depth = fields.Integer(
         'Delegation Depth', readonly=True, default=0,
-        help='Antal delegeringsled bakåt (beställarens djup + 1). Skyddar '
-             'mot kedjor som växer obegränsat. Readonly: sätts av '
-             'delegate_task.')
+        help='Number of delegation steps back (requester depth + 1). Guards against chains that grow without bound. Readonly: set by delegate_task.')
     parent_task_id = fields.Many2one(
         'ai.org.task', string='Delegated From',
         index=True, ondelete='set null',
-        help='Uppgiften som delegerade denna (task-trädet). Gör att en '
-             'delegeringskedjas samlade kostnad kan följas upp.')
+        help='The task that delegated this one (the task tree). Lets the accumulated cost of a delegation chain be followed up.')
     delegated_task_ids = fields.One2many(
         'ai.org.task', 'parent_task_id', string='Delegated Tasks')
 
@@ -86,13 +81,11 @@ class AIOrgTask(models.Model):
     # förblir 'todo' och orörda (ingen utcheckning, ingen session).
     scheduled_at = fields.Datetime(
         'Scheduled At', index=True, tracking=True,
-        help='Tidigaste tidpunkt då uppgiften får plockas upp. Tomt = '
-             'omedelbart tillgänglig. En framtidsatt uppgift väntar med '
-             'avsikt — den är inte försenad och räknas inte som åldrad.')
+        help='The earliest time the task may be picked up. Empty = immediately available. A future-dated task waits on purpose — it is not late and does not count as aged.')
 
     # Checkout (atomiskt — förhindrar dubbelarbete)
     checkout_lock = fields.Boolean(default=False,
-        help='När True är uppgiften utcheckad av en coworker.')
+        help='When True the task is checked out by a coworker.')
     checked_out_at = fields.Datetime()
     checked_out_by = fields.Many2one('ai.coworker',
         string='Checked Out By')
@@ -101,14 +94,14 @@ class AIOrgTask(models.Model):
     session_ids = fields.One2many('ai.coworker.session', 'ai_task_id',
         string='Sessions')
     goal_id = fields.Many2one('ai.org.goal', string='Goal',
-        help='Målet denna uppgift bidrar till.')
+        help='The goal this task contributes to.')
 
     # Beroenden
     blocker_ids = fields.Many2many('ai.org.task',
         'ai_org_task_blocker_rel',
         'task_id', 'blocker_id',
         string='Blocked By',
-        help='Andra tasks som måste vara klara innan denna.')
+        help='Other tasks that must be done before this one.')
 
     # Work products
     work_product_ids = fields.Many2many('ir.attachment',
@@ -117,12 +110,11 @@ class AIOrgTask(models.Model):
 
     # HR-koppling
     job_id = fields.Many2one('hr.job', string='Job Position',
-        help='Roll i organisationen som denna task tillhör.')
+        help='The role in the organisation this task belongs to.')
     department_id = fields.Many2one(
         'hr.department', string='Department',
         compute='_compute_department', store=True,
-        help='Avdelning — härleds från målet (goal_id) eller rollen (job_id). '
-             'Gör att Tasks kan knytas till en avdelning i org-dashboarden.')
+        help='Department — derived from the goal (goal_id) or the role (job_id). Lets Tasks be tied to a department in the org dashboard.')
 
     @api.depends('goal_id.department_id', 'job_id.department_id')
     def _compute_department(self):
@@ -139,8 +131,7 @@ class AIOrgTask(models.Model):
     department_coworker_ids = fields.Many2many(
         'ai.coworker', string='Executor Candidates',
         compute='_compute_department_coworker_ids',
-        help='Avdelningens AI-medarbetare plus avdelningschefen själv — '
-             'urvalet av utförare för en task mot avdelningens mål.')
+        help='The department AI coworkers plus the department manager — the set of executors for a task against the department goals.')
 
     @api.depends('department_id', 'department_id.ai_coworker_ids',
                  'department_id.ai_manager_id')
@@ -215,7 +206,7 @@ class AIOrgTask(models.Model):
             'checked_out_at': False,
             'status': 'todo',
         })
-        _logger.info('Task %s frigjord (ingen körning köades)', self.name)
+        _logger.info('Task %s released (no run was queued)', self.name)
         return True
 
     def action_checkin(self, result_summary=''):

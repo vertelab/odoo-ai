@@ -58,6 +58,5 @@ class IrUiView(models.Model):
         if fixed:
             self.clear_caches()
             _logger.info(
-                'Korrigerade sv_SE-fältnamn i %d vy(er) '
-                '(view-translation-guard)', fixed)
+                'Corrected sv_SE field names in %d view(s) (view-translation-guard)', fixed)
         return fixed

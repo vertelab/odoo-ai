@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 
 class AICoworkerMailTestWizard(models.TransientModel):
     _name = 'ai.coworker.mail.test.wizard'
-    _description = 'Testa mail-flödet (eml)'
+    _description = 'Test the Mail Flow (eml)'
 
     coworker_id = fields.Many2one('ai.coworker', string='AI Medarbetare',
                                   required=True)
@@ -82,7 +82,7 @@ class AICoworkerMailTestWizard(models.TransientModel):
             if mimetype.startswith('text/'):
                 return head + payload.decode(
                     'utf-8', errors='replace')[:max_chars]
-            return head + '(binär bilaga — se ir.attachment)'
+            return head + '(binary attachment — see ir.attachment)'
         except Exception as e:
             return head + f'(kunde inte extrahera text: {e})'
 
@@ -92,9 +92,9 @@ class AICoworkerMailTestWizard(models.TransientModel):
         """Ladda upp .eml → skapa session → bilagor/minnen → dispatch."""
         self.ensure_one()
         if not self.eml_file:
-            raise UserError('Ladda upp en .eml-fil först.')
+            raise UserError('Upload an .eml file first.')
         if not self.coworker_id:
-            raise UserError('Välj en AI Medarbetare.')
+            raise UserError('Choose an AI Coworker.')
 
         data = base64.b64decode(self.eml_file)
         subject, email_from, body, attachments = self._parse_eml(data)
@@ -139,7 +139,7 @@ class AICoworkerMailTestWizard(models.TransientModel):
             'state': 'done',
             'result': (
                 f'Session {session.id} skapad: {session.name}\n'
-                f'Avsändare: {email_from or "okänd"}\n'
+                f'Avsändare: {email_from or "unknown"}\n'
                 f'Bilagor: {att_count} st → ir.attachment + session-minnen\n\n'
                 'Öppna sessionen (Odoo Mind → Sessions) för att se mailet, '
                 'bilagorna och svaret i chatter:n.'

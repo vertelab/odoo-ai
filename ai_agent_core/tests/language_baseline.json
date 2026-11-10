@@ -1,0 +1,381 @@
+{
+ "_comment": "Swedish source budget for ai_agent_core. code = Swedish string literals (AST, docstrings excluded) in non-exempt files. doc = Swedish docstrings, tracked so the debt is visible but not enforced. The ceiling only ratchets down: test_baseline_does_not_claim_more_than_reality fails when a recorded ceiling sits above the real count.",
+ "_measured": "2026-11-08 (after ai_coworker.py labels)",
+ "_source_rev": "071c88d4",
+ "files": {
+  "controllers/openai_api.py": {
+   "code": 0,
+   "doc": 6
+  },
+  "controllers/stream.py": {
+   "code": 0,
+   "doc": 56
+  },
+  "core/channel.py": {
+   "code": 0,
+   "doc": 15
+  },
+  "core/channels.py": {
+   "code": 0,
+   "doc": 27
+  },
+  "core/conference.py": {
+   "code": 1,
+   "doc": 4
+  },
+  "core/extract.py": {
+   "code": 0,
+   "doc": 10
+  },
+  "core/improve.py": {
+   "code": 0,
+   "doc": 7
+  },
+  "core/interrupt.py": {
+   "code": 0,
+   "doc": 12
+  },
+  "core/linear.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "core/loop.py": {
+   "code": 1,
+   "doc": 16
+  },
+  "core/permission.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "core/provider.py": {
+   "code": 1,
+   "doc": 30
+  },
+  "core/router.py": {
+   "code": 1,
+   "doc": 1
+  },
+  "core/runtime.py": {
+   "code": 0,
+   "doc": 15
+  },
+  "core/ssrf.py": {
+   "code": 0,
+   "doc": 6
+  },
+  "core/supervisor.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "core/tool_select.py": {
+   "code": 36,
+   "doc": 0
+  },
+  "core/tools.py": {
+   "code": 0,
+   "doc": 40
+  },
+  "core/trust.py": {
+   "code": 1,
+   "doc": 6
+  },
+  "core/verify.py": {
+   "code": 13,
+   "doc": 12
+  },
+  "fields/pg_vector.py": {
+   "code": 0,
+   "doc": 5
+  },
+  "hooks.py": {
+   "code": 2,
+   "doc": 9
+  },
+  "http_guard.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_access_resolver.py": {
+   "code": 0,
+   "doc": 8
+  },
+  "models/ai_agent.py": {
+   "code": 0,
+   "doc": 7
+  },
+  "models/ai_artifact_type.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/ai_company_memory.py": {
+   "code": 0,
+   "doc": 10
+  },
+  "models/ai_company_memory_category.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_cost_period.py": {
+   "code": 0,
+   "doc": 4
+  },
+  "models/ai_coworker.py": {
+   "code": 7,
+   "doc": 159
+  },
+  "models/ai_coworker_error.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_coworker_hitl.py": {
+   "code": 0,
+   "doc": 16
+  },
+  "models/ai_coworker_init_type.py": {
+   "code": 0,
+   "doc": 8
+  },
+  "models/ai_eval.py": {
+   "code": 0,
+   "doc": 4
+  },
+  "models/ai_graph_node.py": {
+   "code": 0,
+   "doc": 7
+  },
+  "models/ai_identity.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_kaizen.py": {
+   "code": 0,
+   "doc": 6
+  },
+  "models/ai_lineage.py": {
+   "code": 0,
+   "doc": 4
+  },
+  "models/ai_mail_test_wizard.py": {
+   "code": 2,
+   "doc": 2
+  },
+  "models/ai_memory.py": {
+   "code": 0,
+   "doc": 13
+  },
+  "models/ai_memory_chunk.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_memory_mixin.py": {
+   "code": 0,
+   "doc": 13
+  },
+  "models/ai_memory_scope.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_model.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/ai_okf_concept.py": {
+   "code": 0,
+   "doc": 60
+  },
+  "models/ai_okf_dashboard.py": {
+   "code": 0,
+   "doc": 9
+  },
+  "models/ai_okf_format_mixin.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/ai_okf_mixin.py": {
+   "code": 0,
+   "doc": 46
+  },
+  "models/ai_okf_tag.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_okf_upload.py": {
+   "code": 0,
+   "doc": 12
+  },
+  "models/ai_onboard.py": {
+   "code": 0,
+   "doc": 0
+  },
+  "models/ai_onboarding.py": {
+   "code": 0,
+   "doc": 18
+  },
+  "models/ai_org_bridge.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/ai_org_goal.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_org_review.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ai_org_task.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/ai_org_template.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/ai_personal_goal.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/ai_personal_memory.py": {
+   "code": 0,
+   "doc": 18
+  },
+  "models/ai_provider.py": {
+   "code": 0,
+   "doc": 37
+  },
+  "models/ai_search_source.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/ai_session.py": {
+   "code": 0,
+   "doc": 73
+  },
+  "models/ai_session_line.py": {
+   "code": 0,
+   "doc": 8
+  },
+  "models/ai_session_object.py": {
+   "code": 0,
+   "doc": 5
+  },
+  "models/ai_skill.py": {
+   "code": 0,
+   "doc": 9
+  },
+  "models/ai_tool.py": {
+   "code": 0,
+   "doc": 6
+  },
+  "models/ai_tool_capability.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/discuss_channel.py": {
+   "code": 0,
+   "doc": 5
+  },
+  "models/hr_department.py": {
+   "code": 0,
+   "doc": 9
+  },
+  "models/hr_employee.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ir_action_act_window.py": {
+   "code": 0,
+   "doc": 1
+  },
+  "models/ir_attachment.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/ir_ui_view.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/okf_access_cache.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/res_company.py": {
+   "code": 0,
+   "doc": 2
+  },
+  "models/res_config_settings.py": {
+   "code": 0,
+   "doc": 5
+  },
+  "models/res_users.py": {
+   "code": 0,
+   "doc": 3
+  },
+  "models/workspace_activity.py": {
+   "code": 0,
+   "doc": 12
+  },
+  "models/workspace_para.py": {
+   "code": 0,
+   "doc": 5
+  },
+  "wizards/ai_onboarding_wizard.py": {
+   "code": 0,
+   "doc": 6
+  }
+ },
+ "_exempt": {
+  "migrations/": "Historical code already run in production. Only comments and docstrings may be touched; a literal used in an env lookup or a comparison stays as it is (see LANGUAGE_EXEMPT)."
+ },
+ "_data_keys": {
+  "models/ir_ui_view.py": [
+   "kundämne",
+   "kundämnen",
+   "kundämne_count",
+   "kundämnen_count"
+  ]
+ },
+ "_data_keys_note": "Swedish field names in the sv_SE view-translation guard are DATA (keys that must map to English), not UI text. Exempt by key.",
+ "xml": {},
+ "_xml_note": "Swedish text in UI-rendering XML attributes (string/help/placeholder/confirm), per file. Same ratchet as the code count: a file may not grow.",
+ "_sv_po": {
+  "measured": "2026-11-08",
+  "msgid": 2317,
+  "empty_msgstr": 2272,
+  "filled_msgstr": 45,
+  "swedish_msgid": 450,
+  "swedish_msgid_identical": 2,
+  "entries_with_reference": 2317,
+  "note": "state before task 10. The 450 Swedish msgid are the defect: there is no English original to translate from. Reference for task 10.3."
+ },
+ "_suite_baseline": {
+  "measured": "2026-11-08",
+  "database": "luke18",
+  "command": "odoo -c /etc/odoo/odoo.conf -d luke18 --test-enable --test-tags /ai_agent_core -l test --stop-after-init",
+  "tests": 1379,
+  "failed": 16,
+  "errors": 776,
+  "with_language_gate": {
+   "tests": 1385,
+   "failed": 16,
+   "errors": 776
+  },
+  "note": "The 16 failures / 776 errors are PRE-EXISTING: the same numbers come out on a clean HEAD without the language gate (verified 2026-11-08). The gate adds 6 passing tests and no new failures. Errors are dominated by environment issues (HTTP port, duplicate-key fixtures, _embedding_provider assertion on ai.provider)."
+ },
+ "_data_literals": {
+  "models/ai_coworker.py": 7,
+  "note": "Remaining Swedish literals are DATA: transliteration table, field names in domains, and regexes that must match Swedish LLM answers. Exempt with a written reason in LANGUAGE_DATA_LITERALS."
+ },
+ "_contracts_note": "tests/language_contracts.json was re-snapshotted 2026-11-08 after ac42d816 (\"[FIX] views: tree -> list\") added first_token_seconds, longest_gap_seconds and stream_seconds to views/ai_session_views.xml. That is another author view change, not a translation. From here on, any contract diff is a translation regression.",
+ "_permanent_swedish": {
+  "core/tool_select.py": "Swedish query terms in the lexical fallback bridge (_BRIDGE), the bilingual stopword list (_STOP) and the Swedish stem entries. Tool descriptions are English; prompts are often Swedish. These keys are the mapping itself.",
+  "core/verify.py": "Swedish text analysis: the source-claim regex, the proper-noun and sentence-start character classes, the sv/en language-detection word lists and the entity stopwords. Translating them would break entity extraction and citation checking.",
+  "core/loop.py": "One accepted approval answer (\"kör\") alongside \"ja\"/\"yes\"/\"ok\".",
+  "core/conference.py": "One docstring fragment.",
+  "core/provider.py": "One docstring fragment.",
+  "core/router.py": "One docstring fragment.",
+  "core/trust.py": "One docstring fragment.",
+  "models/ai_coworker.py": "Data: transliteration table, beställare_* field names, narration/meta-note regexes, and the stored name \"Allmän\".",
+  "models/ai_mail_test_wizard.py": "Data: two f-string fragments already translated in context."
+ }
+}

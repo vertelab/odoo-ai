@@ -13,19 +13,16 @@ from odoo.exceptions import ValidationError
 
 class AiSearchSource(models.Model):
     _name = 'ai.search.source'
-    _description = 'Sökkälla (minnesbackend)'
+    _description = 'Search Source (memory backend)'
     _order = 'sequence, name'
 
     name = fields.Char('Namn', required=True, translate=True)
     code = fields.Char(
         'Kod', required=True, index=True,
-        help='Stabil teknisk nyckel, t.ex. okf_concept. Används i M2M och '
-             'i loggar; får inte ändras när den väl använts.')
+        help='Stable technical key, e.g. okf_concept. Used in M2M and in logs; must not change once used.')
     backend = fields.Char(
         'Backend-nyckel', required=True,
-        help='Nyckeln som multi_source_recall dispatcher på. Måste finnas i '
-             'dess tabell — annars degraderar sökningen med en varning i '
-             'stället för att tyst hoppa över källan.')
+        help='The key multi_source_recall dispatches on. Must exist in its table — otherwise the search degrades with a warning instead of silently skipping the source.')
     description = fields.Text('Beskrivning')
     sequence = fields.Integer('Sekvens', default=10)
     active = fields.Boolean('Aktiv', default=True)
@@ -33,17 +30,13 @@ class AiSearchSource(models.Model):
     # ── Ärlighetsfältet ─────────────────────────────────────────────────
     is_wired = fields.Boolean(
         'Inkopplad', default=False, readonly=True,
-        help='Sätts av koden som äger backenden — aldrig av användaren. '
-             'En källa med is_wired=False får INTE väljas i en strategi som '
-             'utger sig för att söka: den skulle bara synas i '
-             'search_sources utan att bidra med en enda rad.')
+        help='Set by the code that owns the backend — never by the user. A source with is_wired=False must NOT be selectable in a strategy that claims to search: it would only appear in search_sources without contributing a single row.')
     wired_note = fields.Char(
         'Status', readonly=True,
-        help='Varför källan är/ inte är inkopplad. T.ex. "AGE-grafen '
-             'odoo_mind har 0 noder".')
+        help='Why the source is or is not wired in. E.g. "the AGE graph odoo_mind has 0 nodes".')
 
     _sql_constraints = [
-        ('code_uniq', 'unique(code)', 'Sökkällans kod måste vara unik.'),
+        ('code_uniq', 'unique(code)', 'The search source code must be unique.'),
     ]
 
     @api.constrains('backend')
@@ -52,7 +45,7 @@ class AiSearchSource(models.Model):
         for rec in self:
             if rec.backend and rec.backend not in known:
                 raise ValidationError(
-                    'Okänd backend-nyckel: %s. Kända: %s' % (
+                    'Unknown backend key: %s. Known: %s' % (
                         rec.backend, ', '.join(sorted(known))))
 
     @api.model
@@ -82,8 +75,7 @@ class AiSearchSource(models.Model):
                 'sequence': 10,
                 'is_wired': True,
                 'wired_note': 'Inkopplad via _okf_search (fas 12).',
-                'description': 'Hybridsökning (vektor + svensk BM25) över '
-                               'ai.okf.concept, dedupnad per koncept.',
+                'description': 'Hybrid search (vector + Swedish BM25) over ai.okf.concept, deduplicated per concept.',
             },
             {
                 'code': 'ai_memory',
@@ -92,9 +84,7 @@ class AiSearchSource(models.Model):
                 'sequence': 20,
                 'is_wired': True,
                 'wired_note': 'Inkopplad via _search_chunks (ai-memory-pgvector).',
-                'description': 'Sökning i ai.memory-artefakter: pgvector-cosine '
-                               '+ svensk BM25 över ai.memory.chunk. Ägandet '
-                               'avgörs av kopplingen (ai.agent.memory).',
+                'description': 'Search in ai.memory artifacts: pgvector cosine + Swedish BM25 over ai.memory.chunk. Ownership is decided by the link (ai.agent.memory).',
             },
             {
                 'code': 'graph',
@@ -103,9 +93,7 @@ class AiSearchSource(models.Model):
                 'sequence': 30,
                 'is_wired': False,
                 'wired_note': 'AGE-grafen odoo_mind finns men har 0 noder.',
-                'description': 'Grafberikning via graph.executor.cypher. '
-                               'Katalogens ärlighetsfält: grafen är tom i '
-                               'drift, så berikning kan inte bära ett svar.',
+                'description': 'Graph enrichment via graph.executor.cypher. The catalog honesty field: the graph is empty in operation, so enrichment cannot carry an answer.',
             },
             {
                 'code': 'documents',
@@ -113,10 +101,8 @@ class AiSearchSource(models.Model):
                 'backend': 'documents',
                 'sequence': 40,
                 'is_wired': False,
-                'wired_note': '11 paket i requirements.txt är inte '
-                              'installerade (faiss-cpu, sentence_transformers).',
-                'description': 'Vektor-RAG över ir.attachment. Endast '
-                               'katalogpost — se fas 10.',
+                'wired_note': '11 packages in requirements.txt are not installed (faiss-cpu, sentence_transformers).',
+                'description': 'Vector RAG over ir.attachment. Catalog entry only — see phase 10.',
             },
         ]
         for vals in sources:

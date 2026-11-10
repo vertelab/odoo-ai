@@ -10,12 +10,11 @@ class HrEmployee(models.Model):
     is_ai = fields.Boolean(
         'AI-medarbetare',
         default=False,
-        help='True om detta är en AI-medarbetare (ai.coworker). '
-             'Används för att filtrera och särskilja i vyer.')
+        help='True if this is an AI Coworker (ai.coworker). Used to filter and distinguish in views.')
 
     ai_coworker_id = fields.Many2one(
         'ai.coworker', string='AI Coworker',
-        help='Motswarande ai.coworker om denna employee är en AI.')
+        help='The matching ai.coworker if this employee is an AI.')
 
     # Överskugga name för att visa 🤖-prefix i vyer
     def name_get(self):

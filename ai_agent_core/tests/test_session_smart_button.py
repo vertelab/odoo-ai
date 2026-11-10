@@ -11,9 +11,12 @@ Dessa tester bevisar:
   2. månaden beräknas på `create_date`, inte på senaste aktivitet
   3. räknaren och det förvalda filtret ger samma svar (T5.1)
   4. hela historiken är nåbar — åtgärdens domän har ingen datumgräns (T5.2)
+  5. knappen ryms på en rad — månaden bor i hjälptexten, inte i en etikettrad
 """
 
 from datetime import date, timedelta
+
+import lxml.etree
 
 from odoo.tests.common import TransactionCase, tagged
 
@@ -107,14 +110,34 @@ class TestSessionDomain(TransactionCase):
         with self.assertRaises(ValueError):
             self.Session._session_domain(self.coworker.id, 'this_mnth')
 
-    def test_month_label_names_the_current_month(self):
-        """T2.1: etiketten bär månadens namn, inte en fast sträng."""
-        label = self.Session._month_label()
-        self.assertTrue(label)
-        self.assertEqual(label, date.today().strftime('%b'),
-                         'månadsnamnet ska följa serverns tidszon')
-        self.coworker.invalidate_recordset()
-        self.assertEqual(self.coworker.session_count_label, label)
+    def test_sessions_button_is_one_line(self):
+        """Knappen ryms på en rad: `o_stat_info` har exakt två barn.
+
+        Layouten går inte att rendera i en `TransactionCase`, så beviset är
+        arkitekturen: etiketten + siffran, inget mer. En tredje rad
+        (månadsetiketten `session_count_label`) gjorde knappen tvåradig och
+        sprängde knappraden (session-machine-and-filter D1).
+        """
+        view = self.env.ref('ai_agent_core.ai_coworker_form')
+        # `arch_db` är översatt (xml_translate); `arch_base` är källan utan
+        # översättning. Källan är det som ska vara tvåradig eller inte.
+        root = lxml.etree.fromstring(view.arch_base.encode())
+        infos = root.xpath(
+            "//button[@name='action_get_sessions']"
+            "/div[@class='o_stat_info']")
+        self.assertEqual(len(infos), 1,
+                         'knappens o_stat_info ska finnas exakt en gång')
+        info = infos[0]
+        self.assertEqual(len(info), 2,
+                         'o_stat_info ska ha exakt två barn: etikett + siffra')
+        labels = [el.text or '' for el in info.iter() if el.text]
+        self.assertIn('Sessions', ' '.join(labels))
+        self.assertNotIn(
+            'session_count_label', lxml.etree.tostring(info, encoding='unicode'),
+            'månadsetiketten får inte ligga i knappen — månaden bor i '
+            'hjälptexten')
+        self.assertNotIn('session_count_label', self.Coworker._fields,
+                         'fältet finns bara för den tvåradiga layouten')
 
     # ── 2. Månaden räknas på create_date ────────────────────────────────
 

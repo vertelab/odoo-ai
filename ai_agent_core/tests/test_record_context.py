@@ -150,9 +150,17 @@ class TestRecordContext(TransactionCase):
             logger.removeHandler(handler)
             logger.setLevel(old_level)
 
+        # Ordvalet är inte kontraktet — att överskridandet RAPPORTERAS är
+        # det (R5). Markören heter TRUNCATED sedan engelska-genomgången och
+        # hette TRUNKERAD före; testet ska inte gå sönder av en översättning.
+        # Det som ska hålla är att loggen namner markören OCH det ursprungliga
+        # antalet (3), så en tyst trunkering inte kan passera.
+        hits = [m for m in captured if 'trunc' in m.lower()]
         self.assertTrue(
-            any('TRUNKERAD' in m for m in captured),
-            'Trunkeringen loggades inte: %s' % captured)
+            hits, 'Trunkeringen loggades inte: %s' % captured)
+        self.assertTrue(
+            any('3' in m for m in hits),
+            'Loggen anger inte hur många som trunkerades: %s' % hits)
 
     # ── 5. Chatter för samlingar (R7) ────────────────────────────────
 

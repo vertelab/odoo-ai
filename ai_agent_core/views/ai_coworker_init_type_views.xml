@@ -89,7 +89,7 @@
                     <field name="rate_limit_rpm"/>
                     <field name="rate_limit_tpm"/>
                     <field name="openai_context_window"
-                           help="0 = härleds automatiskt (minsta context_window bland medarbetarens agenters modeller). Ett eget värde överrider."/>
+                           help="0 = derived automatically (the smallest context_window among the coworker agent models). An explicit value overrides."/>
                 </group>
             </form>
         </field>

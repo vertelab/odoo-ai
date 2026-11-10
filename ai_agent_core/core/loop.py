@@ -40,6 +40,11 @@ from .trust import scan_untrusted, wrap_untrusted
 
 _logger = logging.getLogger(__name__)
 
+# Default för AgentConfig.max_rounds. Ligger som konstant så att
+# normaliseringen i __post_init__ och dataclassens fältdefault inte kan
+# glida isär.
+DEFAULT_MAX_ROUNDS = 20
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -53,8 +58,20 @@ class AgentConfig:
     system_prompt: str = ""
     temperature: float = 0.7
     max_tokens: int = 4096
-    max_rounds: int = 20  # max loop iterations per turn
+    max_rounds: int = DEFAULT_MAX_ROUNDS  # max loop iterations per turn
     max_context_tokens: int = 128_000  # trigger summarization at this threshold
+    # Tak för ANTAL meddelanden (chat-session-limits-and-names D1).
+    #
+    # VARFÖR ett eget tak och inte härlett ur tokens: verktygsrader är korta
+    # men många. Sambandet mellan tecken och antal är inte linjärt — 2 121
+    # korta rader kan ligga under tokenbudgeten men ändå nekas av providern.
+    # Mätt 2026-11-05: session 27753 skickade 2 121 meddelanden till Bifrost,
+    # som svarade `400 Bad Request`.
+    #
+    # 500 är mätt: p90 för sessioner är 277 rader, och de verktygstunga
+    # ligger på 488–500. Över det sammanfattas historiken (samma väg som
+    # tokenöverskridandet använder), i stället för att requesten nekas.
+    max_messages: int = 500
     tool_timeout: float = 30.0  # seconds per tool execution
     llm_timeout: float = 240.0  # seconds per LLM call (research/supervisor lazy providers)
     max_tool_result_chars: int = 8000  # truncate large tool results
@@ -122,6 +139,37 @@ class AgentConfig:
     # `_build_loop` har fem returpunkter — en rad här täcker alla fem, och
     # en framtida sjätte kan inte glömma den.
     interrupt_handler: callable = None
+
+    def __post_init__(self):
+        """Gör konfigurationen körbar, oavsett vad anroparen skickade.
+
+        VARFÖR (fix-stream-max-rounds-none): ett `@dataclass`-fält med
+        default får `None` när argumentet skickas explicit — defaulten
+        gäller bara när argumentet utelämnas. `controllers/stream.py`
+        skickade `max_rounds=None` (med en kommentar som påstod att värdet
+        härleddes någon annanstans), och det första varvet kastade:
+
+            TypeError: '<' not supported between instances of 'int'
+            and 'NoneType'
+
+        i `while round_num < self.config.max_rounds`. Hela webbchatten
+        svarade "Anslutningen till AI-servern bröts" på varje fråga.
+
+        `_build_loop()` hade redan en sådan härledning, men den strömmande
+        vägen bygger looparna själv och glömde den. Att laga bara den
+        anropsplatsen lämnar skyddet på en plats — nästa nya körväg kan
+        glömma det igen. Normaliseringen ligger därför i konfigurationen:
+        kärnan ska inte kunna bringas i ett tillstånd där dess egen
+        loopvillkor är otypat.
+
+        Detta ERSÄTTER INTE `_build_loop`s härledning: den är semantisk
+        (härled ur medarbetarens max_iterations, fallback 8), medan detta är
+        en säkerhetsventil. Båda behövs.
+        """
+        if not self.max_rounds or self.max_rounds < 1:
+            _logger.warning(
+                'AgentConfig.max_rounds=%r is not a positive integer — normalising to %s', self.max_rounds, DEFAULT_MAX_ROUNDS)
+            self.max_rounds = DEFAULT_MAX_ROUNDS
 
 
 # ---------------------------------------------------------------------------
@@ -239,12 +287,11 @@ class AgentLoop:
         self._partial_results: list[tuple[str, str]] = []
 
         # Todo list (plan-before-action) — use TodoList from tools
-        from .tools import TodoList
+        from .tools import TodoList, planning_tools
         self.todo_list = TodoList()
-        # Wire up the todo holder so todo_write tool can access it
-        from .tools import planning_tools
-        planning_tools(self.todo_list)
-        # Also register planning tools if not already present
+        # Register planning tools bound to THIS loop's todo list (D6).
+        # The tools close over the holder, so two loops in the same worker
+        # no longer overwrite each other's state via a module-level global.
         for pt in planning_tools(self.todo_list):
             if pt.name not in self.tools:
                 self.tools.register(pt)
@@ -257,6 +304,16 @@ class AgentLoop:
         aldrig kasta vidare fel — en trasig persistens ska inte fälla körningen
         som redan är klar.
         """
+        # Per-varv-räkningen fylls här — `_finish` är den enda returvägen ur
+        # `run()`, så ingen avslutsgren kan glömma den (webui-show-work-again
+        # 4.1). `round_inputs` samlas i loopen ovan; `rounds` härleds ur den.
+        try:
+            _rinputs = getattr(self, '_round_inputs', None) or []
+            if _rinputs and not getattr(response, 'round_inputs', None):
+                response.round_inputs = list(_rinputs)
+                response.rounds = len(_rinputs)
+        except Exception:
+            pass  # best-effort: räkningen får inte fälla avslutet
         cb = getattr(self.config, 'outcome_callback', None)
         if cb:
             try:
@@ -350,6 +407,12 @@ class AgentLoop:
         round_num = 0
         total_input_tokens = 0
         total_output_tokens = 0
+        # Per-varv-input (webui-show-work-again 4.1): varje varv skickar hela
+        # historiken igen, så total_input_tokens är en summa. `run()` är en
+        # annan körväg än `run_stream()` men har samma problem — utan
+        # uppdelningen ser en tur med åtta rundor ut som en enda enorm prompt.
+        round_inputs: list[int] = []
+        self._round_inputs = round_inputs
         start_time = time.time()
 
         while round_num < self.config.max_rounds:
@@ -479,6 +542,7 @@ class AgentLoop:
 
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
+            round_inputs.append(int(response.input_tokens or 0))
 
             round_elapsed = time.time() - round_start
 
@@ -562,12 +626,12 @@ class AgentLoop:
                             # Emit plan for approval
                             if self.interrupt_handler:
                                 result = await self.interrupt_handler.ask(
-                                    question=f"Agenten föreslår följande plan:\n\n{plan_text}\n\nGodkänn?",
+                                    question=f"The agent proposes the following plan:\n\n{plan_text}\n\nApprove?",
                                     approval_type="plan_approval",
                                     timeout=300,
                                 )
                                 if result.get("action") == "answer" and result.get("answer", "").lower().strip() in (
-                                    "ja", "yes", "ok", "godkänn", "approve", "kör"
+                                    "ja", "yes", "ok", "approve", "run", "kör"
                                 ):
                                     # Switch from PLAN to INTERACTIVE mode
                                     self.permissions.set_mode(PermissionMode.INTERACTIVE)
@@ -661,10 +725,7 @@ class AgentLoop:
             synth_messages = messages + [Message(
                 role=Role.USER,
                 content=(
-                    'Sammanfatta nu ditt bästa svar på användarens fråga '
-                    'ovan. Svara direkt med slutsatsen/resultatet — inga '
-                    'verktyg. Om du saknar tillräcklig data, säg det '
-                    'ärligt och ge det du vet.'
+                    'Now summarise your best answer to the user question above. Answer directly with the conclusion/result — no tools. If you lack enough data, say so honestly and give what you know.'
                 ),
             )]
             synth = await self.provider.chat(
@@ -786,7 +847,15 @@ class AgentLoop:
             #    permanent.
             if self._untrusted_escalation and not decision.needs_user:
                 risk = self._risk_class(tc, tool)
-                if risk in (RiskClass.EXTERNAL, RiskClass.WRITE_LOCAL):
+                # Hämtningsverktyg (fetch_url, web_search) är LÄSANDE men
+                # deras resultat är det som bar injektionen. Utan dem här
+                # vore eskaleringen verkningslös för sitt huvudscenario: en
+                # sida med inbäddad injektion flaggas korrekt, men nästa
+                # hämtning krävde aldrig godkännande.
+                from .permission import UNTRUSTED_FETCH_TOOLS
+                is_fetch = tc.name in UNTRUSTED_FETCH_TOOLS
+                if is_fetch or risk in (RiskClass.EXTERNAL,
+                                        RiskClass.WRITE_LOCAL):
                     self._untrusted_escalation = False
                     _logger.warning(
                         "Tool '%s' escalated to human approval: a previous "
@@ -920,8 +989,13 @@ class AgentLoop:
         # NATS executor routing
         if tool.executor == "nats":
             result = await self._execute_via_nats(tool, tool_call.arguments)
+            # Fjärde elementet = argumenten (webui-show-work-again 3.1).
+            # Utan dem går en tool-rad inte att granska i efterhand: raden
+            # säger att `odoo_search` kördes men inte vad den sökte på, och
+            # argumenten kan inte rekonstrueras ur resultatet.
             self.tool_history.append(
-                (tool_call.name, str(result)[:500], tool_call.id or ''))
+                (tool_call.name, str(result)[:500], tool_call.id or '',
+                 dict(tool_call.arguments or {})))
             self.tool_results.append(
                 (tool_call.name, dict(tool_call.arguments or {}), result))
             return self._frame_untrusted(tool, result)
@@ -962,7 +1036,8 @@ class AgentLoop:
             result = execute_task.result()
             tool_elapsed = time.time() - tool_start
             self.tool_history.append(
-                (tool_call.name, str(result)[:500], tool_call.id or ''))
+                (tool_call.name, str(result)[:500], tool_call.id or '',
+                 dict(args or {})))
             self.tool_results.append(
                 (tool_call.name, dict(args or {}), result))
             _logger.debug(
@@ -1125,10 +1200,30 @@ class AgentLoop:
     # -- Context management (LOOP-004) --
 
     def _context_too_large(self, messages: list[Message]) -> bool:
-        """Check if estimated context exceeds the token budget."""
+        """Pröva historiken mot BÅDA taken: antal meddelanden och tokens.
+
+        VARFÖR två tak (chat-session-limits-and-names D1): providers nekar
+        för stora requests oavsett tokenantal. En historik med tusentals
+        korta verktygsrader kan ligga under tokenbudgeten men ändå avvisas
+        med `400 Bad Request` — mätt 2026-11-05 med 2 121 meddelanden.
+
+        Loggar vilket tak som slog till, så driftfelsökning ser skillnaden
+        mellan "för många meddelanden" och "för mycket text".
+        """
+        max_msgs = getattr(self.config, 'max_messages', 0) or 0
+        if max_msgs and len(messages) > max_msgs:
+            _logger.info(
+                'Context too large: %d meddelanden > taket %d — sammanfattar',
+                len(messages), max_msgs)
+            return True
         total_chars = sum(len(m.content or "") for m in messages)
         estimated_tokens = total_chars // 4  # rough: ~4 chars per token
-        return estimated_tokens > self.config.max_context_tokens
+        if estimated_tokens > self.config.max_context_tokens:
+            _logger.info(
+                'Context too large: ~%d tokens > budget %d — sammanfattar',
+                estimated_tokens, self.config.max_context_tokens)
+            return True
+        return False
 
     async def _summarize(self, messages: list[Message]) -> list[Message]:
         """Komprimera konversationshistoriken för att rymmas i kontextbudgeten.
@@ -1151,8 +1246,7 @@ class AgentLoop:
         recent = messages[-keep_recent:]
 
         summary_prompt = (
-            "Sammanfatta konversationen nedan. Behåll alla nyckelfakta, "
-            "beslut och kontext. Var koncis men komplett.\n\n"
+            "Summarise the conversation below. Keep all key facts, decisions and context. Be concise but complete.\n\n"
             + "\n".join(
                 f"{m.role.value}: {m.content[:500]}"
                 for m in to_summarize
@@ -1175,7 +1269,7 @@ class AgentLoop:
             summary = f"[Tidigare konversation, sammanfattad: {response.text}]"
         except Exception as e:
             _logger.warning("Summarization failed: %s — keeping recent messages", e)
-            summary = "[Sammanfattning misslyckades — behåller senaste kontexten]"
+            summary = "[Summary failed — keeping the latest context]"
 
         summary_msg = Message(role=Role.SYSTEM, content=summary)
         return [summary_msg] + recent
@@ -1224,6 +1318,11 @@ class StreamingAgentLoop(AgentLoop):
             text_buffer = ""
             round_tokens: list[str] = []
             tool_calls_seen: list[dict] = []
+            # Per-varv-input (webui-show-work-again 4.1): varje varv skickar
+            # hela historiken igen, så `total_input_tokens` är en summa.
+            # Utan uppdelningen ser en tur med åtta rundor ut som en enda
+            # enorm prompt (mätt: 104 437 input-tokens, session 27953).
+            round_inputs: list[int] = []
 
             # Släpp transaktionen innan vi väntar på providern — strömmen kan
             # pågå i tiotals sekunder och låsen ska inte sitta under tiden.
@@ -1246,9 +1345,19 @@ class StreamingAgentLoop(AgentLoop):
 
                 elif event.type == "thinking":
                     # Modellens "gråa" tänketext (reasoning_content/reasoning)
-                    # — samla för att lagra på session-meddelandet.
+                    # — samla för att lagra på session-meddelandet OCH skicka
+                    # vidare så webbchatten kan visa den medan modellen tänker.
+                    #
+                    # Utan `yield` var grenen en återvändsgränd: texten hamnade
+                    # i `reasoning_log` men nådde aldrig klienten, så
+                    # `controllers/stream.py`s `thinking`-gren (som funnits
+                    # hela tiden) var död kod. Under modellens betänketid
+                    # fanns därför inget att visa alls — spinnern snurrade i
+                    # tystnad, vilket såg ut som att något gått fel
+                    # (webui-show-work-again).
                     if event.token:
                         self.reasoning_log.append(event.token)
+                    yield event
 
                 elif event.type == "tool_call_start":
                     tool_calls_seen.append({
@@ -1266,6 +1375,7 @@ class StreamingAgentLoop(AgentLoop):
                 elif event.type == "done":
                     total_input_tokens += event.input_tokens or 0
                     total_output_tokens += event.output_tokens or 0
+                    round_inputs.append(int(event.input_tokens or 0))
                     if tool_calls_seen:
                         # Rundans text var NARRERING (agentens resonemang) —
                         # sänd som debug, inte som svar till användaren.
@@ -1338,7 +1448,7 @@ class StreamingAgentLoop(AgentLoop):
                                         "executor": "nats",
                                         "tool": tc["name"],
                                         "status": "pending",
-                                        "message": f"Väntar på Pi-agent ({tc['name']})...",
+                                        "message": f"Waiting for the Pi agent ({tc['name']})...",
                                     }),
                                 )
                             result = await self._execute_tool(
@@ -1373,6 +1483,11 @@ class StreamingAgentLoop(AgentLoop):
                         # klienten bokför riktiga input/output-tokens.
                         event.input_tokens = total_input_tokens
                         event.output_tokens = total_output_tokens
+                        # Per-varv-uppdelningen (webui-show-work-again 4.1):
+                        # `total_input_tokens` är summan över varven, och
+                        # utan den här listan går talet inte att förstå.
+                        event.rounds = len(round_inputs) or 1
+                        event.round_inputs = list(round_inputs)
                         # Utfalls-persistens även på streaming-vägen (3.4):
                         # callbacken ser samma slutliga utfall som run().
                         self._finish(event)
@@ -1394,10 +1509,7 @@ class StreamingAgentLoop(AgentLoop):
                 messages=messages + [Message(
                     role=Role.USER,
                     content=(
-                        'Sammanfatta nu ditt bästa svar på användarens fråga '
-                        'ovan. Svara direkt med slutsatsen/resultatet — inga '
-                        'verktyg. Om du saknar tillräcklig data, säg det '
-                        'ärligt och ge det du vet.'
+                        'Now summarise your best answer to the user question above. Answer directly with the conclusion/result — no tools. If you lack enough data, say so honestly and give what you know.'
                     ),
                 )],
                 system_prompt=self.config.system_prompt,
@@ -1446,14 +1558,17 @@ class StreamingAgentLoop(AgentLoop):
         return sorted(urls)
 
 
-def tool_history_triples(history):
-    """Normalisera tool_history-poster till (name, preview, call_id).
+def tool_history_entries(history):
+    """Normalisera tool_history-poster till (name, preview, call_id, arguments).
 
-    tool_history bär sedan 2026-10-08 tre värden — (namn, preview,
-    tool_call_id) — eftersom OpenAI-formatet kräver att en tool-rad paras
-    med assistant-radens tool_calls[].id. Poster skrivna före ändringen (och
-    poster från tredjeparts-loopar) har bara två värden; de får en tom
-    call_id i stället för att krascha uppackningen.
+    tool_history bär sedan 2026-11-05 fyra värden — argumenten tillkom så att
+    en tool-rad ska gå att granska: raden säger annars att `odoo_search`
+    kördes men inte vad den sökte på, och argumenten kan inte rekonstrueras
+    ur resultatet (webui-show-work-again 3.1).
+
+    Bakåtkompatibel: poster med två eller tre värden (skrivna före ändringen,
+    eller av tredjeparts-loopar) får tomma fält i stället för att krascha
+    uppackningen — samma princip som när call_id infördes 2026-10-08.
 
     Använd denna i stället för att packa upp tuplen direkt.
     """
@@ -1464,5 +1579,15 @@ def tool_history_triples(history):
         name = entry[0]
         preview = entry[1] if len(entry) > 1 else ''
         call_id = entry[2] if len(entry) > 2 else ''
-        out.append((name, preview, call_id or ''))
+        arguments = entry[3] if len(entry) > 3 else {}
+        out.append((name, preview, call_id or '', arguments or {}))
     return out
+
+
+def tool_history_triples(history):
+    """Bakåtkompatibel vy: (name, preview, call_id).
+
+    Behålls för anropare som bara behöver de tre första fälten. Ny kod ska
+    använda `tool_history_entries` — den bär även argumenten.
+    """
+    return [(n, p, c) for (n, p, c, _a) in tool_history_entries(history)]

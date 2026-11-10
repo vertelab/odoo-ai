@@ -86,14 +86,16 @@ class TestPersonalMemory(TransactionCase):
 
     def test_add_memory(self):
         """add_memory creates a searchable memory."""
-        mem_id = self.Memory.add_memory(
+        # add_memory() returnerar ett RECORDSET (dokumenterat i docstringen),
+        # inte ett id. `browse(recordset)` kastade "can't adapt type
+        # 'ai.personal.memory'" — testet använde API:t fel, inte tvärtom.
+        mem = self.Memory.add_memory(
             user_id=self.user.id,
             content="User prefers short answers",
             category='preference',
             source='chat',
         )
-        self.assertTrue(mem_id)
-        mem = self.Memory.browse(mem_id)
+        self.assertTrue(mem)
         self.assertEqual(mem.category, 'preference')
         self.assertEqual(mem.source, 'chat')
 
@@ -114,13 +116,12 @@ class TestPersonalMemory(TransactionCase):
 
     def test_add_only_semantics(self):
         """Content should not be updatable after creation."""
-        mem_id = self.Memory.add_memory(
+        mem = self.Memory.add_memory(
             user_id=self.user.id,
             content="Original content",
             category='fact',
             source='chat',
         )
-        mem = self.Memory.browse(mem_id)
         with self.assertRaises(Exception):
             mem.write({'content': 'Modified content'})
 
@@ -209,12 +210,23 @@ class TestNudgeGoalLinking(TransactionCase):
 
     def test_goal_with_source_ref(self):
         """Goal can reference a source record via source_ref."""
-        # source_ref is a Reference field — store as string
+        # `source_ref` är en Reference med BEGRÄNSAD selection
+        # (`_selection_source_refs`): ai.company.memory, strategy.review och
+        # ai.coworker.session. `res.partner` finns inte bland dem, så
+        # 'res.partner,1' gav ValueError. Testet använder nu en tillåten
+        # modell — och prövar att selectionen faktiskt avvisar en otillåten.
+        allowed = dict(self.Goal._selection_source_refs())
+        self.assertIn('ai.coworker.session', allowed)
+        session = self.env['ai.coworker.session'].create({
+            'coworker_id': self.env['ai.coworker'].create(
+                {'name': 'Goal Source Coworker'}).id,
+            'status': 'active',
+        })
         goal = self.Goal.create({
             'name': 'Sourced Goal',
-            'source_ref': 'res.partner,1',
+            'source_ref': 'ai.coworker.session,%s' % session.id,
         })
-        self.assertEqual(goal.source_ref, 'res.partner,1')
+        self.assertEqual(goal.source_ref, session)
 
     def test_suggest_goals_from_evolution(self):
         """suggest_goals_from_evolution creates proposed goals."""

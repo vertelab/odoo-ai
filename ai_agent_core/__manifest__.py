@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '18.0.2.0.30',
+    'version': '18.0.2.0.53',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -79,6 +79,9 @@
         'data/cron_company_memory_indexers.xml',
         'data/okf_migrate_legacy.xml',
         'data/skill_odoo_core.xml',
+        # push-notification (4.2): ligger efter builtin_tools_seed.xml
+        # eftersom skillen refererar verktyget push_notification.
+        'data/skill_push_notification.xml',
         'data/skill_office_dokument.xml',
         'data/news_skills.xml',
         'data/tool_verification_contracts.xml',
@@ -157,6 +160,7 @@
         'views/powerbox_templates.xml',
         'views/ai_session_views.xml',
         'views/ai_session_object_views.xml',
+        'views/ai_session_trace_views.xml',
         'views/workspace_activity_views.xml',
         'views/workspace_para_views.xml',
         'views/ai_coworker_error_views.xml',

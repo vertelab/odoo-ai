@@ -408,7 +408,7 @@ class ToolSequenceCorrector:
 
         for attempt in range(1, self.max_attempts + 1):
             _logger.info(
-                'ToolSequenceCorrector: %s försök %d/%d (föregående fel: %s)',
+                'ToolSequenceCorrector: %s attempt %d/%d (previous error: %s)',
                 tool_name, attempt, self.max_attempts, last_error[:120])
 
             try:
@@ -456,7 +456,7 @@ class ToolSequenceCorrector:
                 run.attempts.append(rec)
                 run.verified = True
                 _logger.info(
-                    'ToolSequenceCorrector: %s verifierat i försök %d',
+                    'ToolSequenceCorrector: %s verified on attempt %d',
                     tool_name, attempt)
                 return run
 
@@ -473,7 +473,7 @@ class ToolSequenceCorrector:
         # Max antal försök nått utan verifierat utfall → eskalera (4.3).
         run.escalated = True
         run.escalation_reason = (
-            'Ingen verifierad korrigering inom %d försök: %s'
+            'No verified correction within %d attempts: %s'
             % (self.max_attempts, last_error[:200]))
         _logger.warning('ToolSequenceCorrector: %s eskalerar — %s',
                         tool_name, run.escalation_reason)

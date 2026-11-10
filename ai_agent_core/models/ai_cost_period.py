@@ -31,10 +31,10 @@ class AiCostPeriodLine(models.Model):
 
     period_start = fields.Date(
         'Period start', required=True, index=True,
-        help='Periodens första dag (dag eller månad beroende på granularity).')
+        help='The first day of the period (day or month depending on granularity).')
     granularity = fields.Selection([
         ('day', 'Dag'),
-        ('month', 'Månad'),
+        ('month', 'Month'),
     ], string='Granularitet', default='month', required=True, index=True)
 
     company_id = fields.Many2one(
@@ -46,32 +46,29 @@ class AiCostPeriodLine(models.Model):
     # ── De två talen — aldrig hopslagna ──────────────────────────────
     cost_usd = fields.Float(
         'Faktisk kostnad (USD)', digits=(16, 8),
-        help='Σ cost_usd för periodens rader. Faktisk provider-kostnad.')
+        help='Sum of cost_usd for the period rows. Actual provider cost.')
     cost_company = fields.Float(
         'Faktisk kostnad (bolagsvaluta)', digits=(16, 4),
-        help='cost_usd omräknad till bolagsvalutan per RADENS datum — '
-             'en senare kursändring ändrar inte historiska perioder.')
+        help='cost_usd converted to the company currency at the ROW date — a later rate change does not alter historical periods.')
     billing_base = fields.Float(
         'Debiteringsgrund', digits=(16, 4),
-        help='Σ token_sys × sys_multiplier — den marginal-påslagna grunden. '
-             'INTE samma tal som cost_usd.')
+        help='Sum of token_sys x sys_multiplier — the margin-loaded basis. NOT the same number as cost_usd.')
 
     # ── Ärlighetsflagga ──────────────────────────────────────────────
     line_count = fields.Integer('Rader')
     unreported_line_count = fields.Integer(
-        'Omätta rader',
-        help='Rader med usage_reported=False. Beloppet är ett minimum.')
+        'Unmeasured Rows',
+        help='Rows with usage_reported=False. The amount is a minimum.')
     has_unreported = fields.Boolean(
-        'Har omätta rader', compute='_compute_has_unreported', store=True)
+        'Has Unmeasured Rows', compute='_compute_has_unreported', store=True)
 
     # ── Attribution (projekt/kund) ───────────────────────────────────
     partner_id = fields.Many2one('res.partner', string='Kund', index=True)
     project_id = fields.Many2one('project.project', string='Projekt', index=True)
     task_id = fields.Many2one('project.task', string='Uppgift', index=True)
     context_confirmed = fields.Boolean(
-        'Kostnadskontext bekräftad',
-        help='False = raderna saknade bekräftad kostnadskontext. Den '
-             'okontextade andelen döljs inte — den är en egen post.')
+        'Cost Context Confirmed',
+        help='False = the rows had no confirmed cost context. The uncontexted share is not hidden — it is its own entry.')
 
     @api.depends('unreported_line_count')
     def _compute_has_unreported(self):

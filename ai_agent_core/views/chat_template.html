@@ -19,52 +19,6 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/pwa/sw.js', { scope: '/ai/' }).catch(function () {});
     });
 }
-// Push-opt-in: endast för inloggade användare (anonyma har inga notiser).
-// Registrerar enheten mot mail.push.device (samma RPC som webclienten).
-var PWA_USER_AUTH = <!-- USER_AUTH_FLAG -->;
-if (PWA_USER_AUTH && 'PushManager' in window && 'serviceWorker' in navigator) {
-    var pushBtn = document.getElementById('push-enable-btn');
-    if (pushBtn) {
-        var vapidKey = '';
-        pushBtn.addEventListener('click', function () {
-            pushBtn.disabled = true;
-            fetch('/pwa/vapid-public-key')
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    vapidKey = data.vapid_public_key;
-                    return navigator.serviceWorker.ready.then(function (reg) {
-                        return reg.pushManager.subscribe({
-                            userVisibleOnly: true,
-                            applicationServerKey: vapidKey
-                        });
-                    });
-                })
-                .then(function (sub) {
-                    return fetch('/web/dataset/call_kw/mail.push.device/register_devices', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            id: 1, jsonrpc: '2.0', method: 'call',
-                            params: {
-                                model: 'mail.push.device', method: 'register_devices', args: [],
-                                kwargs: Object.assign({}, sub.toJSON(), {
-                                    vapid_public_key: vapidKey
-                                }),
-                                context: {}
-                            }
-                        })
-                    });
-                })
-                .then(function () {
-                    pushBtn.textContent = '✓ Notiser aktiverade';
-                })
-                .catch(function () {
-                    pushBtn.disabled = false;
-                    pushBtn.textContent = '🔔 Aktivera notiser';
-                });
-        });
-    }
-}
 </script>
 <style>
 /* === DARK THEME (default) === */
@@ -235,7 +189,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 @keyframes ai-spin{to{transform:rotate(360deg)}}
 
 /* Debug/resonemang + käll-lista (utfällbar) */
-.ai-debug,.ai-sources{margin-top:6px;font-size:12px;color:var(--text-muted)}
+.ai-debug,.ai-sources,.ai-tools{margin-top:6px;font-size:12px;color:var(--text-muted)}
+.ai-tools-body{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.tool-call-item{border-left:2px solid var(--border);padding-left:8px}
+.tool-call-name{font-weight:600}
+.tool-call-args{margin:2px 0 0;padding:4px 6px;background:rgba(127,127,127,0.08);border-radius:4px;white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:200px;overflow:auto}
 .ai-debug summary,.ai-sources summary{cursor:pointer;user-select:none;opacity:.85}
 .ai-debug-body{white-space:pre-wrap;background:rgba(128,128,128,.08);border-radius:6px;padding:6px 8px;margin-top:4px;max-height:200px;overflow:auto}
 .ai-sources-body{display:flex;flex-direction:column;gap:2px;margin-top:4px}
@@ -439,7 +397,7 @@ var activeSessionCoworker=''; // coworker_id för den aktiva sessionen
 // Pre-select quest from URL params
 var urlQuestId=params.get('quest_id')||'';
 if(urlQuestId){activeQuestId=urlQuestId}
-var currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
+var currentAiMessage=null,currentAgentCards={},lastToolCard=null,streaming=!1,currentEventSource=null,tokenCount=0;
 var lastUsageInput=0,lastUsageOutput=0,currentToolCalls=[];
 var currentAnswerEl=null,currentDebugEl=null,currentSourcesEl=null,currentSpinnerEl=null;
 var currentDebugText='',currentSources=[];
@@ -799,7 +757,38 @@ function selectThread(id,name){
                     var role=m.role||'assistant';
                     var cls=role==='user'?'message user':role==='system'?'message system':'message ai';
                     var d=document.createElement('div');d.className=cls;
-                    d.innerHTML=role==='user'?esc(m.content):addMessageActions(md2html(m.content));
+                    if(role==='user'){
+                        d.innerHTML=esc(m.content)
+                    }else{
+                        // Det sparade arbetet (webui-show-work-again 2.2):
+                        // resonemang, debug, verktygsanrop och källor fanns
+                        // på raden men renderades aldrig vid omladdning —
+                        // bara `content`. Sektionerna byggs med samma
+                        // `<details>`-mönster som live-vyn, hopfällda, och
+                        // bara när det finns något att visa.
+                        var html=addMessageActions(md2html(m.content));
+                        if(m.reasoning&&m.reasoning.trim()){
+                            html+='<details class="ai-debug"><summary>🧠 Resonemang</summary>'
+                                +'<div class="ai-debug-body">'+esc(m.reasoning)+'</div></details>'
+                        }
+                        if(m.debug_info&&m.debug_info.trim()){
+                            html+='<details class="ai-debug"><summary>🔍 Debug</summary>'
+                                +'<div class="ai-debug-body">'+esc(m.debug_info)+'</div></details>'
+                        }
+                        if(m.tool_calls&&String(m.tool_calls).trim()){
+                            html+=renderToolCalls(m.tool_calls)
+                        }
+                        if(m.source_urls&&String(m.source_urls).trim()){
+                            var urls=String(m.source_urls).split('\n').filter(function(u){return u.trim()});
+                            if(urls.length){
+                                html+='<details class="ai-sources"><summary>🔗 källor ('+urls.length+')</summary>'
+                                    +'<div class="ai-sources-body">'
+                                    +urls.map(function(u){return '<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')
+                                    +'</div></details>'
+                            }
+                        }
+                        d.innerHTML=html
+                    }
                     msgs.appendChild(d)
                 }
             });
@@ -1029,6 +1018,43 @@ function addMessageActions(htmlContent){
     return actions+htmlContent;
 }
 
+/**
+ * Rendera en turs verktygsanrop som en hopfälld sektion (webui-show-work-again).
+ *
+ * Anropen hör till MEDDELANDET, inte till konversationen: `tool`-rader är
+ * protokolldata, inte innehåll. Att göra dem till egna bubblor gör åtta
+ * verktygsanrop till åtta svar och bryter läsningen av samtalet.
+ *
+ * `raw` är assistant-radens `tool_calls` — en JSON-sträng med OpenAI-format
+ * (`[{"id":..,"function":{"name":..,"arguments":..}}]`) eller, för tool-rader,
+ * argumenten direkt. Vi tål båda och faller tillbaka på rå text om JSON:en
+ * inte går att tolka (hellre läsbart än tomt).
+ */
+function renderToolCalls(raw){
+    var items=[];
+    try{
+        var parsed=typeof raw==='string'?JSON.parse(raw):raw;
+        if(Array.isArray(parsed)){items=parsed}
+        else if(parsed&&typeof parsed==='object'){items=[parsed]}
+    }catch(e){items=[]}
+    var count=items.length||1;
+    var body='';
+    if(items.length){
+        body=items.map(function(tc){
+            var fn=(tc&&tc.function)||{};
+            var name=fn.name||tc.name||'verktyg';
+            var args=fn.arguments!==undefined?fn.arguments:tc.arguments;
+            var argsTxt=typeof args==='string'?args:JSON.stringify(args,null,1);
+            return '<div class="tool-call-item"><span class="tool-call-name">🔧 '+esc(name)+'</span>'
+                +'<pre class="tool-call-args">'+esc(argsTxt||'(inga argument)')+'</pre></div>'
+        }).join('')
+    }else{
+        body='<pre class="tool-call-args">'+esc(String(raw))+'</pre>'
+    }
+    return '<details class="ai-tools"><summary>🔧 '+count+' verktygsanrop</summary>'
+        +'<div class="ai-tools-body">'+body+'</div></details>'
+}
+
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
 
 // ── Sessionsvisning för tokens/kostnad (restore-webui-token-usage 4.x) ──
@@ -1061,10 +1087,17 @@ function renderUsage(usage){
         sep.style.display='none';
     }else{
         billing.className='usage-part';
-        billing.textContent='Debitering: '+
+        // Etiketten är "tokens", inte "Debitering" (webui-stream-feedback
+        // 3.2): gränssnittet är en avläsning av förbrukning, inte ett
+        // fakturaunderlag. Att säga "Debitering" påstår att en faktura
+        // utfärdats, vilket UI:t inte kan veta.
+        // Bara talet. Antalet omätta rader visades tidigare som ett
+        // suffix ("1 234 tokens (3 rader omätt)") — det är en intern
+        // upplysning om datakvaliteten, inte något användaren kan agera
+        // på, och det påverkar inte talet framför. Fältet finns kvar i
+        // `usage`-blocket för den som behöver det (webui-token-display-trim).
+        billing.textContent=
             Number(usage.token_sys||0).toLocaleString('sv-SE')+' tokens';
-        if(unmeasured)billing.textContent+=' ('+unmeasured+' rad'+
-            (unmeasured===1?'':'er')+' omätt)';
         // Kostnad visas bara när den finns — 0 USD är inte "gratis", det är
         // "ingen prisuppgift på raderna".
         if(usage.cost_usd>0){
@@ -1204,12 +1237,33 @@ function handleStreamEvent(e){
         case'debug':currentDebugText+=(e.token||'');
             if(currentDebugEl){currentDebugEl.style.display='';currentDebugEl.querySelector('.ai-debug-body').textContent=currentDebugText}
             break;
+        // Modellens resonemang medan den tänker (webui-show-work-again 1.2).
+        // Servern skickade `thinking` hela tiden, men loopen yieldade den
+        // aldrig — så den här grenen fanns inte och texten nådde aldrig fram.
+        // Nu fyller den samma hopfällda sektion som narreringen (debug);
+        // sektionen är `<details>` utan `open`, så den tränger inte undan
+        // svaret. `e.token` kan vara tom — då rör vi inget.
+        case'thinking':if(e.token){currentDebugText+=e.token;
+            if(currentDebugEl){currentDebugEl.style.display='';currentDebugEl.querySelector('.ai-debug-body').textContent=currentDebugText}}
+            break;
         case'source':if(e.token&&currentSources.indexOf(e.token)<0)currentSources.push(e.token);
             if(currentSourcesEl){currentSourcesEl.style.display='';var sb=currentSourcesEl.querySelector('.ai-sources-body');sb.innerHTML=currentSources.map(function(u){return'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')}
             break;
-        case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör…</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;
+        case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör…</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;lastToolCard=a;
             if(e.tool_call)currentToolCalls.push({name:e.tool_call.name});
             if(currentSpinnerEl)currentSpinnerEl.style.display='flex';break;
+        // Verktyget är klart (webui-stream-feedback 2.2). /ai/stream-vägen
+        // skickar inget id med tool_call_end — markera därför det senast
+        // öppna kortet. Utan detta stod "Kör…" kvar tills finishStream
+        // rensade korten, vilket såg ut som att verktyget hängt sig.
+        case'tool_call_end':if(lastToolCard){var tb=lastToolCard.querySelector('.agent-card-body');if(tb)tb.textContent='Klar';lastToolCard=null}break;
+        // Livstecken från servern (webui-stream-feedback 4.2). Servern skickar
+        // detta när inget annat sänts på 10 s — t.ex. under en lång
+        // verktygskörning. Klienten ska INTE rendera något: eventet finns
+        // bara för att anslutningen ska hållas vid liv och för att
+        // EventSource inte ska ge upp. Att rendera det hade gjort "tystnad"
+        // till synligt innehåll.
+        case'keepalive':break;
         case'needs_approval':if(e.tool_name){showInterruptDialog('Godkänn verktyg: '+esc(e.tool_name)+(e.risk_level?' ('+esc(e.risk_level)+')':''),'tool_approval')}break;
         case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;
         case'done':if(currentSpinnerEl)currentSpinnerEl.style.display='none';currentEventSource.close();
@@ -1245,6 +1299,19 @@ function finishStream(){
             // progress indicators; the final text replaces them)
             if(txt&&answerEl){answerEl.innerHTML=addMessageActions(md2html(txt))}
             if(currentSpinnerEl)currentSpinnerEl.style.display='none';
+            // Turantalet tokens, hämtat från serverns `done`-event
+            // (webui-stream-feedback 3.1). INTE en klientsidig räkning:
+            // `tokenCount` räknar bara strömmade text-chunks och missar
+            // input-tokens och verktygsrundor. Etiketten är "tokens" —
+            // aldrig "Debitering" (3.2).
+            var _tin=lastUsageInput||0,_tout=lastUsageOutput||0;
+            if(_tin+_tout>0&&answerEl){
+                var _badge=document.createElement('div');
+                _badge.className='turn-tokens';
+                _badge.style.cssText='color:var(--text-muted);font-size:0.85em;margin-top:6px';
+                _badge.textContent=(_tin+_tout).toLocaleString('sv-SE')+' tokens';
+                answerEl.appendChild(_badge);
+            }
             // Save assistant response (svar + debug + källor + tool_calls).
             // Servern persisterar redan turens assistantsvar själv
             // (web-ui-stream-turn-persistens 2.1) — denna POST berikar
@@ -1277,7 +1344,7 @@ function finishStream(){
     document.getElementById('cancel-btn').style.display='none';
     document.getElementById('prompt-input').focus();
     removeImagePreview();
-    currentAiMessage=null;currentAgentCards={};currentEventSource=null;
+    currentAiMessage=null;currentAgentCards={};lastToolCard=null;currentEventSource=null;
     currentAnswerEl=null;currentDebugEl=null;currentSourcesEl=null;currentSpinnerEl=null;
     currentDebugText='';currentSources=[];
     lastUsageInput=0;lastUsageOutput=0;currentToolCalls=[];
@@ -1419,6 +1486,97 @@ if(autoInitSkill||contextQuest){
         }
     },2000)
 }
+// === PUSH-OPT-IN ===
+// Ligger EFTER markupen: knappen måste finnas i DOM när scriptet körs
+// (låg tidigare i <head> och hittade då inget element — opt-in gick
+// aldrig att aktivera).
+var PWA_USER_AUTH = <!-- USER_AUTH_FLAG -->;
+(function () {
+    if (!PWA_USER_AUTH) return;
+    if (!('PushManager' in window) || !('serviceWorker' in navigator)) return;
+    var pushBtn = document.getElementById('push-enable-btn');
+    if (!pushBtn) return;
+    // ?debugPush=1 visar knappen även när enheten redan är registrerad.
+    var forceShow = location.search.indexOf('debugPush=1') !== -1;
+    var vapidKey = '';
+
+    function showLabel(text, enabled) {
+        pushBtn.textContent = text;
+        pushBtn.disabled = !enabled;
+        pushBtn.style.display = 'inline-block';
+    }
+
+    function isRegisteredHere() {
+        // Prenumerationen lever i SW-scopet /ai/. mail.push.device är globalt
+        // (per partner) och säger inget om just den här ytans SW.
+        return navigator.serviceWorker.ready
+            .then(function (reg) { return reg.pushManager.getSubscription(); })
+            .then(function (sub) { return !!sub; })
+            .catch(function () { return false; });
+    }
+
+    isRegisteredHere().then(function (already) {
+        if (already && !forceShow) return;
+        showLabel(already ? '🔔 Notiser aktiva (registrera om)' : '🔔 Aktivera notiser', true);
+    });
+
+    pushBtn.addEventListener('click', function () {
+        pushBtn.disabled = true;
+        pushBtn.textContent = '⏳ Aktiverar…';
+        var permission = ('Notification' in window)
+            ? Promise.resolve(Notification.permission)
+            : Promise.resolve('granted');
+        permission.then(function (perm) {
+            if (perm === 'denied') {
+                throw new Error('Notiser blockerade i webbläsaren');
+            }
+            if (perm === 'default' && 'Notification' in window) {
+                return Notification.requestPermission();
+            }
+        })
+            .then(function () {
+                return fetch('/pwa/vapid-public-key');
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                vapidKey = data.vapid_public_key;
+                if (!vapidKey) throw new Error('Ingen VAPID-nyckel på servern');
+                return navigator.serviceWorker.ready;
+            })
+            .then(function (reg) {
+                return reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: vapidKey
+                });
+            })
+            .then(function (sub) {
+                return fetch('/web/dataset/call_kw/mail.push.device/register_devices', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: 1, jsonrpc: '2.0', method: 'call',
+                        params: {
+                            model: 'mail.push.device', method: 'register_devices', args: [],
+                            kwargs: Object.assign({}, sub.toJSON(), {
+                                vapid_public_key: vapidKey
+                            }),
+                            context: {}
+                        }
+                    })
+                });
+            })
+            .then(function () {
+                showLabel('✓ Notiser aktiverade', false);
+            })
+            .catch(function (err) {
+                pushBtn.disabled = false;
+                pushBtn.textContent = '🔔 Försök igen';
+                pushBtn.style.display = 'inline-block';
+                pushBtn.title = 'Fel: ' + (err && err.message ? err.message : err);
+                console.error('push opt-in failed:', err);
+            });
+    });
+})();
 </script>
 </body>
 </html>

@@ -5,12 +5,12 @@
  * Registrerar en html_editor-plugin som visar VARJE valbar powerbox-
  * medarbetare som eget kommando i kategorin "AI Tools" ("AI-verktyg"),
  * bredvid Odoos ChatGPT-kommando. Klickar man på en medarbetare körs
- * den direkt (utan mellansteget "välj medarbetare").
+ * den direkt (utan mellansteget "choose coworker").
  *
  * Endast medarbetare med:
  *   - init_type powerbox + enabled
  *   - aktuell modell i model_ids (Target Models / powerbox_model_ids)
- * visas (strikt krav — inga "obegränsade"/alla-modeller eftersom lookup
+ * visas (strikt krav — inga "unrestricted"/alla-modeller eftersom lookup
  * med strikt filter returnerar bara modellmatchande).
  *
  * ResModel hämtas via getRecordInfo() på editor-config (HtmlField sätter
@@ -163,10 +163,10 @@ function showPreviewOverlay(plugin, result, originalHtml) {
             "background:#fff;border-radius:8px;max-width:720px;width:92%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);";
         const header = document.createElement("div");
         header.style.cssText = "padding:14px 18px;font-weight:600;border-bottom:1px solid #dee2e6;display:flex;justify-content:space-between;align-items:center;";
-        header.textContent = _t("AI-förslag");
+        header.textContent = _t("AI Suggestions");
         const headerNote = document.createElement("small");
         headerNote.style.cssText = "color:#6c757d;";
-        headerNote.textContent = _t("Granska förslaget innan du infogar");
+        headerNote.textContent = _t("Review the suggestion before inserting");
         header.appendChild(headerNote);
         const body = document.createElement("div");
         body.style.cssText = "padding:16px 18px;overflow:auto;flex:1;border-bottom:1px solid #dee2e6;";
@@ -174,10 +174,10 @@ function showPreviewOverlay(plugin, result, originalHtml) {
         const footer = document.createElement("div");
         footer.style.cssText = "padding:12px 18px;display:flex;gap:8px;justify-content:flex-end;";
         const btnReplace = document.createElement("button");
-        btnReplace.textContent = _t("Ersätt");
+        btnReplace.textContent = _t("Replace");
         btnReplace.className = "btn btn-primary";
         const btnInsert = document.createElement("button");
-        btnInsert.textContent = _t("Lägg till");
+        btnInsert.textContent = _t("Add");
         btnInsert.className = "btn btn-secondary";
         const btnCancel = document.createElement("button");
         btnCancel.textContent = _t("Avbryt");
@@ -197,10 +197,71 @@ function showPreviewOverlay(plugin, result, originalHtml) {
 }
 
 /** Visa prompt och kör en medarbetare — med overlay (granska + Ersätt/Lägg till/Avbryt). */
+/**
+ * Kör en medarbetare via `ai_powerbox`-tjänsten (ai_agent_transcript).
+ *
+ * Tjänsten (registrerad i `registry.category("services")` av
+ * `quest_powerbox.js`) kan mer än kärnans plugin: den slår upp en
+ * `ai.composer` för interface-punkten och skickar `frontendInfo` +
+ * `textSelection` till `/ai/powerbox/run`. Kärnans egen väg skickar bara
+ * text + modell + res_id.
+ *
+ * Tjänsten är valfri — `ai_agent_transcript` behöver inte vara installerad.
+ * Saknas den faller vi tillbaka på kärnans väg, oförändrat.
+ *
+ * @returns {Object|null} tjänsten, eller null om den inte finns
+ */
+function getComposerService(plugin) {
+    const service = plugin.services?.ai_powerbox;
+    if (!service || typeof service.launchFromEditor !== "function") return null;
+    return service;
+}
+
+/** Vald text i editorn, om det finns en markering. */
+function getTextSelection(plugin) {
+    try {
+        const selection = plugin.dependencies?.selection;
+        const docSel = plugin.document?.getSelection?.();
+        if (!selection || !docSel || !docSel.rangeCount) return "";
+        if (!(selection.isSelectionInEditable?.(docSel) ?? false)) return "";
+        return docSel.toString() || "";
+    } catch (e) {
+        return "";
+    }
+}
+
+/**
+ * Kör via composer-tjänsten när den finns. Returnerar true om tjänsten tog
+ * hand om anropet (även när den returnerade null — då har den redan visat
+ * sitt eget fel), false om vi ska använda kärnans väg.
+ */
+async function runViaComposerService(plugin) {
+    const service = getComposerService(plugin);
+    if (!service) return false;
+    const { resModel, resId } = getRecordContext(plugin);
+    if (!resModel || !resId) {
+        // Tjänsten kräver ett rekord — utan det är kärnans väg rätt.
+        return false;
+    }
+    try {
+        await service.launchFromEditor({
+            interfaceKey: "html_field_record",
+            recordModel: resModel,
+            recordId: resId,
+            textSelection: getTextSelection(plugin),
+            recordData: plugin.config?.recordInfo || undefined,
+        });
+    } catch (e) {
+        console.warn("ai_powerbox service failed, keeping core path:", e);
+        return false;
+    }
+    return true;
+}
+
 async function promptAndRun(plugin, quest, initialText) {
     const { resModel, resId } = getRecordContext(plugin);
     const prompt = window.prompt(
-        _t(`Prompt för "${quest.name}":\n\nVad ska medarbetaren göra med texten?`),
+        _t(`Prompt for "${quest.name}":\n\nWhat should the coworker do with the text?`),
         initialText || ""
     );
     if (prompt === null) return;
@@ -270,7 +331,13 @@ patch(PowerboxPlugin.prototype, {
             title: quest.name,
             description: quest.sub_description || "",
             icon: "fa-superpowers",
-            run: () => promptAndRun(aiPluginInstance, quest, ""),
+            run: async () => {
+                // Composer-tjänsten (ai_agent_transcript) äger uppslagningen
+                // när den finns; annars kärnans egen väg. Se
+                // runViaComposerService().
+                if (await runViaComposerService(aiPluginInstance)) return;
+                return promptAndRun(aiPluginInstance, quest, "");
+            },
         }));
         return [...baseCommands, ...aiCommands];
     },

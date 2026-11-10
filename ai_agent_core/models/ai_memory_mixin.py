@@ -144,8 +144,7 @@ class AIMemoryMixin(models.AbstractModel):
             is_vector = bool(row) and row[0] == 'vector'
         except Exception as e:
             _logger.warning(
-                'Kunde inte avgöra embedding-kolumnens typ på %s: %s — '
-                'hoppar över semantisk signal', table, e)
+                'Could not determine the embedding column type on %s: %s — skipping the semantic signal', table, e)
             is_vector = False
         setattr(cls, cache_attr, is_vector)
         return is_vector
@@ -236,8 +235,7 @@ class AIMemoryMixin(models.AbstractModel):
                     semantic_results = self.env.cr.dictfetchall()
             except Exception as e:
                 _logger.warning(
-                    'Semantic search failed for %s (embedding-kolumnen är '
-                    'inte vector?): %s — fortsätter med BM25', table, e)
+                    'Semantic search failed for %s (is the embedding column not vector?): %s — continuing with BM25', table, e)
                 semantic_results = []
 
         # ════════════════════════════════════════
@@ -395,8 +393,7 @@ class AIMemoryMixin(models.AbstractModel):
         emb_provider = Provider._embedding_provider()
         if not emb_provider:
             _logger.warning(
-                'Embedding (batch): ingen provider som kan embedda — '
-                '%s texter lämnas utan vektor', len(truncated))
+                'Embedding (batch): no provider that can embed — %s texts are left without a vector', len(truncated))
             return [None] * len(truncated)
         embeddings = emb_provider._get_embedding_batch(
             inputs=truncated,
@@ -435,7 +432,7 @@ class AIMemoryMixin(models.AbstractModel):
             entities.append({'type': 'CODE', 'text': c})
         finance_terms = [
             'periodiseringsfond', 'avskrivning', 'moms', 'bokslut',
-            'resultaträkning', 'balansräkning', 'skatteverket',
+            'income statement', 'balance sheet', 'skatteverket',
             'f-skatt', 'egenavgift', 'K2', 'K3', 'BAS',
         ]
         for term in finance_terms:

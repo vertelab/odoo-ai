@@ -53,7 +53,10 @@ class TestSessionTitle(common.TransactionCase):
     def test_clean_title_strips_markdown_and_quotes(self):
         """Rubrik, citattecken, listmarkör och punktlista städas bort."""
         cases = [
-            ('### Syfte\nUtred bokföringen.', 'Syfte'),
+            # Rubrikord avvisas som namn (chat-session-limits-and-names D2):
+            # '### Syfte' sa ingenting om sessionen. `_title_from_summary`
+            # plockar meningen i stället.
+            ('### Syfte\nUtred bokföringen.', ''),
             ('"Fixa Caddy-routingen"', 'Fixa Caddy-routingen'),
             ('- Porta odoo-stock', 'Porta odoo-stock'),
             ('**Titel:** Felsök Postgres', 'Felsök Postgres'),
@@ -85,11 +88,18 @@ class TestSessionTitle(common.TransactionCase):
             session.name, 'Fixa Caddy-routingen för ledningssystem')
         self.assertEqual(session.title_source, 'prompt')
 
-    def test_lookup_without_prompt_falls_back_to_uuid(self):
-        """Utan prompt behålls det gamla beteendet (UUID-prefix)."""
+    def test_lookup_without_prompt_falls_back_to_readable_name(self):
+        """Utan prompt får sessionen ett läsbart namn, inte ett bart uuid.
+
+        chat-session-limits-and-names D4: `pi_session_id[:8]` gav trådnamn
+        som `01a1ac59` — 1 305 sessioner i drift hade det. Ett id-baserat
+        namn är bara sista utväg när det inte finns något att bygga ur.
+        """
         pid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         session, _created = self.Session._lookup_or_create_pi_session(pid)
-        self.assertEqual(session.name, pid[:8])
+        self.assertEqual(session.name, 'API-session ' + pid[:8])
+        self.assertNotEqual(session.name, pid[:8],
+                            'namnet ska inte vara ett bart uuid-fragment')
         self.assertFalse(session.title_source)
 
     def test_lookup_is_idempotent(self):
@@ -225,8 +235,8 @@ class TestSessionTitle(common.TransactionCase):
         """Prompten ber om EXAKT en mening, utan rubrik/citattecken."""
         session = self._session()
         prompt = session._title_prompt('user: Hej\nassistant: Hej')
-        self.assertIn('EXAKT en mening', prompt)
-        self.assertIn('utan rubrik', prompt)
+        self.assertIn('EXACTLY one sentence', prompt)
+        self.assertIn('no heading', prompt)
         self.assertIn('user: Hej', prompt)
 
     def test_run_title_llm_cleans_output(self):
@@ -266,14 +276,21 @@ class TestSessionTitleSummary(common.TransactionCase):
         return session
 
     def test_summary_sets_name(self):
-        """Eftermälet döper sessionen (steg C)."""
+        """Eftermälet döper sessionen — med sin mening, inte sin rubrik.
+
+        chat-session-limits-and-names D3: eftermälet börjar med `### Syfte`,
+        och att använda rubriken som namn gav sessioner som hette "Syfte"
+        (6 i drift). Namnet tas nu ur första meningsfulla meningen.
+        """
         session = self._session()
         with patch.object(
             type(session), '_run_final_summary_llm',
             return_value='### Syfte\nUtred bokföringen för kund X.',
         ):
             session._write_final_summary()
-        self.assertEqual(session.name, 'Syfte')
+        self.assertEqual(session.name, 'Utred bokföringen för kund X.')
+        self.assertNotEqual(session.name, 'Syfte',
+                            'rubriken får inte bli sessionsnamn')
         self.assertEqual(session.title_source, 'summary')
 
     def test_summary_keeps_manual_name(self):

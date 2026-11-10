@@ -15,6 +15,10 @@ import time
 from odoo import http, fields
 from odoo.http import request, Response
 
+# `machine`-normaliseringen (session-machine) bor i stream.py — samma
+# funktion i båda /ai/v1-routes, ingen andra definition att hålla i takt.
+from odoo.addons.ai_agent_core.controllers.stream import _clean_machine
+
 _logger = logging.getLogger(__name__)
 
 
@@ -160,6 +164,9 @@ class AIOpenAPIController(http.Controller):
         # gäller uppdraget? Valfritt — utan fältet är beteendet
         # oförändrat (coworkerns union av kopplade agenter).
         agent_ref = (body.get('agent') or '').strip()
+        # Körplats (session-machine): Pi-processens hostname. Valfritt —
+        # utan fältet sätter modellen `Odoo`.
+        machine = _clean_machine(body.get('machine'))
 
         # Transport C-fallback: plocka Pi-sessions-UUID ur `{pi session: …}`-
         # markör i system-/user-meddelanden om body-fältet saknas.
@@ -225,14 +232,14 @@ class AIOpenAPIController(http.Controller):
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
-                messages=messages, force_agent=force_agent,
+                messages=messages, force_agent=force_agent, machine=machine,
             )
         else:
             return self._handle_sync(
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
-                messages=messages, force_agent=force_agent,
+                messages=messages, force_agent=force_agent, machine=machine,
             )
 
     def _resolve_agent(self, coworker, agent_ref):
@@ -281,15 +288,18 @@ class AIOpenAPIController(http.Controller):
             % (agent_ref, coworker.name, available))
 
     def _find_or_create_session(self, coworker, prompt, pi_session_id='',
-                                session_id=0):
+                                session_id=0, machine=''):
         """Hitta/skapa session via pi_session_id (Pi) eller återanvänd
         session_id (session-cost-context 3.1). Sätter context-nycklarna så
-        verktyg (cost_context_get/set) når sessionen."""
+        verktyg (cost_context_get/set) når sessionen.
+
+        `machine` är sessionens körplats (session-machine); tomt värde ger
+        `Odoo` i modellen."""
         Sess = coworker.env['ai.coworker.session']
         sess, _created = Sess._find_or_create_coworker_session(
             coworker.id, coworker.env.user.id,
             pi_session_id=pi_session_id, session_id=session_id,
-            prompt=prompt)
+            prompt=prompt, machine=machine)
         # Domän-ren hook: bryggor fångar domänkontext
         try:
             sess._session_capture_context()
@@ -333,25 +343,18 @@ class AIOpenAPIController(http.Controller):
             block = (
                 '\n\n## Kostnadskontext\n'
                 'Aktuell kontext: '
-                f'{chr(44).join(cc) if cc else "ingen (saknas)"}'
-                f'. Bekräftad: {"ja" if confirmed else "nej"}.\n'
+                f'{chr(44).join(cc) if cc else "none (missing)"}'
+                f'. Confirmed: {"yes" if confirmed else "no"}.\n'
             )
             if not confirmed:
                 block += (
-                    'Alla sessioner är kostnadsbärande arbete. Om '
-                    'kostnadskontext saknas: ställ frågan nedan till '
-                    'användaren, EN gång per session.\n'
-                    + (f'Fråga: "{question}"\n' if question else
-                       'Fråga: "Vilket projekt gäller detta arbete? '
-                       '(eller kund om projekt saknas)"\n')
-                    + 'När användaren svarat: bekräfta att kostnaden '
-                      'belastar projektet/kunden och anropa '
-                      'cost_context_set (kolla först med cost_context_get). '
-                      'Ställ ALDRIG om frågan när cost_context_confirmed '
-                      'är satt.\n'
+                    'All sessions are billable work. If cost context is missing: ask the user the question below, ONCE per session.\n'
+                    + (f'Question: "{question}"\n' if question else
+                       'Question: "Which project does this work belong to? (or customer if there is no project)"\n')
+                    + 'Once the user has answered: confirm that the cost is charged to the project/customer and call cost_context_set (check with cost_context_get first). NEVER ask the question again when cost_context_confirmed is set.\n'
                 )
             else:
-                block += 'Fråga inte om kostnadskontext igen.\n'
+                block += 'Do not ask about cost context again.\n'
             return block
         except Exception as e:
             _logger.warning('cost-context injection failed: %s', e)
@@ -374,7 +377,7 @@ class AIOpenAPIController(http.Controller):
     def _handle_sync(self, coworker, prompt, system_prompt, model,
                      temperature, max_tokens, tools, estimated_tokens,
                      pi_session_id='', session_id=0, messages=None,
-                     force_agent=None):
+                     force_agent=None, machine=''):
         """Handle non-streaming request — run AgentLoop and return JSON."""
         from odoo.addons.ai_agent_core.core.interrupt import (
             AgentLoopPaused, OpenAIInterruptHandler)
@@ -383,7 +386,7 @@ class AIOpenAPIController(http.Controller):
             # user so session.user_id is correct (not SUPERUSER).
             _session = self._find_or_create_session(
                 coworker, prompt, pi_session_id=pi_session_id,
-                session_id=session_id)
+                session_id=session_id, machine=machine)
             coworker = self._session_context_env(coworker, _session)
             system_prompt = (system_prompt or '') + \
                 self._cost_context_prompt_block(coworker, _session)
@@ -491,13 +494,13 @@ class AIOpenAPIController(http.Controller):
     def _handle_stream(self, coworker, prompt, system_prompt, model,
                        temperature, max_tokens, tools, estimated_tokens,
                        pi_session_id='', session_id=0, messages=None,
-                       force_agent=None):
+                       force_agent=None, machine=''):
         """Handle streaming request — SSE response."""
         response_id = f'chatcmpl-{coworker.id}-{int(time.time())}'
         created = int(time.time())
         _session = self._find_or_create_session(
             coworker, prompt, pi_session_id=pi_session_id,
-            session_id=session_id)
+            session_id=session_id, machine=machine)
         coworker = self._session_context_env(coworker, _session)
         system_prompt = (system_prompt or '') + \
             self._cost_context_prompt_block(coworker, _session)
@@ -548,7 +551,7 @@ class AIOpenAPIController(http.Controller):
                         provider, pmodel = ProviderFactory.from_coworker(
                             gen_env['ai.coworker'].browse(_coworker_id))
                         if not provider:
-                            yield f'data: {json.dumps({"error": {"message": "Ingen AI-leverantör konfigurerad för denna medarbetare"}})}\n\n'
+                            yield f'data: {json.dumps({"error": {"message": "No AI provider configured for this coworker"}})}\n\n'
                             yield 'data: [DONE]\n\n'
                             return
 
@@ -618,6 +621,18 @@ class AIOpenAPIController(http.Controller):
                                             },
                                         }],
                                     })
+                                elif event.type == "retry":
+                                    # provider-transient-retry D5: keep-alive
+                                    # utan innehåll. Pi (och andra OpenAI-
+                                    # klienter) har egna tidsgränser och kan
+                                    # tolka tystnad som avbrott — en chunk med
+                                    # tom delta visar att körningen lever.
+                                    # `_chunk({})` lägger inget till svaret.
+                                    _logger.info(
+                                        'provider retry %s (%s) — streamen lever',
+                                        getattr(event, 'attempt', 0),
+                                        getattr(event, 'reason', ''))
+                                    yield _chunk({})
                                 elif event.type == "done":
                                     finish = event.finish_reason or ('tool_calls' if saw_tool_call else 'stop')
                         except AgentLoopPaused as pause:
@@ -672,8 +687,25 @@ class AIOpenAPIController(http.Controller):
                         pass  # best-effort: tyst fallback — se etiketteringsregeln
                     loop.close()
             except Exception as e:
-                _logger.error('OpenAI API stream error: %s', e, exc_info=True)
-                yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
+                # provider-transient-retry 6.3: ett uttömt retry ska nå
+                # OpenAI-klienten som ett felobjekt med typ och kod — inte
+                # som en bruten anslutning. Pi läser `error.type`/`error.code`.
+                from odoo.addons.ai_agent_core.core.provider import (
+                    ProviderRetriesExhausted)
+                if isinstance(e, ProviderRetriesExhausted):
+                    _logger.warning(
+                        'provider gave up after %s attempts (%s) — the OpenAI path',
+                        e.attempts, e.last_reason)
+                    _err_payload = {"error": {
+                        "message": str(e),
+                        "type": "provider_retries_exhausted",
+                        "code": e.last_reason or "error",
+                        "attempts": e.attempts,
+                    }}
+                    yield f'data: {json.dumps(_err_payload)}\n\n'
+                else:
+                    _logger.error('OpenAI API stream error: %s', e, exc_info=True)
+                    yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
                 yield 'data: [DONE]\n\n'
 
         return Response(

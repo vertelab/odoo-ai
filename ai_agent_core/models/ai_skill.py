@@ -118,18 +118,16 @@ class AISkill(models.Model):
     agent_count = fields.Integer(compute='_compute_agent_count')
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
-        compute='_compute_session_tokens_30d', string='Tokens (månad)')
+        compute='_compute_session_tokens_30d', string='Tokens (month)')
 
     # Improvement
     improvement_guidance = fields.Text('Improvement Guidance')
     improvement_references = fields.Text('Improvement References')
     improvement_suggested_recipe = fields.Text(
-        'Föreslaget recept', readonly=True,
-        help='Maskingenererat förslag på ny recipe_text, byggt på skillens '
-             'egna erfarenheter (success_cases/failure_cases). Granska och '
-             'applicera med knappen — inget skrivs över automatiskt.')
+        'Suggested Recipe', readonly=True,
+        help='A machine-generated suggestion for a new recipe_text, built on the skill own experience (success_cases/failure_cases). Review and apply with the button — nothing is overwritten automatically.')
     improvement_proposed_on = fields.Datetime(
-        'Förslag skapat', readonly=True)
+        'Suggestion Created', readonly=True)
 
     @api.depends()
     def _compute_agent_count(self):
@@ -221,20 +219,20 @@ class AISkill(models.Model):
         # Redan känd erfarenhet? Öka räknaren och flytta fram källhänvisningen.
         for i, line in enumerate(lines):
             if note in line:
-                m = re.search(r'\(sedd (\d+) ggr', line)
+                m = re.search(r'\(seen (\d+) times', line)
                 count = (int(m.group(1)) if m else 1) + 1
-                lines[i] = '[%s] %s (sedd %d ggr; senast %s)' % (
+                lines[i] = '[%s] %s (seen %d times; last %s)' % (
                     today, note, count, source or '-')
                 self[field_name] = '\n'.join(lines)
                 return True
 
-        lines.append('[%s] %s (senast %s)' % (today, note, source or '-'))
+        lines.append('[%s] %s (last %s)' % (today, note, source or '-'))
         # Tak på antalet rader: fältet skickas med i prompten. Behåll de
         # senaste — äldre erfarenheter har lägre värde än de som är aktuella.
         if len(lines) > self._MAX_EXPERIENCE_LINES:
             lines = lines[-self._MAX_EXPERIENCE_LINES:]
         self[field_name] = '\n'.join(lines)
-        _logger.info('Skill %s: erfarenhet (%s) loggad', self.name, verdict)
+        _logger.info('Skill %s: experience (%s) logged', self.name, verdict)
         return True
 
     _MAX_EXPERIENCE_LINES = 40
@@ -267,10 +265,7 @@ class AISkill(models.Model):
             return False
 
         guidance_text = (
-            'Regeln i recipe_text aktiveras på ärenden som visat sig vara '
-            'falska positiva. Skärp recipe_text så att den inte längre '
-            'träffar dessa, utan bara det den faktiskt ska fånga. '
-            'Behåll strukturen och språket i receptet.'
+            'The rule in recipe_text triggers on cases that turned out to be false positives. Tighten recipe_text so it no longer matches those, only what it is actually meant to catch. Keep the structure and language of the recipe.'
         )
         suggested = None
         if use_llm:
@@ -284,8 +279,7 @@ class AISkill(models.Model):
                     guidance_text, failures, successes, max_iterations)
             except Exception:
                 _logger.warning(
-                    'LLM-vägen misslyckades för %s — använder '
-                    'deterministiskt förslag', self.name, exc_info=True)
+                    'The LLM path failed for %s — using the deterministic suggestion', self.name, exc_info=True)
                 suggested = None
         if not suggested:
             suggested = self._fallback_recipe(failures, successes)
@@ -299,7 +293,7 @@ class AISkill(models.Model):
             'improvement_suggested_recipe': suggested,
             'improvement_proposed_on': fields.Datetime.now(),
         })
-        _logger.info('Skill %s: förbättringsförslag skapat (%d falska positiva)',
+        _logger.info('Skill %s: improvement suggestion created (%d false positives)',
                      self.name, len(failures))
         return True
 
@@ -309,8 +303,8 @@ class AISkill(models.Model):
         known = '\n'.join('- ' + f[:180] for f in failures[:10])
         return (
             base
-            + '\n\n## Kända falska positiva (inlärda)\n'
-            + 'Dessa mönster ska INTE leda till åtgärd:\n'
+            + '\n\n## Known false positives (learned)\n'
+            + 'These patterns must NOT lead to action:\n'
             + known
         )
 
@@ -333,14 +327,14 @@ class AISkill(models.Model):
         cw = self._improvement_coworker()
         if not cw:
             _logger.info(
-                'Ingen coworker äger skillen %s — kan inte hämta provider',
+                'No coworker owns skill %s — cannot resolve a provider',
                 self.name)
             return None, None
         try:
             from odoo.addons.ai_agent_core.core.provider import ProviderFactory
             return ProviderFactory.from_coworker(cw)
         except Exception:
-            _logger.warning('Provider-uppslag misslyckades för %s', self.name,
+            _logger.warning('Provider lookup failed for %s', self.name,
                             exc_info=True)
             return None, None
 
@@ -354,7 +348,7 @@ class AISkill(models.Model):
 
             provider, model_rec = self._improvement_provider()
             if not provider:
-                _logger.info('Ingen provider för %s — använder fallback',
+                _logger.info('No provider for %s — using fallback',
                              self.name)
                 return None
             model_name = None
@@ -366,7 +360,7 @@ class AISkill(models.Model):
             except Exception:
                 model_name = None
             if not model_name:
-                _logger.info('Ingen modell för %s — använder fallback', self.name)
+                _logger.info('No model for %s — using fallback', self.name)
                 return None
 
             guidance = ImprovementGuidance(
@@ -394,13 +388,13 @@ class AISkill(models.Model):
             t.start()
             t.join(timeout=120)
             if box.get('error') or not box.get('run'):
-                _logger.warning('improve.py misslyckades för %s: %s',
+                _logger.warning('improve.py failed for %s: %s',
                                 self.name, box.get('error'))
                 return None
             result = box['run'].final_output
             return result if result and result.strip() else None
         except Exception:
-            _logger.warning('LLM-förbättring kunde inte köras för %s',
+            _logger.warning('LLM improvement could not run for %s',
                             self.name, exc_info=True)
             return None
 
@@ -412,7 +406,7 @@ class AISkill(models.Model):
             return False
         self.action_apply_kaizen_suggestion(
             suggested_recipe=suggested,
-            notes='Erfarenhetsbaserat förslag godkänt %s'
+            notes='Experience-based suggestion accepted %s'
                   % fields.Datetime.now().strftime('%Y-%m-%d %H:%M'))
         self.improvement_suggested_recipe = False
         self.improvement_proposed_on = False
@@ -448,11 +442,11 @@ class AISkill(models.Model):
                     if commit:
                         self.env.cr.commit()
             except Exception:
-                _logger.warning('Förbättringsförslag misslyckades för %s',
+                _logger.warning('Improvement suggestion failed for %s',
                                 skill.name, exc_info=True)
                 if commit:
                     self.env.cr.rollback()
-        _logger.info('Kaizen: %d förbättringsförslag skapade', made)
+        _logger.info('Kaizen: %d improvement suggestions created', made)
         return made
 
     def action_open_skill_builder(self):

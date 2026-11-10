@@ -15,16 +15,16 @@ class Department(models.Model):
     image = fields.Image(
         string='Avdelningens bild',
         max_width=1920, max_height=1080,
-        help='Bild som visas på avdelningens kanban-kort.')
+        help='Image shown on the department kanban card.')
 
     ai_manager_id = fields.Many2one(
         'ai.coworker', string='AI Chef',
-        help='AI-medarbetare som är chef för denna avdelning.')
+        help='The AI Coworker that manages this department.')
 
     department_objective_ids = fields.One2many(
         'ai.org.goal', 'department_id',
-        string='Avdelningsmål',
-        help='Mål kopplade till denna avdelning (ai.org.goal).')
+        string='Department Goals',
+        help='Goals linked to this department (ai.org.goal).')
 
     ai_coworker_ids = fields.One2many(
         'ai.coworker', 'department_id',
@@ -50,10 +50,9 @@ class Department(models.Model):
     # så att de två slagen visas i varsin ansiktslista — hr.employee bär
     # redan is_ai + ai_coworker_id, så filtreringen är ett fält bort.
     employee_ids = fields.Many2many(
-        'hr.employee', string='Medarbetare (mänskliga)',
+        'hr.employee', string='Employees (human)',
         compute='_compute_employee_ids',
-        help='Mänskliga medarbetare i avdelningen (is_ai = False). '
-             'AI-medarbetare visas separat i ai_coworker_ids.')
+        help='Human employees in the department (is_ai = False). AI coworkers are listed separately in ai_coworker_ids.')
 
     @api.depends('ai_coworker_ids')
     def _compute_total_ai_staff(self):
@@ -115,7 +114,7 @@ class Department(models.Model):
         """Öppna OKR (ai.org.goal) för avdelningen."""
         self.ensure_one()
         return {
-            'name': _('Mål (OKR): %s') % self.name,
+            'name': _('Goals (OKR): %s') % self.name,
             'type': 'ir.actions.act_window',
             'res_model': 'ai.org.goal',
             'view_mode': 'kanban,list,form',
@@ -164,21 +163,17 @@ class Department(models.Model):
     # ════════════════════════════════════════════
     artifact_type_ids = fields.Many2many(
         'ai.artifact.type', string='Kontext (artifact types)',
-        help='Avdelningens intressen — coworkerns company-scope-injektion '
-             'filtreras på dessa (Produktion → mrp + stock; Försäljning → '
-             'crm + sale.order). Ingen deklaration → allt injiceras.')
+        help='The department interests — the coworker company-scope injection is filtered on these (Production → mrp + stock; Sales → crm + sale.order). No declaration → everything is injected.')
 
     health = fields.Selection([
-        ('green', '🟢 Grön'),
+        ('green', '🟢 Green'),
         ('yellow', '🟡 Gul'),
-        ('red', '🔴 Röd'),
-    ], string='Hälsa', compute='_compute_health', store=False,
-        help='Beräknad avdelningshälsa — aggregerad från coworkers '
-             '(heartbeat, status, session_line_count, objective_ids). '
-             'Gränsvärdena konfigureras i settings.')
+        ('red', '🔴 Red'),
+    ], string='Health', compute='_compute_health', store=False,
+        help='Computed department health — aggregated from coworkers (heartbeat, status, session_line_count, objective_ids). The thresholds are configured in settings.')
     health_reason = fields.Text(
-        string='Varför?', compute='_compute_health', store=False,
-        help='Detaljerad förklaring till hälsostatus.')
+        string='Why?', compute='_compute_health', store=False,
+        help='Detailed explanation of the health status.')
 
     @api.depends('ai_coworker_ids.heartbeat_enabled',
                  'ai_coworker_ids.status',
@@ -238,11 +233,11 @@ class Department(models.Model):
             if active_count == 0:
                 reasons.append('Inga coworkers med status=active')
             if with_session == 0:
-                reasons.append('Ingen session på %d dagar' % no_session_days)
+                reasons.append('No session in %d days' % no_session_days)
             if with_tokens == 0:
-                reasons.append('0 tokens på %d dagar' % zero_tokens_days)
+                reasons.append('0 tokens in %d days' % zero_tokens_days)
             if not has_objective:
-                reasons.append('Inga avdelningsmål (OKR)')
+                reasons.append('No department goals (OKR)')
 
             if heartbeating / total >= active_ratio and active_count > 0 \
                     and with_session > 0 and with_tokens > 0 and has_objective:
@@ -265,7 +260,7 @@ class Department(models.Model):
 
     # ── Hierarkisk vy: fold/unfold + tasks/OKR (ai-orchestration-dashboard) ──
     fold = fields.Boolean('Fold (hierarki)',
-        help='True = grenen är hopfälld i den hierarkiska vyn.')
+        help='True = the branch is collapsed in the hierarchy view.')
     ai_task_count = fields.Integer(
         'AI Tasks', compute='_compute_ai_counts',
         help='Antal ai.org.task kopplade till avdelningen.')
@@ -273,9 +268,8 @@ class Department(models.Model):
         'OKR', compute='_compute_ai_counts',
         help='Antal ai.org.goal kopplade till avdelningen.')
     hitl_open_count = fields.Integer(
-        'Öppna HITL', compute='_compute_ai_counts',
-        help='Antal öppna (asked) ai.coworker.hitl för avdelningens '
-             'AI-medarbetare.')
+        'Open HITL', compute='_compute_ai_counts',
+        help='Number of open (asked) ai.coworker.hitl for the department AI coworkers.')
 
     @api.depends('department_objective_ids', 'ai_coworker_ids.hitl_ids.state')
     def _compute_ai_counts(self):

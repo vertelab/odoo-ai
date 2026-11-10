@@ -68,9 +68,9 @@ class AICoworkerSession(models.Model):
                     name, self._table, columns))
 
     ai_task_id = fields.Many2one('ai.org.task', string='AI Task',
-        help='AI-org-uppgiften (ai.org.task) som denna session arbetar på. '
-             'Skapas automatiskt vid checkout. OBS: skilj från task_id '
-             '(project.task) som läggs av project_ai-bryggan.')
+        help='The AI org task (ai.org.task) this session works on. Created '
+             'automatically on checkout. NOTE: distinct from task_id '
+             '(project.task), which the project_ai bridge adds.')
 
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
 
@@ -85,9 +85,9 @@ class AICoworkerSession(models.Model):
     gateway_session_id = fields.Char(
         'Gateway Session ID', index=True, copy=False,
         default=lambda self: str(uuid.uuid4()),
-        help='Stabilt id som skickas som x-bf-session-id till gatewayen och '
-             'som gateway-loggen korreleras mot. Skiljt från `name` '
-             '(visningsetikett) — sätts en gång, skrivs aldrig över.')
+        help='Stable id sent as x-bf-session-id to the gateway and matched '
+             'against the gateway log. Distinct from `name` (display label) — '
+             'set once, never overwritten.')
 
     coworker_id = fields.Many2one('ai.coworker', string='Coworker', ondelete='cascade',
         index=True)
@@ -115,37 +115,120 @@ class AICoworkerSession(models.Model):
         ('manual', 'Manual'),
         ('webhook', 'Webhook'),
         ('openai_api', 'Externt API (/ai/v1)'),
-        ('watch', 'Watch — Dataändring'),
-        ('heartbeat', 'Heartbeat — Proaktiv'),
+        ('watch', 'Watch — Data Change'),
+        ('heartbeat', 'Heartbeat — Proactive'),
     ], string='Start via', index=True, readonly=True, tracking=True,
-        help='Hur sessionen startades (kanal/källa). Fylls vid sessionens '
-             'skapande där källan är känd.')
+        help='How the session was started (channel/source). Filled when the '
+             'session is created, where the source is known.')
+
+    # ── Livscykel (session-observability) ───────────────────────────────
+    # `init_type` säger VILKEN yta som startade sessionen (kanal/källa).
+    # `start_reason` säger VARFÖR just den här sessionen skapades — Pi:s
+    # `session_start` bär `startup|new|resume|fork`, och det är skillnaden
+    # mellan en färsk konversation och en återupptagen som gör statistiken
+    # meningsfull. Fälten kompletterar varandra; ingen ersätter den andra.
+    start_reason = fields.Selection([
+        ('startup', 'Startup'),
+        ('new', 'New Session'),
+        ('resume', 'Resume'),
+        ('fork', 'Fork'),
+        ('api', 'API'),
+        ('cron', 'Scheduled'),
+        ('mail', 'Incoming Mail'),
+        ('webhook', 'Webhook'),
+        ('heartbeat', 'Heartbeat'),
+        ('manual', 'Manual'),
+    ], string='Start Reason', index=True, readonly=True,
+        help='Why this session was created. Distinct from init_type, which '
+             'says which surface started it.')
+
+    # Sessionens körplats (session-machine): namnet på den maskin som ägde
+    # körningen. Två källor och ingen gissning — Pi-vägen skickar Pi-processens
+    # hostname i request-body:n (`machine`), lokala vägar (web_ui, cron, mail,
+    # watch …) sätter `Odoo` eftersom sessionen skapades inuti Odoo.
+    # Indexerat: grupperingen "per maskin" ska vara billig. Sätts vid skapande
+    # och skrivs aldrig över av en resume — en handover rör inte ursprunget.
+    machine = fields.Char(
+        'Machine', index=True, readonly=True, copy=False,
+        help='Where the session ran: the Pi host name when Pi owns the run, '
+             'otherwise "Odoo" (created inside Odoo). Empty on sessions '
+             'created before the field existed — never guessed.')
+
+    close_event_ids = fields.One2many(
+        'ai.coworker.session.close_event', 'session_id',
+        string='Close Events',
+        help='Every closure of this session, oldest first. A session may be '
+             'closed and reopened many times; each closure is its own row.')
+    close_event_count = fields.Integer(
+        'Closures', compute='_compute_close_event_count', store=False)
+    last_close_reason = fields.Selection(
+        related='close_event_ids.reason', string='Last Close Reason',
+        readonly=True,
+        help='Why the session was closed most recently. The full history is '
+             'in the close events.')
+    last_close_at = fields.Datetime(
+        related='close_event_ids.at', string='Last Closed',
+        readonly=True)
+
+    # ── Spår-översikt (session-observability) ────────────────────────────
+    # Räknare för sessionens formulär. De läser spår-tabellerna, inte
+    # `line`, och påverkar därför ingen budget.
+    agent_run_ids = fields.One2many(
+        'ai.coworker.session.agent_run', 'session_id',
+        string='Agent Runs', readonly=True)
+    tool_call_ids = fields.One2many(
+        'ai.coworker.session.tool_call', 'session_id',
+        string='Tool Calls', readonly=True)
+    agent_run_count = fields.Integer(
+        'Agent Runs', compute='_compute_trace_counts', store=False)
+    tool_call_count = fields.Integer(
+        'Tool Calls', compute='_compute_trace_counts', store=False)
+    tool_error_count = fields.Integer(
+        'Tool Errors', compute='_compute_trace_counts', store=False)
+    trace_agent_count = fields.Integer(
+        'Agents', compute='_compute_trace_counts', store=False)
+
+    @api.depends('close_event_ids', 'close_event_ids.at')
+    def _compute_close_event_count(self):
+        for rec in self:
+            rec.close_event_count = len(rec.close_event_ids)
+
+    @api.depends('agent_run_ids', 'tool_call_ids', 'tool_call_ids.is_error')
+    def _compute_trace_counts(self):
+        for rec in self:
+            rec.agent_run_count = len(rec.agent_run_ids)
+            rec.tool_call_count = len(rec.tool_call_ids)
+            rec.tool_error_count = len(
+                rec.tool_call_ids.filtered('is_error'))
+            rec.trace_agent_count = len(
+                rec.agent_run_ids.mapped('agent_id'))
     user_rating = fields.Selection([
-        ('down', 'Missnöjd'),
+        ('down', 'Unsatisfied'),
         ('neutral', 'Neutral'),
-        ('up', 'Nöjd'),
-        ('unassessed', 'Ej bedömd'),
-    ], string='Användarbedömning', default='unassessed',
-        help='Användarens subjektiva bedömning av svaret (feedback för att '
-             'förbättra coworkern över tid).')
-    error_detail = fields.Text('Felbeskrivning', readonly=True,
-        help='Fylls när sessionen avslutas med status error-ish (undantagsmeddelande '
-             'för felsökning och analys).')
+        ('up', 'Satisfied'),
+        ('unassessed', 'Not assessed'),
+    ], string='User Rating', default='unassessed',
+        help='The user subjective assessment of the answer (feedback for '
+             'improving the coworker over time).')
+    error_detail = fields.Text('Error Description', readonly=True,
+        help='Filled when the session ends with an error-ish status (the '
+             'exception message, for troubleshooting and analysis).')
 
     # ── Extern körning (external-agent-runtime D6/D10) ───────────────
     # Mätpunkten: varje extern körning loggar PID, minne, starttid och
     # varaktighet. Tröskeln för samtidighet är EMPIRISK och sätts inte nu —
     # men ska kunna avläsas ur dessa fält när frågan uppstår.
-    external_pid = fields.Integer('Extern PID', readonly=True,
-        help='PID för den externa agent-processen (om runtime=external).')
-    external_port = fields.Integer('Extern port', readonly=True)
-    external_started_at = fields.Datetime('Extern starttid', readonly=True)
-    external_rss_kb = fields.Integer('Extern RSS (kB)', readonly=True,
-        help='Processens RSS vid dispatch — mätpunkten för minnesprofilen.')
-    external_spawn_time = fields.Float('Spawn-tid (s)', readonly=True,
-        help='Kall start-tid i sekunder (D9: ska vara under ~1 s).')
-    external_duration = fields.Float('Varaktighet (s)', readonly=True,
-        help='Körningens varaktighet i sekunder.')
+    external_pid = fields.Integer('External PID', readonly=True,
+        help='PID of the external agent process (when runtime=external).')
+    external_port = fields.Integer('External Port', readonly=True)
+    external_started_at = fields.Datetime('External Start Time', readonly=True)
+    external_rss_kb = fields.Integer('External RSS (kB)', readonly=True,
+        help='The process RSS at dispatch — the measurement point for the '
+             'memory profile.')
+    external_spawn_time = fields.Float('Spawn Time (s)', readonly=True,
+        help='Cold start time in seconds (D9: should be under ~1 s).')
+    external_duration = fields.Float('Duration (s)', readonly=True,
+        help='The duration of the run, in seconds.')
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -199,9 +282,9 @@ class AICoworkerSession(models.Model):
             'external_duration': self._external_elapsed(),
             'status': 'error' if not gone else 'done',
             'error_detail': False if gone else
-                'Extern process %s kunde inte dödas.' % self.external_pid,
+                'External process %s could not be killed.' % self.external_pid,
         })
-        _logger.info('session %s: avbröt extern pid %s (borta=%s)',
+        _logger.info('session %s: aborted external pid %s (gone=%s)',
                      self.name, self.external_pid, gone)
         return gone
 
@@ -247,7 +330,7 @@ class AICoworkerSession(models.Model):
         """
         if period not in self.SESSION_PERIODS:
             raise ValueError(
-                'Okänd sessionsperiod %r (giltiga: %s)'
+                'Unknown session period %r (valid: %s)'
                 % (period, ', '.join(self.SESSION_PERIODS)))
         today = date.today()
         if period == 'all':
@@ -273,11 +356,16 @@ class AICoworkerSession(models.Model):
     # 0 för modulen), så etiketten blev "Oct" i svensk UI. Ett
     # `Selection`-fält översätts via fältets jsonb-värde, som laddas av
     # moduluppgraderingen och bevisligen fungerar i drift.
+    #
+    # Fältet är KVAR sedan `_month_label()` togs bort
+    # (session-machine-and-filter 1.3): det är det enda som bär den fungerande
+    # fältöversättningen av månadsnamnen. `sv.po` har posterna, och en
+    # borttagning hade tyst tappat dem.
     month_label = fields.Selection([
         ('Jan', 'Jan'), ('Feb', 'Feb'), ('Mar', 'Mar'), ('Apr', 'Apr'),
         ('May', 'May'), ('Jun', 'Jun'), ('Jul', 'Jul'), ('Aug', 'Aug'),
         ('Sep', 'Sep'), ('Oct', 'Oct'), ('Nov', 'Nov'), ('Dec', 'Dec'),
-    ], string='Månad', compute='_compute_month_label')
+    ], string='Month', compute='_compute_month_label')
 
     def _compute_month_label(self):
         key = date.today().strftime('%b')
@@ -285,19 +373,6 @@ class AICoworkerSession(models.Model):
         value = key if key in valid else False
         for r in self:
             r.month_label = value
-
-    @api.model
-    def _month_label(self):
-        """Aktuellt månadsnamn för knappetiketten, t.ex. "okt".
-
-        Serverns tidszon (samma månad som `_session_period_start`
-        beräknar). Översättningen hämtas ur `month_label`-fältets
-        `Selection` — fältöversättning fungerar i drift där kodtermer inte
-        gör det (se kommentaren ovan).
-        """
-        key = date.today().strftime('%b')
-        field = self._fields['month_label']
-        return dict(field._description_selection(self.env)).get(key, key)
 
     @api.model
     def _session_domain(self, coworker_id, period='all'):
@@ -359,7 +434,7 @@ class AICoworkerSession(models.Model):
                 sess._finalize_external_run()
                 reaped += 1
                 _logger.warning(
-                    'extern städning: dödade föräldralös pid %s '
+                    'external cleanup: killed orphan pid %s '
                     '(session %s, status %s)',
                     sess.external_pid, sess.name, sess.status)
             elif alive and sess.status in ('active', 'draft') \
@@ -369,31 +444,31 @@ class AICoworkerSession(models.Model):
                 sess._finalize_external_run()
                 sess.sudo().write({
                     'status': 'error',
-                    'error_detail': 'Extern körning överskred tidsgränsen '
+                    'error_detail': 'The external run exceeded the time limit '
                                     '(%.0f s > %.0f s).' %
                                     (sess._external_elapsed(), limit),
                 })
                 timed_out += 1
                 _logger.warning(
-                    'extern timeout: pid %s (session %s) körde %.0f s > '
-                    '%.0f s — avbruten',
+                    'external timeout: pid %s (session %s) ran %.0f s > '
+                    '%.0f s — aborted',
                     sess.external_pid, sess.name,
                     sess._external_elapsed(), limit)
             elif not alive and sess.status in ('active', 'draft'):
                 sess._finalize_external_run()
                 sess.sudo().write({
                     'status': 'error',
-                    'error_detail': 'Extern process %s avslutades oväntat.'
+                    'error_detail': 'External process %s ended unexpectedly.'
                                     % sess.external_pid,
                 })
                 detected += 1
                 _logger.warning(
-                    'extern livs-heartbeat: pid %s är död men session %s '
-                    'är %s — markerad error',
+                    'external liveness heartbeat: pid %s is dead but session %s '
+                    'is %s — marked error',
                     sess.external_pid, sess.name, sess.status)
         if reaped or detected or timed_out:
-            _logger.info('extern städning: %d föräldralösa dödade, %d '
-                         'döda upptäckta, %d timeouts',
+            _logger.info('external cleanup: %d orphans killed, %d '
+                         'dead detected, %d timeouts',
                          reaped, detected, timed_out)
         return {'reaped': reaped, 'detected': detected,
                 'timed_out': timed_out}
@@ -405,17 +480,17 @@ class AICoworkerSession(models.Model):
     # transaktion (t.ex. mail-routning).
     watch_pending = fields.Boolean(
         'Watch Pending', default=False, index=True,
-        help='Satt av _trigger_watch — sessionen väntar på asynkron '
-             'bearbetning av cron (_process_watch_sessions).')
+        help='Set by _trigger_watch — the session waits for asynchronous '
+             'processing by cron (_process_watch_sessions).')
     watch_prompt = fields.Text(
         'Watch Prompt',
-        help='Prompt som genererades vid watch-trigger — körs av cron.')
+        help='Prompt generated by the watch trigger — run by cron.')
     watch_model = fields.Char(
         'Watch Model',
-        help='Modellnamn (record._name) som triggade watchen.')
+        help='Model name (record._name) that triggered the watch.')
     watch_res_id = fields.Integer(
         'Watch Record ID',
-        help='Record-id som triggade watchen.')
+        help='Record id that triggered the watch.')
 
     # ── Heartbeat-kö (bevakning-over-tid D1/D2) ──────────────────────
     # Samma mönster som watch: väckaren skapar sessionen och returnerar,
@@ -423,12 +498,12 @@ class AICoworkerSession(models.Model):
     # efter köning körs ändå den prompt som gällde när den köades.
     heartbeat_pending = fields.Boolean(
         'Heartbeat Pending', default=False, index=True,
-        help='Satt av _heartbeat-väckaren — sessionen väntar på asynkron '
-             'bearbetning av cron (_process_heartbeat_sessions).')
+        help='Set by the _heartbeat waker — the session waits for asynchronous '
+             'processing by cron (_process_heartbeat_sessions).')
     job_prompt = fields.Text(
         'Job Prompt',
-        help='Prompten som byggdes ur uppgiften vid köning — fryst, körs av '
-             'processorn. Samma roll som watch_prompt men för heartbeat/cron.')
+        help='The prompt built from the task when queued — frozen, run by the '
+             'processor. Same role as watch_prompt but for heartbeat/cron.')
 
     config_json = fields.Text('Configuration')
     history_json = fields.Text('Message History')
@@ -436,17 +511,18 @@ class AICoworkerSession(models.Model):
     # Buzz session summary (change ai-orchestration-tidy-up 7.4)
     summary = fields.Text(
         'Session Summary',
-        help='LLM-genererad sammanfattning av konversationen — injiceras som '
-             'kontext till nya agenter när tröskeln passeras.')
+        help='LLM-generated summary of the conversation — injected as context '
+             'for new agents once the threshold is passed.')
     summary_message_count = fields.Integer(
         'Summary Message Count', default=0,
-        help='Antal meddelanden vid senaste sammanfattningen.')
+        help='Number of messages at the last summary.')
 
     memory_extracted = fields.Boolean(
         'Memory Extracted', default=False,
-        help='Har sessionens erfarenhet extraherats till personligt minne? '
-             'Gör bron idempotent — eftermälet kan anropas från flera håll '
-             '(mark_done, idle-cron, buzz) utan dubbla LLM-anrop.')
+        help='Has the session experience been extracted to personal memory? '
+             'Makes the bridge idempotent — the aftermath can be called from '
+             'several places (mark_done, idle cron, buzz) without duplicate '
+             'LLM calls.')
 
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
@@ -467,33 +543,32 @@ class AICoworkerSession(models.Model):
     # bryggor (project_ai) via arv.
     pi_session_id = fields.Char(
         'Pi Session ID', index=True,
-        help='Pi-sessionens UUID (1:1 mot Pi-sessionen). Resumé av samma '
-             'Pi-session återfinner samma Odoo-session. Vid handover byts '
-             'fältet till den NYA innehavaren — historiken finns i '
-             'pi_session_ids.')
+        help='The Pi session UUID (1:1 with the Pi session). Resuming the same '
+             'Pi session finds the same Odoo session. On handover the field '
+             'switches to the NEW holder — the history is in pi_session_ids.')
     pi_session_ids = fields.Char(
-        'Pi Sessions (historik)',
-        help='Komma-separerad lista av samtliga Pi-sessioners UUID som '
-             'arbetat i denna Odoo-session, i kronologisk ordning. '
-             'Append-only: den första är sessionens ursprung, den sista är '
-             'aktuell innehavare (samma som pi_session_id). Handover är det '
-             'enda fallet där två Pi-sessioner delar en Odoo-session.')
+        'Pi Sessions (history)',
+        help='Comma-separated list of every Pi session UUID that has worked in '
+             'this Odoo session, in chronological order. Append-only: the '
+             'first is the origin, the last is the current holder (same as '
+             'pi_session_id). Handover is the only case where two Pi sessions '
+             'share one Odoo session.')
     pi_message_count = fields.Integer(
         'Pi Messages Persisted', default=0, copy=False,
-        help='Antal poster i Pi-klientens messages[] som redan sparats som '
-             'session lines. Pi skickar HELA historiken varje anrop; denna '
-             'räknare gör att endast NYA meddelanden persisteras (en line '
-             'per messages[]-post, ingen duplicering).')
+        help='How many entries in the Pi client messages[] are already stored '
+             'as session lines. Pi sends the WHOLE history on every call; '
+             'this counter means only NEW messages are persisted (one line '
+             'per messages[] entry, no duplication).')
     partner_id = fields.Many2one(
-        'res.partner', string='Kund', index=True,
-        help='Kund (res.partner) som sessionens kostnad belastar. Härleds '
-             'normalt från projektets partner via coworkerns '
-             'kostnadskontext-strategi.')
+        'res.partner', string='Customer', index=True,
+        help='The customer (res.partner) the session cost is charged to. '
+             'Normally derived from the project partner via the coworker '
+             'cost context strategy.')
     cost_context_confirmed = fields.Boolean(
-        'Kostnadskontext bekräftad', default=False,
-        help='Sätts när kostnadsbelastningen bekräftats (en gång per '
-             'session). Redan bekräftad session frågar inte om igen '
-             '(inte heller efter resume/fork-kopiering).')
+        'Cost Context Confirmed', default=False,
+        help='Set once the cost attribution is confirmed (once per session). An '
+             'already confirmed session does not ask again (not even after a '
+             'resume/fork copy).')
 
     # ── Handover (pi-session-handover) ──────────────────────────────────
     # En användare avbryter en session på en dator och fortsätter på en
@@ -510,34 +585,35 @@ class AICoworkerSession(models.Model):
     #                       Se _handover_suggestions().
     handover_state = fields.Selection([
         ('none', 'Ingen'),
-        ('offered', 'Erbjuden — väntar på att hämtas'),
-        ('claimed', 'Övertagen — arbetas i'),
-        ('done', 'Infriad'),
+        ('offered', 'Offered — waiting to be claimed'),
+        ('claimed', 'Claimed — being worked on'),
+        ('done', 'Fulfilled'),
     ], string='Handover', default='none', index=True, tracking=True,
-        help='Explicit handover: none → offered → claimed → done. '
-             'En offered handover är ett löfte och städas aldrig av cron.')
+        help='Explicit handover: none -> offered -> claimed -> done. An offered '
+             'handover is a promise and is never cleaned up by cron.')
     handover_note = fields.Text(
-        'Handover-anteckning',
-        help='Vad som beslutats och vad som väntar ("nästa: fixa certet på '
-             'gw1"). Skrivs av användaren, eller härleds ur eftermälet med '
-             '--auto. Injiceras som första kontext när sessionen claimas.')
+        'Handover Note',
+        help='What was decided and what is pending ("next: fix the cert on '
+             'gw1"). Written by the user, or derived from the aftermath with '
+             '--auto. Injected as the first context when the session is '
+             'claimed.')
     handover_mode = fields.Selection([
-        ('note', 'Anteckning — friskt sammanhang'),
-        ('full', 'Full — verktygsspåret tillgängligt'),
-    ], string='Handover-läge', default='note',
-        help='note: anteckningen injiceras som första kontext (litet '
-             'kontextfönster). full: hela transkriptet finns tillgängligt '
-             '+ anteckningen — nödvändigt när arbetet var "mitt-i-handen" '
-             '(halvfärdiga kommandon, felsökning).')
-    handover_at = fields.Datetime('Handover begärd', readonly=True)
+        ('note', 'Note — fresh context'),
+        ('full', 'Full — the tool trace is available'),
+    ], string='Handover Mode', default='note',
+        help='note: the note is injected as the first context (small context '
+             'window). full: the whole transcript is available plus the note — '
+             'needed when the work was mid-flight (half-finished commands, '
+             'debugging).')
+    handover_at = fields.Datetime('Handover Requested', readonly=True)
     handover_by = fields.Many2one(
-        'res.users', string='Handover av', readonly=True, index=True,
-        help='Användaren som begärde handovern. Handover sker alltid inom '
-             'samma användare — att lämna över till en annan person är '
-             'delegering, inte handover.')
+        'res.users', string='Handover By', readonly=True, index=True,
+        help='The user who requested the handover. Handover always happens '
+             'within the same user — handing over to another person is '
+             'delegation, not handover.')
     handover_claimed_by = fields.Many2one(
-        'res.users', string='Övertagen av', readonly=True, index=True)
-    handover_claimed_at = fields.Datetime('Övertagen', readonly=True)
+        'res.users', string='Claimed By', readonly=True, index=True)
+    handover_claimed_at = fields.Datetime('Claimed', readonly=True)
 
     # ── Sessionsnamn (session-title A→B→C) ──────────────────────────────
     # Namnet är det som visas i Pi:s /resume-lista och i Odoo:s trådvy.
@@ -548,13 +624,13 @@ class AICoworkerSession(models.Model):
     # title_source spårar vilket steg som senast satte namnet, så ett senare
     # steg kan uppgradera men aldrig ETT TIDIGARE steg skriva över ett senare.
     title_source = fields.Selection([
-        ('prompt', 'Första prompten'),
+        ('prompt', 'First Prompt'),
         ('llm', 'LLM-genererad mening'),
-        ('summary', 'Eftermälet'),
-        ('manual', 'Manuellt satt'),
-    ], string='Namnkälla', index=True, readonly=True,
-        help='Vilket steg som senast satte sessionens namn. Styr vilka '
-             'senare steg som får skriva över det (prompt < llm < summary).')
+        ('summary', 'Aftermath'),
+        ('manual', 'Set manually'),
+    ], string='Name Source', index=True, readonly=True,
+        help='Which step last set the session name. Controls which later steps '
+             'may overwrite it (prompt < llm < summary).')
 
     # ── Rekordkontext (ai-coworker-record-context) ──────────────────────
     # Vilken record — eller vilken markering — gällde DENNA tur. Fälten
@@ -569,34 +645,34 @@ class AICoworkerSession(models.Model):
     # återanvända dem för en record kraschar HITL och tystar minnena.
     ai_record_model = fields.Char(
         'Record Model', index=True,
-        help='Tekniskt modellnamn för den record (eller markeringens '
-             'modell) som denna tur gällde.')
+        help='Technical model name for the record (or the selection model) '
+             'this turn applied to.')
     ai_record_id = fields.Integer(
         'Record ID',
-        help='Id för den enskilda record turen gällde (form-vyn). '
-             'Tom när turen gällde en markering — se ai_record_ids.')
+        help='Id of the single record the turn applied to (form view). Empty '
+             'when the turn applied to a selection — see ai_record_ids.')
     ai_record_ids = fields.Json(
         'Record IDs',
-        help='Lista av id:n för den markering turen gällde (list-vyn). '
-             'Samma mönster som server actions records.ids.')
+        help='List of ids for the selection the turn applied to (list view). '
+             'Same pattern as server actions records.ids.')
     ai_record_json = fields.Text(
         'Record Fields',
-        help='Serialiserade fält för den enskilda recorden (singular). '
-             'Föredrar frontendens fältvärden när de finns — de bär '
-             'osparade ändringar.')
+        help='Serialized fields for the single record (singular). Prefers the '
+             'frontend field values when present — they carry unsaved '
+             'changes.')
     ai_records_json = fields.Text(
         'Records Fields',
-        help='Serialiserade fält för markeringen (plural). Fältprojektion: '
-             'list-vyns kolumner när frontend skickar dem, annars en fast '
-             'projektion (id, display_name, _rec_name).')
+        help='Serialized fields for the selection (plural). Field projection: '
+             'the list view columns when the frontend sends them, otherwise a '
+             'fixed projection (id, display_name, _rec_name).')
     ai_record_chatter = fields.Text(
         'Record Chatter',
-        help='Chatter-historik för den enskilda recorden. Utesluts som '
-             'default för samlingar — 35 records x 20 meddelanden spränger '
-             'prompten (R7).')
+        help='Chatter history for the single record. Excluded by default for '
+             'collections — 35 records x 20 messages blows up the prompt '
+             '(R7).')
     ai_record_count = fields.Integer(
         'Record Count', compute='_compute_ai_record_count', store=False,
-        help='Antal id:n i markeringen (0 för singular).')
+        help='Number of ids in the selection (0 for singular).')
 
     @api.depends('ai_record_ids')
     def _compute_ai_record_count(self):
@@ -637,7 +713,7 @@ class AICoworkerSession(models.Model):
                 vals['ai_record_json'] = record._ai_serialize_fields_data()
             except Exception as e:
                 _logger.warning(
-                    'session %s: fältserialisering misslyckades: %s',
+                    'session %s: field serialisation failed: %s',
                     self.id, e)
         # Chatter (singular tillåter den).
         if chatter is not None:
@@ -653,12 +729,12 @@ class AICoworkerSession(models.Model):
         try:
             self.sudo().write(vals)
             _logger.info(
-                'session %s: rekordkontext satt — %s#%s (källa: %s)',
+                'session %s: record context set — %s#%s (source: %s)',
                 self.id, record._name, record.id,
                 'frontend' if front_end_info else 'backend')
         except Exception as e:
             _logger.warning(
-                'session %s: kunde inte sätta rekordkontext: %s', self.id, e)
+                'session %s: could not set record context: %s', self.id, e)
         return self
 
     def _set_records_context(self, records, fields=None,
@@ -696,7 +772,7 @@ class AICoworkerSession(models.Model):
             data = recs.read(fields)
         except Exception as e:
             _logger.warning(
-                'session %s: kunde inte läsa markeringen: %s', self.id, e)
+                'session %s: could not read the selection: %s', self.id, e)
             return self
         vals = {
             'ai_record_model': model,
@@ -713,17 +789,17 @@ class AICoworkerSession(models.Model):
                     r._ai_serialize_messages_data() for r in recs)
             except Exception as e:
                 _logger.warning(
-                    'session %s: chatter för markering misslyckades: %s',
+                    'session %s: chatter for the selection failed: %s',
                     self.id, e)
         try:
             self.sudo().write(vals)
             _logger.info(
                 'session %s: markering satt — %s x%d%s',
                 self.id, model, len(all_ids),
-                ' (TRUNKERAD från %d)' % len(records) if truncated else '')
+                ' (TRUNCATED from %d)' % len(records) if truncated else '')
         except Exception as e:
             _logger.warning(
-                'session %s: kunde inte sätta markering: %s', self.id, e)
+                'session %s: could not set the selection: %s', self.id, e)
         return self
 
     def _session_capture_context(self):
@@ -774,7 +850,8 @@ class AICoworkerSession(models.Model):
     @api.model
     def _lookup_or_create_pi_session(self, pi_session_id,
                                      copy_from_pi_session_id='',
-                                     prompt=''):
+                                     prompt='', start_reason='',
+                                     machine=''):
         """Find-or-create session via pi_session_id (session-cost-context).
 
         Används av POST /ai/v1/sessions/lookup och openai_api-vägen.
@@ -789,9 +866,15 @@ class AICoworkerSession(models.Model):
         Pi:s /resume-lista. Saknas prompt faller vi tillbaka på det gamla
         beteendet — en session utan namn är bättre än en krasch.
 
+        `machine` är sessionens körplats (session-machine): Pi-processens
+        hostname när Pi äger körningen, annars `Odoo`. Sätts vid skapande och
+        fyller bara ett TOMT fält vid resume — en handover rör inte
+        ursprunget.
+
         Returnerar (session, created: bool).
         """
         pi_session_id = (pi_session_id or '').strip().lower()
+        machine = (machine or '').strip()[:64] or 'Odoo'
         session = self.search(
             [('pi_session_id', '=', pi_session_id)], limit=1)
         if session:
@@ -800,13 +883,32 @@ class AICoworkerSession(models.Model):
             # _maybe_set_title avgör).
             if prompt:
                 session._maybe_set_title(prompt, source='prompt')
+            # En stängd session som återupptas ska bli aktiv igen — annars
+            # ser den ut att vara avslutad samtidigt som den tar emot turer
+            # (session-observability).
+            session._reopen_if_closed(reason='resume')
+            # Äldre session utan maskin får den av en ny tur — men ett satt
+            # värde skrivs aldrig över (resume/handover bevarar ursprunget).
+            session._fill_machine(machine)
             return session, False
         title = self._clean_title(prompt) if prompt else ''
         vals = {
             'pi_session_id': pi_session_id,
             'status': 'active',
             'init_type': 'openai_api',
-            'name': title or pi_session_id[:8],
+            'machine': machine,
+            # Klientens `session_start.reason` (session-observability).
+            # Default `api`: vägen hit är alltid ett API-anrop, och `fork`
+            # sätts av anroparen när kontexten kopieras.
+            'start_reason': start_reason or (
+                'fork' if copy_from_pi_session_id else 'api'),
+            # Fallback när prompt saknas eller inte ger ett namn
+            # (chat-session-limits-and-names D4): ett läsbart namn, inte ett
+            # uuid-fragment. `pi_session_id[:8]` gav trådnamn som `01a1ac59`
+            # — 1 305 sessioner i drift hade det. Ett id-baserat namn är bara
+            # sista utväg när det inte finns något att bygga ur.
+            'name': title or ('API-session ' + pi_session_id[:8]
+                              if pi_session_id else 'API-session'),
             'title_source': 'prompt' if title else False,
             'user_id': self.env.user.id,
         }
@@ -1052,8 +1154,8 @@ class AICoworkerSession(models.Model):
         # session-history-relevance 2.3: logga urvalet så beteendet går att
         # följa i drift (hur många turer som behölls/uteslöts).
         _logger.info(
-            'session %s: historikurval %s/%s turer, %s/%s meddelanden '
-            '(fråga: %s tecken)',
+            'session %s: history selection %s/%s turns, %s/%s messages '
+            '(question: %s characters)',
             self.id, len(selected), len(turns), len(result), len(history),
             len(query or ''))
         return result
@@ -1085,12 +1187,12 @@ class AICoworkerSession(models.Model):
         stored = int(self.pi_message_count or 0)
         if stored > actual:
             _logger.info(
-                'session %s: pi_message_count %s > %s rader — kursorn lämnas '
-                '(hash-dedup bär sanningen)', self.id, stored, actual)
+                'session %s: pi_message_count %s > %s lines — cursor left '
+                'alone (hash dedup holds the truth)', self.id, stored, actual)
         if stored < actual:
             _logger.debug(
-                'session %s: pi_message_count %s < %s rader (delta-kursor, '
-                'förväntat vid direkt-skrivna rader)', self.id, stored,
+                'session %s: pi_message_count %s < %s lines (delta cursor, '
+                'expected for directly written lines)', self.id, stored,
                 actual)
         return stored
 
@@ -1131,6 +1233,52 @@ class AICoworkerSession(models.Model):
         if (role == 'assistant' and last and last.role == 'assistant'
                 and (last.content or '') == (content or '')):
             return Line.browse(0)
+        # Serverns rad vinner när DEN redan skrivit turens assistantsvar
+        # (webui-show-work-again 5.3). Sedan `_persist_stream_answer` började
+        # skriva källor, debug och verktygsanrop (5.1) är serverns rad den
+        # fullständiga — klientens POST är en berikning som ofta kommer med
+        # ett annat `content` (t.ex. tomt svar mot `(inget svar)`) och därför
+        # INTE fångas av jämförelsen ovan. Utan den här grinden blev det en
+        # andra assistant-rad för samma tur: arbetet dubblerat, och trådvyn
+        # visade två svar.
+        #
+        # MEN grinden får inte svälja ett GENUINT annat svar: `_save_client_
+        # response` används även för att appenda ett nyare svar (test 6.3 i
+        # webui-token-display). Skillnaden är turens EGEN POST kontra en
+        # separat post: klientens POST för SAMMA tur skickar serverns `content`
+        # eller en tom sträng (den POST:ar bara berikningen), medan ett annat
+        # svar har eget innehåll som skiljer sig från serverns rad.
+        #
+        # Regeln: berika bara när POST:ens `content` är tomt eller ryms i
+        # serverns rad. Annars är det ett nytt svar och ska appendas.
+        _server_content = (last.content or '').strip() if (
+            last and last.role == 'assistant') else ''
+        _post_content = (content or '').strip()
+        _same_turn = (not _post_content) or (
+            bool(_server_content) and (
+                _post_content == _server_content
+                or _post_content in _server_content
+                or _server_content in _post_content))
+        if (role == 'assistant' and last and last.role == 'assistant'
+                and last.usage_reported and _same_turn):
+            updates = {}
+            # Berika bara tomma fält — skriv aldrig över med tomt.
+            for fname, value in (
+                    ('debug_info', debug_info),
+                    ('source_urls', source_urls),
+                    ('tool_calls', tool_calls)):
+                if value and not (getattr(last, fname) or '').strip():
+                    updates[fname] = value
+            if updates:
+                try:
+                    # `write()` nekar metadatafälten (append-only-skyddet,
+                    # _IMMUTABLE_FIELDS). `_enrich_from_client` är den enda
+                    # legitima vägen: den rör bara tomma metadatafält och
+                    # kan aldrig skriva över serverns värden.
+                    last.sudo()._enrich_from_client(updates)
+                except Exception:
+                    pass  # best-effort: berikningen får inte fälla turen
+            return Line.browse(0)
         # Servern äger bokföringen: en redan mätt assistant-rad får inte
         # skrivas om med klientens (potentiellt dubbelräknade) siffror.
         if (role == 'assistant' and last and last.role == 'assistant'
@@ -1165,7 +1313,8 @@ class AICoworkerSession(models.Model):
     @api.model
     def _find_or_create_coworker_session(self, coworker_id, user_id,
                                          pi_session_id='', session_id=0,
-                                         prompt='', idle_minutes=20):
+                                         prompt='', idle_minutes=20,
+                                         machine=''):
         """Find-or-create en coworker-session (1:1 mot Pi-sessionen).
 
         Prioritet:
@@ -1185,8 +1334,14 @@ class AICoworkerSession(models.Model):
         1:1-kopplingen). Fallbacken är alltså reserverad för klienter som
         inte har något Pi-id alls.
 
+        `machine` är sessionens körplats (session-machine): Pi-processens
+        hostname när Pi äger körningen, `Odoo` när sessionen skapas inuti
+        Odoo. Sätts vid skapande och fyller bara ett TOMT fält vid
+        återupptagning.
+
         Returnerar (session, created: bool).
         """
+        machine = (machine or '').strip()[:64] or 'Odoo'
         session = self.browse(0)
         if session_id:
             session = self.browse(int(session_id))
@@ -1202,21 +1357,26 @@ class AICoworkerSession(models.Model):
                 # som openai_api så filtrering/statistik blir korrekt.
                 if not session.init_type:
                     session.sudo().write({'init_type': 'openai_api'})
+                # Stängd men återupptagen → aktiv igen (session-observability).
+                session._reopen_if_closed(reason='resume')
                 # Självläkning (kostnadskontext-injektion-stream 1.1): en
                 # session skapad via sessions-lookup bär ingen coworker
                 # (coworkern är inte vald vid Pi:s session_start). Utan
                 # backfill förblir sessionen permanent kontextlös och
                 # kostnadskontexten kan aldrig härledas.
                 session._backfill_coworker(coworker_id)
+                session._fill_machine(machine)
                 return session, False
             # pi_session_id skickat men okänt → NY session (ingen fallback).
             return self.create({
                 'coworker_id': coworker_id,
                 'status': 'active',
                 'init_type': 'openai_api',
+                'start_reason': 'api',
                 'name': (prompt or 'API')[:80],
                 'user_id': int(user_id or 0),
                 'pi_session_id': pi_session_id,
+                'machine': machine,
             }), True
         if not session and coworker_id:
             # Fallback (endast utan pi_session_id): fortsätt närmast nyligen
@@ -1231,14 +1391,40 @@ class AICoworkerSession(models.Model):
             ], limit=1, order='write_date desc')
         if session:
             session._backfill_coworker(coworker_id)
+            session._fill_machine(machine)
             return session, False
         return self.create({
             'coworker_id': coworker_id,
             'status': 'active',
             'init_type': 'openai_api',
+            'start_reason': 'api',
             'name': (prompt or 'API')[:80],
             'user_id': int(user_id or 0),
+            'machine': machine,
         }), True
+
+    def _fill_machine(self, machine):
+        """Sätt `machine` på en återfunnen session som saknar det.
+
+        Maskinen sätts vid skapande och skrivs aldrig över: en resume från
+        samma Pi behåller sitt värde och en handover till en annan maskin rör
+        inte ursprunget. Ett TOMT fält får däremot fyllas — en session skapad
+        före fältet fanns ska bli läsbar så snart en tur bär en maskin
+        (session-machine).
+
+        Skriver ENDAST när fältet är tomt. Tyst no-op vid fel — får aldrig
+        fälla en körning (samma mönster som `_backfill_coworker`).
+        """
+        self.ensure_one()
+        machine = (machine or '').strip()[:64]
+        if not machine or self.machine:
+            return self
+        try:
+            self.sudo().write({'machine': machine})
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte sätta machine: %s', self.id, e)
+        return self
 
     def _backfill_coworker(self, coworker_id):
         """Sätt coworker_id på en återfunnen session som saknar det.
@@ -1326,13 +1512,61 @@ class AICoworkerSession(models.Model):
         line = line.replace('**', '').replace('__', '')
         line = line.strip().strip('"\'“”‘’')
         # Rubrik-prefix som "Syfte:" eller "Titel:" hör inte i namnet.
+        #
+        # OBS (chat-session-limits-and-names): listan måste omfatta
+        # eftermälets EGNA rubriker — `SUMMARY_HEADINGS`. Utan dem strippades
+        # inte `Syfte:` alls, och `Syfte` utan kolon blev ett godkänt namn.
+        _prefix_words = (
+            'titel', 'title', 'subject', 'amne', 'subject', 'sammanfattning',
+            'syfte', 'utfall', 'beslut', 'fakta', 'artefakter')
         line = re.sub(
-            r'^(titel|title|ämne|amne|subject|sammanfattning)\s*:\s*',
+            r'^(%s)\s*:\s*' % '|'.join(_prefix_words),
             '', line, flags=re.IGNORECASE)
         line = re.sub(r'\s+', ' ', line).strip()
+        # Ett namn som BARA är ett rubrikord säger ingenting om sessionen
+        # (chat-session-limits-and-names D2). Eftermälet skriver `## Syfte`,
+        # och rubrikstrippningen ovan tar `##` men lämnar ordet kvar — vilket
+        # gav sessionsnamnet "Syfte". Returnera tomt: `_maybe_set_title`
+        # hanterar det och en starkare källa får sätta namnet i stället.
+        _headings = {h.lower() for h in self.SUMMARY_HEADINGS}
+        if line.rstrip(':').strip().lower() in _headings:
+            return ''
         if len(line) > max_chars:
             line = line[:max_chars].rstrip()
         return line
+
+    @api.model
+    def _title_from_summary(self, summary):
+        """Första meningsfulla meningen ur ett eftermäle (D3).
+
+        Eftermälet är strukturerat med fasta rubriker (`## Syfte`, `## Utfall`
+        …). Namnet ska beskriva sessionen, så vi hoppar rubriker, tomma rader
+        och rubrikord och tar första raden som bär innehåll.
+
+        Returnerar '' om inget användbart finns — `_maybe_set_title` hanterar
+        det och en starkare källa får sätta namnet.
+        """
+        if not summary:
+            return ''
+        headings = {h.lower() for h in self.SUMMARY_HEADINGS}
+        for raw in str(summary).splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            # Markdown-rubrik, listmarkör och fetstil bort.
+            line = re.sub(r'^#{1,6}\s*', '', line)
+            line = re.sub(r'^[-*•]\s+', '', line)
+            line = line.replace('**', '').replace('__', '').strip()
+            if not line:
+                continue
+            # Rubrikord (med eller utan kolon) hoppas över.
+            if line.rstrip(':').strip().lower() in headings:
+                continue
+            # En rad som bara är ett ord är oftast en etikett, inte en mening.
+            if len(line.split()) < 2:
+                continue
+            return line
+        return ''
 
     def _maybe_set_title(self, text, source='prompt', force=False):
         """Sätt sessionens namn om källan är starkare än nuvarande.
@@ -1356,7 +1590,7 @@ class AICoworkerSession(models.Model):
             return True
         except Exception as e:
             _logger.warning(
-                'session %s: kunde inte sätta namn (%s): %s',
+                'session %s: could not set the name (%s): %s',
                 self.id, source, e)
             return False
 
@@ -1391,11 +1625,11 @@ class AICoworkerSession(models.Model):
     def _title_prompt(self, transcript):
         """Prompt för namngenereringen — EN mening, på svenska."""
         return (
-            'Ge sessionen nedan ett namn på svenska. Svara med EXAKT en '
-            'mening, högst %d tecken, utan rubrik, utan citattecken och '
-            'utan avslutande punkt. Meningen ska beskriva vad sessionen '
-            'handlar om, inte vad som sades först.\n\n'
-            '--- KONVERSATION ---\n%s' % (self.TITLE_MAX_CHARS, transcript))
+            'Give the session below a name in Swedish. Answer with EXACTLY one '
+            'sentence, at most %d characters, with no heading, no quotation '
+            'marks and no trailing period. The sentence should describe what '
+            'the session is about, not what was said first.\n\n'
+            '--- CONVERSATION ---\n%s' % (self.TITLE_MAX_CHARS, transcript))
 
     def _run_title_llm(self, transcript):
         """Kör LLM-anropet för namnet. Returnerar str eller None.
@@ -1406,7 +1640,7 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                Message, ProviderFactory, _run_provider,
+                Message, ProviderFactory, Role, _run_provider,
                 get_default_provider, get_default_model_name)
             quest = self.coworker_id
             provider, model_rec = (
@@ -1419,7 +1653,7 @@ class AICoworkerSession(models.Model):
                 provider, model_rec = get_default_provider(self.env)
             if not provider:
                 _logger.warning(
-                    'Namn: ingen provider tillgänglig för session %s',
+                    'Name: no provider available for session %s',
                     self.id)
                 return None
             model_name = (model_rec and model_rec._get_api_name()) \
@@ -1437,7 +1671,7 @@ class AICoworkerSession(models.Model):
             result = _run_provider(
                 provider.chat(
                     model=model_name,
-                    messages=[Message(role='user',
+                    messages=[Message(role=Role.USER,
                                       content=self._title_prompt(transcript))],
                     max_tokens=512),
                 provider)
@@ -1450,14 +1684,14 @@ class AICoworkerSession(models.Model):
                 _is_error_answer)
             if _is_error_answer(text):
                 _logger.info(
-                    'Namn: modellen gav inget användbart svar för '
-                    'session %s (%r) — behåller nuvarande namn',
+                    'Name: the model gave no usable answer for '
+                    'session %s (%r) — keeping the current name',
                     self.id, text[:60])
                 return None
             return self._clean_title(text) or None
         except Exception as e:
             _logger.warning(
-                'Namn: generering misslyckades för session %s: %s',
+                'Name: generation failed for session %s: %s',
                 self.id, e)
             return None
 
@@ -1655,9 +1889,19 @@ class AICoworkerSession(models.Model):
                 except Exception:
                     pass  # best-effort: tyst fallback — se etiketteringsregeln
 
+            # Samma rollnormalisering som meddelandekonverteringen använder
+            # (`normalize_role_name`), så de två vägarna inte kan glida isär.
+            from odoo.addons.ai_agent_core.core.provider import (
+                normalize_role_name)
+
             # Index för sista nya user-/assistant-raden (token-bokföring).
             def _norm_role(m):
-                role = (m.get('role') or '').strip()
+                # Pi:s interna vokabulär: `toolResult` är en verktygsrad, inte
+                # en användartur (session-observability). Utan den här
+                # mappningen föll resultaten tillbaka på `user` nedan, och
+                # sessionen visade verktygets utdata som om användaren skrivit
+                # det — medan `tool_call_id` tappades.
+                role = normalize_role_name(m.get('role') or '')
                 if role == 'developer':
                     role = 'system'
                 if role not in ('user', 'assistant', 'tool', 'system'):
@@ -1756,8 +2000,15 @@ class AICoworkerSession(models.Model):
                 # namnet, och id:t slängdes — kommentaren sa till och med
                 # "spara som namn".
                 if role == 'tool':
-                    vals['tool_name'] = m.get('name') or ''
-                    vals['tool_call_id'] = m.get('tool_call_id') or ''
+                    # Pi:s egen post bär `toolCallId`/`toolName` (camelCase);
+                    # OpenAI-formatet bär `tool_call_id`/`name`. Läs båda —
+                    # annars tappas id:t på Pi-vägen och verktygsraden kan
+                    # inte paras med assistant-radens `tool_calls[].id`
+                    # (session-observability).
+                    vals['tool_name'] = (m.get('name')
+                                         or m.get('toolName') or '')
+                    vals['tool_call_id'] = (m.get('tool_call_id')
+                                            or m.get('toolCallId') or '')
                 if m.get('tool_calls'):
                     vals['tool_calls'] = json.dumps(
                         m.get('tool_calls'), ensure_ascii=False)
@@ -1845,19 +2096,20 @@ class AICoworkerSession(models.Model):
     # `bifrost_cost` är omätt (False) tills en cron sett gateway-rader.
     bifrost_cost = fields.Float(
         'Bifrost-kostnad (USD)',
-        help='Σ gateway-kostnad för sessionens anrop. Omätt = False.',
+        help='Sum of gateway cost for the session calls. Unmeasured = False.',
     )
     bifrost_retries = fields.Integer(
         'Bifrost-retries',
-        help='Σ number_of_retries över sessionens gateway-anrop.',
+        help='Sum of number_of_retries across the session gateway calls.',
     )
     bifrost_fallbacks = fields.Integer(
         'Bifrost-fallbacks',
-        help='Antal anrop där gatewayen bytte provider (fallback_index > 1).',
+        help='Number of calls where the gateway switched provider '
+             '(fallback_index > 1).',
     )
     bifrost_synced_at = fields.Datetime(
         'Bifrost synkad',
-        help='Tidpunkt för senaste aggregering från gateway-loggen.',
+        help='When the gateway log was last aggregated.',
     )
 
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user,
@@ -1867,9 +2119,9 @@ class AICoworkerSession(models.Model):
     # Mail-svar med dröjsmål (mail-trigger): svarstexten postas av cron
     # när reply_at passerats.
     pending_reply = fields.Text('Pendande mail-svar',
-        help='Svarstext som postas av cron efter svarsdröjsmålet.')
+        help='Reply text posted by cron after the reply delay.')
     reply_at = fields.Datetime('Svara efter',
-        help='Tidpunkt då det fördröjda svaret ska postas.')
+        help='When the delayed reply should be posted.')
 
     # Thread support — `name` är enda trådnamnet (thread_name borttaget).
     memory_ids = fields.One2many('ai.memory', 'session_id', string='Session Memories',
@@ -1885,7 +2137,7 @@ class AICoworkerSession(models.Model):
     hitl_ids = fields.One2many(
         'ai.coworker.hitl', 'session_id', string='HITL-requests')
     hitl_open_count = fields.Integer(
-        'Öppna HITL', compute='_compute_hitl_open_count')
+        'Open HITL', compute='_compute_hitl_open_count')
     active = fields.Boolean('Active', default=True)
 
     @api.depends('hitl_ids.state')
@@ -1918,6 +2170,43 @@ class AICoworkerSession(models.Model):
             'target': 'current',
             'domain': [('res_model', '=', 'ai.coworker.session'),
                        ('res_id', '=', self.id)],
+        }
+
+    # ── Spår-knappar (session-observability) ────────────────────────────
+
+    def action_open_agent_runs(self):
+        """Öppna sessionens agentkörningar."""
+        self.ensure_one()
+        return {
+            'name': _('Agent Runs'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.agent_run',
+            'view_mode': 'list,form',
+            'domain': [('session_id', '=', self.id)],
+            'context': {'default_session_id': self.id},
+        }
+
+    def action_open_tool_calls(self):
+        """Öppna sessionens verktygsanrop."""
+        self.ensure_one()
+        return {
+            'name': _('Tool Calls'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.tool_call',
+            'view_mode': 'list,form',
+            'domain': [('session_id', '=', self.id)],
+            'context': {'default_session_id': self.id},
+        }
+
+    def action_open_close_events(self):
+        """Öppna sessionens stängningshistorik."""
+        self.ensure_one()
+        return {
+            'name': _('Close Events'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.close_event',
+            'view_mode': 'list',
+            'domain': [('session_id', '=', self.id)],
         }
 
     def action_open_hitl(self):
@@ -1977,15 +2266,16 @@ class AICoworkerSession(models.Model):
             [('source_session_id', '=', self.id)], limit=1)
         if existing:
             raise ValidationError(_(
-                'Sessionen är redan befordrad till testfall "%(case)s".',
+                'The session is already promoted to test case "%(case)s".',
                 case=existing.display_name or existing.id))
 
         first_user_line = self.session_line_ids.filtered(
             lambda line: line.role == 'user').sorted('sequence')[:1]
         if not first_user_line:
             raise ValidationError(_(
-                'Sessionen saknar en user-rad — det finns ingen prompt att '
-                'befordra. En session utan fråga kan inte bli ett testfall.'))
+                'The session has no user line — there is no prompt to '
+                'promote. A session without a question cannot become a test '
+                'case.'))
 
         case = self.env['ai.eval.case'].create({
             'coworker_id': self.coworker_id.id,
@@ -2045,7 +2335,7 @@ class AICoworkerSession(models.Model):
 
     SUMMARY_HEADINGS = (
         'Syfte', 'Utfall', 'Beslut', 'Fakta', 'Artefakter',
-        'Öppna frågor',
+        'Open questions',
     )
 
     def _final_summary_prompt(self, transcript):
@@ -2057,12 +2347,12 @@ class AICoworkerSession(models.Model):
         """
         headings = '\n'.join('### %s' % h for h in self.SUMMARY_HEADINGS)
         return (
-            'Sammanfatta sessionen nedan på svenska. Använd exakt dessa '
-            'rubriker och inga andra:\n\n%s\n\n'
-            'Utelämna en rubrik helt om avsnittet inte har något innehåll — '
-            'skriv aldrig påhittat innehåll för att fylla ut. Var koncis men '
-            'komplett: fakta, beslut och öppna frågor är det som spelar roll.\n\n'
-            '--- KONVERSATION ---\n%s' % (headings, transcript))
+            'Summarise the session below in Swedish. Use exactly these headings '
+            'and no others:\n\n%s\n\n'
+            'Omit a heading entirely if the section has no content — never '
+            'write invented content to fill it out. Be concise but complete: '
+            'facts, decisions and open questions are what matter.\n\n'
+            '--- CONVERSATION ---\n%s' % (headings, transcript))
 
     def _final_summary_transcript(self, lines, max_chars=12000):
         """Bygg konversationsunderlaget för eftermälet.
@@ -2108,31 +2398,31 @@ class AICoworkerSession(models.Model):
         if not force and self.summary and \
                 self.summary_message_count == total:
             _logger.debug(
-                'Eftermäle: session %s oförändrad (%d rader) — hoppar över',
+                'Aftermath: session %s unchanged (%d lines) — skipping',
                 self.id, total)
             return self.summary
 
         # 2. För kort session → ingen tom sammanfattning.
         if total < self.MIN_SUMMARY_LINES:
             _logger.debug(
-                'Eftermäle: session %s för kort (%d < %d rader) — '
-                'ingen sammanfattning',
+                'Aftermath: session %s too short (%d < %d lines) — '
+                'no summary',
                 self.id, total, self.MIN_SUMMARY_LINES)
             return None
 
         transcript = self._final_summary_transcript(lines)
         if not transcript.strip():
             _logger.debug(
-                'Eftermäle: session %s har inget innehåll — hoppar över',
+                'Aftermath: session %s has no content — skipping',
                 self.id)
             return None
 
         summary = self._run_final_summary_llm(transcript)
         if not summary:
             _logger.warning(
-                'Eftermäle: LLM-sammanfattning misslyckades för session %s '
-                '(%d rader) — summary_message_count lämnas orörd så att '
-                'nästa försök tar om', self.id, total)
+                'Aftermath: LLM summary failed for session %s '
+                '(%d lines) — summary_message_count left untouched so the '
+                'next attempt retries', self.id, total)
             return None
 
         self.sudo().write({
@@ -2140,14 +2430,21 @@ class AICoworkerSession(models.Model):
             'summary_message_count': total,
         })
         _logger.info(
-            'Eftermäle skrivet för session %s (%d rader, %d tecken)',
+            'Aftermath written for session %s (%d lines, %d characters)',
             self.id, total, len(summary))
 
         # Steg C (session-title A→B→C): eftermälet är den sista och bästa
         # källan till ett namn — det finns först här, men det beskriver
         # HELA sessionen. `_maybe_set_title` rangordnar källorna, så ett
         # manuellt satt namn rörs aldrig.
-        self._maybe_set_title(summary, source='summary')
+        #
+        # VARFÖR en utplockad mening och inte hela eftermälet
+        # (chat-session-limits-and-names D3): eftermälet börjar alltid med
+        # en rubrik (`## Syfte`). `_clean_title` avvisar numera rubrikord, så
+        # att skicka hela texten hade alltid gett tomt. Att plocka ut första
+        # meningsfulla meningen bevarar källans värde.
+        self._maybe_set_title(
+            self._title_from_summary(summary), source='summary')
 
         # Bron till det personliga minnet (session-memory-bridge D2).
         # Eftermälet är den naturliga platsen: här finns både transcriptet
@@ -2169,8 +2466,9 @@ class AICoworkerSession(models.Model):
                 self._bridge_to_personal_memory()
         except Exception:
             _logger.exception(
-                'Eftermäle: minnesbron misslyckades för session %s — '
-                'eftermälet är skrivet och sessionen stängs ändå', self.id)
+                'Aftermath: the memory bridge failed for session %s — '
+                'the aftermath is written and the session closes anyway',
+                self.id)
         return summary
 
     def _bridge_to_personal_memory(self):
@@ -2199,15 +2497,15 @@ class AICoworkerSession(models.Model):
         # 1. Idempotens
         if self.memory_extracted:
             _logger.debug(
-                'Minne: session %s redan extraherad — hoppar över', self.id)
+                'Memory: session %s already extracted — skipping', self.id)
             return 0
 
         # 2. Tröskel — samma som eftermälet
         total = len(self.session_line_ids)
         if total < self.MIN_SUMMARY_LINES:
             _logger.debug(
-                'Minne: session %s för kort (%d < %d rader) — ingen '
-                'extraktion', self.id, total, self.MIN_SUMMARY_LINES)
+                'Memory: session %s too short (%d < %d lines) — no '
+                'extraction', self.id, total, self.MIN_SUMMARY_LINES)
             return 0
 
         coworker = self.coworker_id
@@ -2227,22 +2525,22 @@ class AICoworkerSession(models.Model):
                 init_type=self.init_type or None, session=self)
         except Exception as e:
             _logger.debug(
-                'Minne: session %s — dispatch-upplösning föll (%s), '
-                'faller tillbaka på sessionens user_id', self.id, e)
+                'Memory: session %s — dispatch resolution failed (%s), '
+                'falling back to the session user_id', self.id, e)
 
         if not user and self.user_id:
             user = self.user_id
 
         if not user:
             _logger.warning(
-                'Minne: session %s saknar användare — ingen extraktion',
+                'Memory: session %s has no user — no extraction',
                 self.id)
             return 0
 
         if user == self.env.ref('base.user_root'):
             _logger.warning(
-                'Minne: session %s upplöstes till systemuser — ingen '
-                'extraktion (personligt minne kräver en riktig användare)',
+                'Memory: session %s resolved to the system user — no '
+                'extraction (personal memory requires a real user)',
                 self.id)
             return 0
 
@@ -2251,7 +2549,7 @@ class AICoworkerSession(models.Model):
                 self.id)
         except Exception as e:
             _logger.error(
-                'Minne: extraktion från session %s misslyckades: %s',
+                'Memory: extraction from session %s failed: %s',
                 self.id, e, exc_info=True)
             return 0
 
@@ -2259,7 +2557,7 @@ class AICoworkerSession(models.Model):
         # samma LLM-anrop för en session som inte gav något.
         self.sudo().write({'memory_extracted': True})
         _logger.info(
-            'Minne: session %s extraherade %d minnen till användare %s',
+            'Memory: session %s extracted %d memories for user %s',
             self.id, count, user.login)
         return count
 
@@ -2272,7 +2570,7 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                Message, ProviderFactory, _run_provider,
+                Message, ProviderFactory, Role, _run_provider,
                 get_default_provider, get_default_model_name)
             quest = self.coworker_id
             provider, model_rec = (
@@ -2287,7 +2585,7 @@ class AICoworkerSession(models.Model):
                 provider, model_rec = get_default_provider(self.env)
             if not provider:
                 _logger.warning(
-                    'Eftermäle: ingen provider tillgänglig för session %s',
+                    'Aftermath: no provider available for session %s',
                     self.id)
                 return None
             model_name = (model_rec and model_rec._get_api_name()) \
@@ -2297,14 +2595,14 @@ class AICoworkerSession(models.Model):
             result = _run_provider(
                 provider.chat(
                     model=model_name,
-                    messages=[Message(role='user',
+                    messages=[Message(role=Role.USER,
                                       content=self._final_summary_prompt(transcript))],
                     max_tokens=2048),
                 provider)
             return (result.text or '').strip()[:4000] or None
         except Exception as e:
             _logger.warning(
-                'Eftermäle: sammanfattning misslyckades för session %s: %s',
+                'Aftermath: summary failed for session %s: %s',
                 self.id, e)
             return None
 
@@ -2354,9 +2652,9 @@ class AICoworkerSession(models.Model):
                 if not session.session_line_ids:
                     empty += 1
                     _logger.warning(
-                        'Session %s stängs TOM (0 rader) — coworker=%s '
-                        'init_type=%s skapad=%s. En session ska bära en '
-                        'körning; den här gjorde det inte.',
+                        'Session %s is closing EMPTY (0 lines) — coworker=%s '
+                        'init_type=%s created=%s. A session should carry a '
+                        'run; this one did not.',
                         session.id,
                         session.coworker_id.name or '-',
                         session.init_type or '(tom)',
@@ -2372,19 +2670,46 @@ class AICoworkerSession(models.Model):
                 # skulle en session som aldrig kan sammanfattas (t.ex. för
                 # kort) bli liggande i kön för evigt och svälta ut alla
                 # nyare sessioner ur batchen.
+                _now = fields.Datetime.now()
+                # Stängningen blir en händelse i historiken, inte bara ett
+                # tillstånd (session-observability). Utan raden skulle en
+                # cron-stängning se ut som en klientstängning i statistiken
+                # — och "hur ofta överges en session?" gick inte att svara på.
+                try:
+                    CloseEvent = self.env[
+                        'ai.coworker.session.close_event'].sudo()
+                    # Redan registrerad (t.ex. klienten hann före, eller en
+                    # tidigare cron-körning i samma sekund) → ingen ny rad.
+                    # Sökningen är idempotensen nu när UNIQUE togs bort.
+                    if not CloseEvent.search([
+                            ('session_id', '=', session.id),
+                            ('reason', '=', 'idle'),
+                            ('at', '=', _now)], limit=1):
+                        CloseEvent.create({
+                            'session_id': session.id,
+                            'reason': 'idle',
+                            'at': _now,
+                            'pi_session_id': session.pi_session_id or False,
+                        })
+                except Exception:
+                    # Redan registrerad (t.ex. klienten hann före) — inte ett
+                    # fel. Spåret får aldrig hindra stängningen.
+                    _logger.debug(
+                        'idle cron: close event already recorded for '
+                        'session %s', session.id)
                 session.sudo().write({
                     'status': 'done',
                     'finish_reason': 'idle',
-                    'end_date': fields.Datetime.now(),
+                    'end_date': _now,
                 })
                 closed += 1
             except Exception:
                 _logger.exception(
-                    'Idle-cron: kunde inte stänga session %s', session.id)
+                    'Idle cron: could not close session %s', session.id)
         if closed:
             _logger.info(
-                'Idle-cron: stängde %d sessioner utan aktivitet i %d min '
-                '(%d av dem var tomma)',
+                'Idle cron: closed %d sessions without activity for %d min '
+                '(%d of them were empty)',
                 closed, idle_minutes, empty)
         return closed
 
@@ -2395,7 +2720,7 @@ class AICoworkerSession(models.Model):
             except Exception:
                 # Eftermälet får aldrig hindra stängningen.
                 _logger.exception(
-                    'Eftermäle misslyckades vid mark_done för session %s',
+                    'Aftermath failed at mark_done for session %s',
                     session.id)
         self.status = 'done'
         self.finish_reason = reason
@@ -2461,13 +2786,13 @@ class AICoworkerSession(models.Model):
         if self.handover_state not in ('offered', 'claimed'):
             from odoo.exceptions import UserError
             raise UserError(
-                'Sessionen har ingen hängande handover att ta över '
+                'The session has no pending handover to claim '
                 '(state=%s).' % self.handover_state)
         if self.handover_by and self.handover_by != self.env.user:
             from odoo.exceptions import UserError
             raise UserError(
-                'Handover sker inom samma användare. Den här sessionen '
-                'tillhör %s.' % self.handover_by.name)
+                'Handover happens within the same user. This session '
+                'belongs to %s.' % self.handover_by.name)
 
         # Atomiskt lås FÖRE varje skrivning (D5). Misslyckas låset
         # returnerar vi False utan att ha rört sessionen.
@@ -2517,7 +2842,7 @@ class AICoworkerSession(models.Model):
             return nats_kv_create(key, json.dumps(payload))
         except Exception:
             _logger.exception(
-                'Handover: kunde inte ta sessionslåset för session %s',
+                'Handover: could not take the session lock for session %s',
                 self.id)
             return False
 
@@ -2529,7 +2854,7 @@ class AICoworkerSession(models.Model):
             nats_kv_delete(key)
         except Exception:
             _logger.debug(
-                'Handover: kunde inte släppa låset för session %s', self.id)
+                'Handover: could not release the lock for session %s', self.id)
 
     def _handover_derive_note(self):
         """Härled en handover-anteckning ur sessionens eftermäle (--auto).
@@ -2548,7 +2873,7 @@ class AICoworkerSession(models.Model):
             self._write_final_summary()
         except Exception:
             _logger.exception(
-                'Handover: kunde inte skriva eftermäle för session %s',
+                'Handover: could not write the aftermath for session %s',
                 self.id)
         return (self.summary or '').strip()
 
@@ -2638,12 +2963,101 @@ class AICoworkerSession(models.Model):
             except Exception:
                 # Eftermälet får aldrig hindra stängningen.
                 _logger.exception(
-                    'Eftermäle misslyckades vid mark_done för session %s',
+                    'Aftermath failed at mark_done for session %s',
                     session.id)
         self.status = 'done'
         self.finish_reason = reason
         self.end_date = fields.Datetime.now()
         self._push_done_notification()
+
+    # ── Klientdriven stängning (session-observability) ────────────────────
+    #
+    # `mark_done` anropas bara från webhook-vägen, och `mark_interrupted`
+    # aldrig i drift. Pi:s `session_shutdown` är därför den ENDA signalen om
+    # varför en session tar slut — och den nådde aldrig hit. Här tas den
+    # emot: stängningen blir en `close_event`-rad (historik, append-only),
+    # inte bara ett tillstånd som skrivs över.
+
+    #: Vilken `finish_reason` en stängningsorsak motsvarar. `quit`/`reload`
+    #: är normala avslut; `new`/`fork`/`resume` betyder att Pi bytte session.
+    CLOSE_TO_FINISH = {
+        'quit': 'closed',
+        'reload': 'closed',
+        'new': 'new_session',
+        'resume': 'new_session',
+        'fork': 'new_session',
+        'timeout': 'timeout',
+        'idle': 'idle',
+        'error': 'error',
+        'unknown': 'closed',
+    }
+
+    def _close_from_client(self, reason='unknown', at=None):
+        """Stäng sessionen på klientens begäran. Returnerar skapade rader.
+
+        Idempotent: samma `(session, reason, at)` ger ingen ny rad. En
+        stängning som redan finns rör sessionen inte heller — annars skulle
+        en upprepad signal skriva om `end_date` och se ut som en ny
+        stängning i statistiken.
+
+        `at` är klientens tidsstämpel (när Pi faktiskt stängdes), inte när
+        Odoo tog emot anropet — nätverksfördröjning ska inte flytta
+        händelsen.
+        """
+        self.ensure_one()
+        at = at or fields.Datetime.now()
+        CloseEvent = self.env['ai.coworker.session.close_event'].sudo()
+        existing = CloseEvent.search([
+            ('session_id', '=', self.id),
+            ('reason', '=', reason),
+            ('at', '=', at),
+        ], limit=1)
+        if existing:
+            _logger.debug(
+                'session %s: close event %s at %s already recorded',
+                self.id, reason, at)
+            return 0
+        CloseEvent.create({
+            'session_id': self.id,
+            'reason': reason,
+            'at': at,
+            'pi_session_id': self.pi_session_id or False,
+        })
+        finish = self.CLOSE_TO_FINISH.get(reason, 'closed')
+        # `end_date` är sessionens slut-tidsstämpel (det finns inget
+        # `end_at`-fält; tidsstämpeln bor i `close_event.at`).
+        self.sudo().write({
+            'status': 'done',
+            'finish_reason': finish,
+            'end_date': at,
+        })
+        _logger.info(
+            'session %s closed by client: reason=%s at=%s',
+            self.id, reason, at)
+        return 1
+
+    def _reopen_if_closed(self, reason='resume'):
+        """Återöppna en `done`-session när en ny tur kommer.
+
+        VARFÖR (session-observability): `_find_or_create_coworker_session`
+        hittar sessionen på `pi_session_id` och skriver nya turer UTAN att
+        röra status. En session som en gång stängts (av cronen eller
+        klienten) låg därför kvar som `done` med en `end_date` som inte
+        längre stämde — och idle-cronen, som letar `status='active'`, hittade
+        den ALDRIG igen. Det var mekanismen bakom "vi stänger nästan aldrig".
+
+        `error` lämnas orörd: ett fel ska inte maskeras av att användaren
+        frågar igen. En ny session skapas då hellre än att felraden skrivs
+        över.
+        """
+        self.ensure_one()
+        if not self.exists() or self.status != 'done':
+            return False
+        self.sudo().write({'status': 'active', 'end_date': False})
+        _logger.info(
+            'session %s reopened by a new turn (reason=%s)',
+            self.id, reason)
+        return True
 
     #: Rangordning av finish_reason — hÖgre vinner när två källor säger olika.
     #: Gatewayens `stop_reason` kan vara starkare än sessionens egen (t.ex. en
@@ -2681,10 +3095,33 @@ class AICoworkerSession(models.Model):
         """Web push "svar klart" till sessionens användare (via web_pwa_push).
 
         Tyst om användaren saknar enheter eller VAPID-nycklar saknas.
+
+        ── Aktivitetsgrinden (push-notification 2.1, design D3) ──────────
+        Notisen finns för den som LÄMNAT chatten. En användare som sitter
+        kvar och tittar ska inte få en notis — då blir varje chattur en
+        notis, användaren stänger av push, och HITL-notiserna dör med dem.
+
+        Gränsen är tidsbaserad: sessionens senaste rad som inte är ett
+        assistantsvar måste ligga längre tillbaka än
+        `ai_agent_core.push_idle_seconds` (default 120 s). En user-rad som
+        skapades för tre minuter sedan betyder att användaren skrev och
+        sedan lämnade.
         """
+        if not self:
+            return
+        from odoo.addons.ai_agent_core.core import runtime as _rt
+        try:
+            idle_seconds = _rt.get_int(
+                self.env, 'ai_agent_core.push_idle_seconds', 120)
+        except Exception:
+            idle_seconds = 120
         try:
             for session in self:
                 if not session.user_id:
+                    continue
+                if not session._is_user_idle(idle_seconds):
+                    continue
+                if not session._claim_push_notification():
                     continue
                 coworker_name = session.coworker_id.name or 'AI-medarbetare'
                 self.env['web.pwa.push']._push_user_notification(
@@ -2694,6 +3131,96 @@ class AICoworkerSession(models.Model):
                     url='/ai/chat')
         except Exception:
             _logger.exception('web_pwa_push: session done push failed')
+
+    def _claim_push_notification(self):
+        """Ta spärren för "svar klart"-notisen — True om den här får köa.
+
+        En tur kan avslutas från två vägar: `_finalize_stream_turn` (chatten)
+        och `mark_done()` (webhook). Båda anropar
+        `_push_done_notification()`, och utan spärr fick användaren två
+        notiser för samma svar.
+
+        Spärren är tidsstämpeln för senaste assistentraden: har den redan
+        aviserats är `push_notified_at` >= radens `create_date`. En NY tur
+        skapar en ny assistentrad, vars `create_date` ligger efter
+        tidsstämpeln — då får nästa tur avisera igen utan att fältet behöver
+        nollställas.
+
+        Atomiskt via villkorad UPDATE: två samtidiga anrop ska ge exakt en
+        vinnare (samma mönster som `ai.org.task.action_checkout`).
+        """
+        self.ensure_one()
+        try:
+            last_assistant = self.env['ai.coworker.session.line'].sudo().search(
+                [('session_id', '=', self.id), ('role', '=', 'assistant')],
+                order='id desc', limit=1)
+            if not last_assistant:
+                # Ingen assistentrad alls (t.ex. en session som stängs efter
+                # ett fel innan svaret skrevs). Då finns inget att ankra
+                # spärren på — men en notis är fortfarande motiverad, och
+                # en enda sådan kan inte dubbleras för samma tur.
+                return True
+            # Radens ID, inte en tidsstämpel. Två turer i samma transaktion
+            # får SAMMA `create_date` (PostgreSQLs NOW() är transaktionens
+            # starttid), så en tidsjämförelse kan inte skilja dem — och
+            # `clock_timestamp()` ligger efter båda. Sekvensen är strikt
+            # monoton och avgör saken exakt.
+            self.env.cr.execute("""
+                UPDATE ai_coworker_session
+                   SET push_notified_line_id = %s
+                 WHERE id = %s
+                   AND (push_notified_line_id IS NULL
+                        OR push_notified_line_id < %s)
+            """, (last_assistant.id, self.id, last_assistant.id))
+            claimed = self.env.cr.rowcount > 0
+            if claimed:
+                self.invalidate_recordset(['push_notified_line_id'])
+            return claimed
+        except Exception:
+            _logger.warning(
+                'push notification claim failed for session %s',
+                self.id, exc_info=True)
+            # Hellre en dubbel notis än ingen notis alls.
+            return True
+
+    def _is_user_idle(self, idle_seconds):
+        """Har användaren varit borta från sessionen i `idle_seconds`?
+
+        Mäter mot sessionens senaste rad som INTE är ett assistantsvar —
+        assistentens eget svar skapas just nu och säger inget om var
+        användaren är. Saknas en sådan rad (en session som bara består av
+        assistentens arbete) räknas användaren som borta: det finns ingen
+        aktivitet att vänta på.
+
+        Returnerar True när en notis är motiverad.
+        """
+        self.ensure_one()
+        if idle_seconds <= 0:
+            return True
+        try:
+            last_user_line = self.env['ai.coworker.session.line'].sudo().search(
+                [('session_id', '=', self.id), ('role', '!=', 'assistant')],
+                order='create_date desc, id desc', limit=1)
+        except Exception:
+            return True
+        if not last_user_line or not last_user_line.create_date:
+            return True
+        cutoff = fields.Datetime.now() - timedelta(seconds=idle_seconds)
+        return last_user_line.create_date < cutoff
+
+    # ── Aviseringsspärr (push-notification 2.3) ──
+    # En tur kan aviseras från två vägar: _finalize_stream_turn (chatten)
+    # och mark_done() (webhook). Utan en spärr får användaren två notiser
+    # för samma svar. Fältet sätts när en notis KÖATS och nollställs när
+    # sessionen får en ny user-rad (nästa tur ska kunna avisera igen).
+    push_notified_line_id = fields.Many2one(
+        'ai.coworker.session.line', 'Push Notified Line',
+        readonly=True, copy=False, ondelete='set null',
+        help='The assistant line that was last notified. Prevents a double '
+             'notification when both the stream and the webhook path close '
+             'the same turn. The line id is strictly monotonic - a timestamp '
+             'will not do, because two turns in one transaction share '
+             'create_date (the transaction NOW()).')
 
     # ── Durable Resume (OpenWorker-inspired) ──
     resumable = fields.Boolean('Resumable', default=True,
@@ -2713,7 +3240,7 @@ class AICoworkerSession(models.Model):
                 session._write_final_summary()
             except Exception:
                 _logger.exception(
-                    'Eftermäle misslyckades vid mark_interrupted för '
+                    'Aftermath failed at mark_interrupted for '
                     'session %s', session.id)
         self.status = 'active'  # Keep active so it can be resumed
         self.finish_reason = 'interrupted'
@@ -2772,7 +3299,7 @@ class AICoworkerSession(models.Model):
                 # `_post_pending_reply` när processen är klar.
                 if coworker._dispatch_or_loop(self, prompt, 'mail'):
                     _logger.info(
-                        'Mail för session %s dispatchat externt', self.id)
+                        'Mail for session %s dispatched externally', self.id)
                     return self
                 # B8: AUTO-mode kräver en HMAC-signatur bunden till
                 # sessionen — en naken flagga ignoreras (och loggas).
@@ -2787,7 +3314,7 @@ class AICoworkerSession(models.Model):
                 self.pending_reply = reply_text
                 self.reply_at = fields.Datetime.now() + timedelta(
                     minutes=delay)
-                _logger.info('Mail-svar fördröjt %s min för session %s',
+                _logger.info('Mail reply delayed %s min for session %s',
                              delay, self.id)
             else:
                 self.message_post(
@@ -2796,7 +3323,7 @@ class AICoworkerSession(models.Model):
                     message_type='comment',
                 )
         except Exception as e:
-            _logger.warning('mail-bearbetning misslyckades för session %s: %s',
+            _logger.warning('mail processing failed for session %s: %s',
                             self.id, e)
             self.message_post(
                 body=f'Fel vid bearbetning av mailet: {e}',
@@ -2821,10 +3348,10 @@ class AICoworkerSession(models.Model):
                     message_type='comment',
                 )
                 session.write({'pending_reply': False, 'reply_at': False})
-                _logger.info('Fördröjt mail-svar postat för session %s',
+                _logger.info('Delayed mail reply posted for session %s',
                              session.id)
             except Exception as e:
-                _logger.warning('Kunde inte posta fördröjt svar %s: %s',
+                _logger.warning('Could not post delayed reply %s: %s',
                                 session.id, e)
         return len(due)
 
@@ -2927,25 +3454,26 @@ class AICoworkerSession(models.Model):
         subject = msg_dict.get('subject') or ''
         body = msg_dict.get('body') or ''
         prompt = (
-            'En leverantörsfaktura har kommit in via mail. Bearbeta den '
-            'enligt dina skills.\n\n'
-            f'Avsändare: {email or "okänd"} '
-            f'({sender_name or "okänt namn"})\n'
-            f'Hittad res.partner: {partner.name if partner else "ingen — "}'
-            f'{"hitta/skapa via din partner-skill" if not partner else ""} '
+            'A vendor bill has arrived by email. Process it according to your '
+            'skills.\n\n'
+            f'Sender: {email or "unknown"} '
+            f'({sender_name or "unknown name"})\n'
+            f'Matching res.partner: {partner.name if partner else "none — "}'
+            f'{"find/create via your partner skill" if not partner else ""} '
             f'(id={partner.id if partner else "?"})\n'
-            f'Mailämne: {subject}\n'
-            f'Mailtext:\n{body}\n\n'
-            f'Fakturatext (OCR/extraherad bilaga):\n'
-            f'{attach_text or "(ingen bilaga — analysera mailtexten)"}\n\n'
-            'STEG (följ dina skills):\n'
-            '1. Hitta/skapa res.partner för avsändaren (odoo_search/odoo_create).\n'
-            '2. Skapa account.move (move_type=in_invoice) med rätt partner, '
-            'journal (type=purchase), ref (fakturanummer), datum, skatter och '
-            'rader från fakturatexten.\n'
-            '3. Använd odoo_call_method (action_post) OM allt ser korrekt ut '
-            '— annars lämna i draft.\n'
-            'Svara kort: vad du skapade, account.move-id:t och beloppet.'
+            f'Email subject: {subject}\n'
+            f'Email body:\n{body}\n\n'
+            f'Bill text (OCR/extracted attachment):\n'
+            f'{attach_text or "(no attachment — analyse the email body)"}\n\n'
+            'STEPS (follow your skills):\n'
+            '1. Find/create the res.partner for the sender (odoo_search/odoo_create).\n'
+            '2. Create an account.move (move_type=in_invoice) with the right '
+            'partner, journal (type=purchase), ref (bill number), date, taxes '
+            'and lines from the bill text.\n'
+            '3. Use odoo_call_method (action_post) IF everything looks '
+            'correct — otherwise leave it in draft.\n'
+            'Answer briefly: what you created, the account.move id and the '
+            'amount.'
         )
         # B8: signerad AUTO-mode (se _sign_auto_approve).
         reply = coworker.with_context(
@@ -2953,8 +3481,8 @@ class AICoworkerSession(models.Model):
             _ai_context_id=self.id,
             **coworker._sign_auto_approve(self)).run(prompt, session=self)
         return (
-            f'Leverantörsfaktura bearbetad. Avsändare: '
-            f'{partner.name if partner else sender_name or email or "okänd"}.\n'
+            f'Vendor bill processed. Sender: '
+            f'{partner.name if partner else sender_name or email or "unknown"}.\n'
             f'{reply}'
         )
 
@@ -2993,11 +3521,11 @@ class AICoworkerSession(models.Model):
         if not partner:
             partner = self.env['res.partner'].create({
                 'name': name or (email.split('@')[0]
-                                 if email else 'Okänd avsändare'),
+                                 if email else 'Unknown sender'),
                 'email': email or False,
                 'is_company': True,
             })
-            _logger.info('Skapade res.partner %s (%s) från mail-avsändare',
+            _logger.info('Created res.partner %s (%s) from the mail sender',
                          partner.id, email or name)
         elif partner.email != email and email:
             # Uppdatera email om den saknades/förändrats
@@ -3026,7 +3554,7 @@ class AICoworkerSession(models.Model):
                     text_parts.append(
                         att.raw.decode('utf-8', errors='replace'))
             except Exception as e:
-                _logger.warning('Kunde inte läsa bilaga %s: %s', att_id, e)
+                _logger.warning('Could not read attachment %s: %s', att_id, e)
         return '\n\n---\n\n'.join(text_parts)[:max_chars]
 
     def resume_session(self):

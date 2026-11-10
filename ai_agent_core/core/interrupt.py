@@ -14,6 +14,7 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Optional
 
 _logger = logging.getLogger(__name__)
@@ -37,6 +38,45 @@ def needs_approval(risk_level: str, threshold: int = APPROVAL_THRESHOLD_DEFAULT)
     """Check if a tool at this risk level requires human approval."""
     level = RISK_LEVELS.get(risk_level, 1)
     return level >= threshold
+
+
+# ---------------------------------------------------------------------------
+# ApprovalRequest — en fråga som väntar på svar (tools-run-approval-channel)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ApprovalRequest:
+    """En godkännandebegäran som väntar på en människa.
+
+    Används av `/ai/v1/tools/run` när grinden säger `needs_user`: i stället
+    för att neka blint registreras en begäran som klienten kan läsa via
+    `/ai/interrupt/poll` och svara på via `/ai/interrupt/respond`.
+
+    `arg_keys` innehåller **nycklar**, aldrig värden. En begäran ska visa
+    VILKA fält anropet rör, inte vad de innehåller — annars läcker
+    verktygsargument (kunduppgifter, belopp, personnummer) ut i en kanal
+    som pollas av klienten.
+    """
+
+    request_id: str
+    tool_name: str
+    arg_keys: list = field(default_factory=list)
+    risk_class: str = ''
+    reason: str = ''
+    created: float = field(default_factory=time.time)
+
+    def to_dict(self) -> dict:
+        """Formen som `/ai/interrupt/poll` skickar till klienten."""
+        return {
+            'type': 'needs_approval',
+            'request_id': self.request_id,
+            'tool_name': self.tool_name,
+            'arg_keys': list(self.arg_keys),
+            'risk_class': self.risk_class,
+            'reason': self.reason,
+            'created': self.created,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -133,15 +173,13 @@ class AutoInterruptHandler(InterruptHandler):
         if self.hitl_request is None:
             # Ingen mottagare för ärendet → ingen kan godkänna → neka.
             _logger.warning(
-                'AutoInterruptHandler: nekar %s (%s) — no approval recipient '
-                '(hitl_request saknas i denna körväg)', tool_name, risk_level)
+                'AutoInterruptHandler: denying %s (%s) — no approval recipient (hitl_request is missing on this path)', tool_name, risk_level)
             return False
         # Destruktivt/skrivande: materialisera ärendet och neka tills vidare.
         try:
             self.hitl_request(tool_name, risk_level, arguments)
         except Exception as e:  # noqa: BLE001 — HITL får aldrig krascha loopen
-            _logger.warning('AutoInterruptHandler: kunde inte skapa '
-                            'HITL-ärende för %s: %s', tool_name, e)
+            _logger.warning('AutoInterruptHandler: could not create a HITL request for %s: %s', tool_name, e)
         return False
 
     async def drain_steer(self) -> list[str]:
@@ -181,7 +219,7 @@ class DiscussInterruptHandler(InterruptHandler):
         """Post question in channel and wait for human response."""
         # Post the question
         self.channel.message_post(
-            body=f"🤖 **Agent behöver input:**\n\n{question}",
+            body=f"🤖 **Agent needs input:**\n\n{question}",
             message_type='comment',
         )
 
@@ -219,15 +257,15 @@ class DiscussInterruptHandler(InterruptHandler):
     ) -> bool:
         """Ask for approval for a specific tool call."""
         result = await self.ask(
-            question=f"Får jag köra verktyget **{tool_name}**?\n"
-                     f"Risknivå: {risk_level}\n"
-                     f"Parametrar: {arguments}",
+            question=f"May I run the tool **{tool_name}**?\n"
+                     f"Risk level: {risk_level}\n"
+                     f"Parameters: {arguments}",
             approval_type="tool_approval",
             timeout=120,
         )
         if result["action"] == "answer":
             answer = result["answer"].lower().strip()
-            return answer in ("ja", "yes", "ok", "kör", "approve", "godkänn")
+            return answer in ("ja", "yes", "ok", "run", "approve", "approve")
         return False  # timeout = deny
 
     async def drain_steer(self) -> list[str]:
@@ -273,6 +311,19 @@ class WebUIInterruptHandler(InterruptHandler):
         self._response: dict | None = None
         self._steer_buffer: list[str] = []
 
+        # Väntande godkännanden (tools-run-approval-channel 2.1). Nyckeln är
+        # `request_id`, värdet är en `ApprovalRequest`. `/ai/v1/tools/run`
+        # registrerar en begäran här när grinden säger `needs_user`, och
+        # `/ai/interrupt/poll` levererar den till klienten.
+        #
+        # Skilt från `_pending`: `get_pending()` TÖMMER `_pending` (den är
+        # en engångshändelse för SSE), medan en godkännandebegäran måste
+        # kunna läsas om — klienten kan poll:a flera gånger innan
+        # användaren har svarat.
+        self.pending_approvals: dict = {}
+        # Svar per request_id: {'approved': bool, 'reason': str}
+        self._approval_responses: dict = {}
+
     def emit_sse(self, event_type: str, data: dict) -> None:
         """Store pending interrupt for SSE polling."""
         key = f"ai_interrupt_{self.session_uuid}"
@@ -288,6 +339,41 @@ class WebUIInterruptHandler(InterruptHandler):
         pending = self._pending
         self._pending = {}
         return pending if pending.get("type") else None
+
+    # ── Väntande godkännanden (tools-run-approval-channel) ──
+
+    def register_approval(self, request):
+        """Registrera en väntande godkännandebegäran.
+
+        Begäran ligger kvar tills den besvaras eller tidsgränsen går ut —
+        till skillnad från `_pending`, som töms vid första läsningen.
+        """
+        self.pending_approvals[request.request_id] = request
+        return request
+
+    def get_approvals(self) -> list:
+        """Alla väntande begäranden, i skapelseordning."""
+        return sorted(
+            self.pending_approvals.values(), key=lambda r: r.created)
+
+    def answer_approval(self, request_id, approved, reason=''):
+        """Registrera ett svar på en begäran.
+
+        Returns:
+            bool: True om begäran fanns och svaret togs emot.
+        """
+        if request_id not in self.pending_approvals:
+            return False
+        self._approval_responses[request_id] = {
+            'approved': bool(approved),
+            'reason': reason or '',
+        }
+        self.pending_approvals.pop(request_id, None)
+        return True
+
+    def take_approval_response(self, request_id):
+        """Hämta och ta bort ett svar. None = inget svar ännu."""
+        return self._approval_responses.pop(request_id, None)
 
     def set_response(self, response: str) -> None:
         """Receive human response from POST endpoint."""
@@ -419,7 +505,7 @@ class OpenAIInterruptHandler(InterruptHandler):
                         "tool": tool_name,
                         "risk_level": risk_level,
                         "arguments": arguments,
-                        "question": f"Godkänn verktyg {tool_name}?",
+                        "question": f"Approve tool {tool_name}?",
                     }),
                 },
             }],

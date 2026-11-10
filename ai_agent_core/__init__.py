@@ -26,3 +26,23 @@ try:
     from . import wizards
 except Exception as e:
     _logger.error('Failed to import ai_agent_core wizards: %s', e, exc_info=True)
+
+# Kanal-registreringen (channel-adapter-wiring 4.5).
+#
+# `channel_registry` är process-global och töms vid varje processstart, så
+# kanalerna måste registreras när modulen importeras — inte bara i
+# `post_init_hook` (som körs en gång vid installation).
+#
+# Fällan (mätt 2026-11-09): registreringen låg BARA i post_init_hook. Efter
+# en omstart var registret tomt, `process_item()` gav 'no_processor' och
+# `dispose()` anropades aldrig — mail-svar skickades aldrig i drift, tyst.
+# Att lägga anropet i `core/channels.py` på modulnivå räckte inte heller:
+# alla importer av `core.*` i modellen är LATA (inuti funktioner), så
+# filen importerades aldrig vid uppstart.
+try:
+    from .core.channels import register_chat_channel, register_mail_channel
+    register_mail_channel()
+    register_chat_channel()
+except Exception as e:
+    _logger.error(
+        'Failed to register ai_agent_core channels: %s', e, exc_info=True)

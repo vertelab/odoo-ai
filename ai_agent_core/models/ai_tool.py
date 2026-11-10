@@ -41,7 +41,7 @@ class AITool(models.Model):
     # Stats (session-meddelanden som använde detta verktyg)
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
-        compute='_compute_session_tokens_30d', string='Tokens (månad)')
+        compute='_compute_session_tokens_30d', string='Tokens (month)')
 
     def _compute_session_line_count(self):
         for r in self:
@@ -69,20 +69,11 @@ class AITool(models.Model):
     # _ensure_builtin_tool_records() vid varje moduluppdatering.
     builtin_name = fields.Char(
         'Builtin Name', readonly=True,
-        help='Namnet på det inbyggda verktyget (core/tools.py) som denna post '
-             'representerar. Tomt för custom-verktyg med egen kod. När satt '
-             'används den riktiga handlern vid körning.',
+        help='The name of the builtin tool (core/tools.py) this record represents. Empty for custom tools with their own code. When set, the real handler is used at run time.',
     )
     description = fields.Text(
         'Description', required=True,
-        help=('AI-beskrivning — det kontrakt LLM:en läser vid verktygsval. '
-              'Använd mallen: syfte / när / när inte (peka på rätt verktyg) / '
-              'exempel / output / verifierbart utfall / felvägledning / '
-              'guardrail. Ange vilket observerbart utfall ett lyckat anrop '
-              'ger och hur anropet kan misslyckas (obligatoriska parametrar, '
-              'förväntade format) så agenten kan verifiera och korrigera. '
-              'Guardrails är informativa här — enforcement sker via '
-              'risk_level + PermissionEngine, aldrig via text.'),
+        help=('AI description — the contract the LLM reads when choosing a tool. Use the template: purpose / when / when not (point to the right tool) / example / output / verifiable outcome / error guidance / guardrail. State which observable outcome a successful call gives and how the call can fail (required parameters, expected formats) so the agent can verify and correct. Guardrails are informative here — enforcement happens via risk_level + PermissionEngine, never via text.'),
     )
     code = fields.Text(
         'Code', required=False,  # Not required for NATS-executor tools
@@ -117,9 +108,7 @@ class AITool(models.Model):
     group_ids = fields.Many2many(
         'res.groups', 'ai_tool_res_group_rel',
         'tool_id', 'group_id', string='Access Groups',
-        help='Odoo-grupper (res.groups) som får använda detta verktyg. '
-             'Tom = obegränsat; HITL via risk_level gäller ändå. '
-             'Moduler skapar nya grupper i XML vid behov.',
+        help='Odoo groups (res.groups) allowed to use this tool. Empty = unrestricted; HITL via risk_level still applies. Modules create new groups in XML as needed.',
     )
 
     # NATS executor config (when executor="nats")
@@ -147,16 +136,13 @@ class AITool(models.Model):
     nats_agent_id = fields.Many2one(
         'ai.agent', string='Owning Agent',
         ondelete='set null',
-        help='Valfritt. Agenten som äger detta verktyg. Skickas med i '
-             'NATS-payloaden så att pi-agenten kör rätt agent. Tomt = '
-             'ingen styrning (coworkerns union gäller).',
+        help='Optional. The agent that owns this tool. Sent in the NATS payload so the pi agent runs the right agent. Empty = no steering (the coworker union applies).',
     )
 
     # Systemtoken-kostnad per anrop (budget-hard-cap D6)
     sys_token_cost = fields.Integer(
         'Systemtoken-kostnad per anrop', default=500,
-        help='Fast minimikostnad i systemtokens per tool-anrop. Läggs '
-             'direkt på tool-raden (token_sys). Global per tool.',
+        help='Fixed minimum cost in system tokens per tool call. Added directly to the tool line (token_sys). Global per tool.',
     )
 
     # Verifieringsavtal (improve-ai-coworker-memory-and-tools 3.1):
@@ -165,28 +151,11 @@ class AITool(models.Model):
     # ingen kärnkodändring krävs. Tomt = ingen write-verify.
     verification_json = fields.Text(
         'Verification Contract (JSON)',
-        help=('JSON-avtal för write-verify. Format: '
-              '{"model": "<model>", "id_path": "id", '
-              '"checks": [{"field": "parent_id", "equals_path": '
-              '"values.parent_id"}, {"field": "content", '
-              '"non_empty": true}]}. Efter en lyckad skrivning läses '
-              'posten tillbaka och varje check jämförs; avvikelse ger ett '
-              'strukturerat fel (fält, förväntat, faktiskt).\n\n'
-              'Innehållslig verifiering: en check kan i stället begära att '
-              'fältet motsvarar en källa — '
-              '{"field": "content", "source": true, "coverage": 0.6}. '
-              'Då mäts hur stor del av källans väsentliga delar (namngivna '
-              'entiteter, modellnamn, citat, URL:er) som återfinns i '
-              'innehållet, och jämförs mot "coverage"-tröskeln (0–1, '
-              'standard 0.6). Under tröskeln blir det ett fel som namnger '
-              'vad som saknas. En påstådd källa ("Källa: X") som inte finns '
-              'i sammanhanget rapporteras också. Källan är sessionens rader '
-              'och läses bara när en check begär den.'),
+        help=('JSON contract for write-verify. Format: {"model": "<model>", "id_path": "id", "checks": [{"field": "parent_id", "equals_path": "values.parent_id"}, {"field": "content", "non_empty": true}]}. After a successful write the record is read back and every check is compared; a deviation gives a structured error (field, expected, actual).\n\nContent verification: a check can instead require the field to correspond to a source — {"field": "content", "source": true, "coverage": 0.6}. Then the share of the source essential parts (named entities, model names, quotations, URLs) found in the content is measured and compared against the "coverage" threshold (0-1, default 0.6). Below the threshold it becomes an error naming what is missing. A claimed source ("Source: X") that is not in the context is also reported. The source is the session lines and is read only when a check asks for it.'),
     )
     verification_enabled = fields.Boolean(
         'Write-verify', default=False,
-        help='Aktivera verifiering av verktygsutfallet efter skrivning '
-             '(kräver verification_json).')
+        help='Enable verification of the tool outcome after writing (requires verification_json).')
 
     def get_verification_contract(self, model=None):
         """Tolka verification_json → dict (eller {} om inget/ogiltigt).
@@ -205,7 +174,7 @@ class AITool(models.Model):
         try:
             data = json.loads(self.verification_json)
         except (ValueError, TypeError):
-            _logger.warning('ogiltigt verification_json på ai.tool %s', self.id)
+            _logger.warning('invalid verification_json on ai.tool %s', self.id)
             return {}
         if not isinstance(data, dict) or data.get('checks') is None:
             return {}
@@ -281,7 +250,7 @@ class AITool(models.Model):
                 'verification_enabled': True,
                 'verification_json': json.dumps(contract, indent=2),
             })
-            _logger.info('write-verify-avtal satt på ai.tool %s', tool_name)
+            _logger.info('write-verify contract set on ai.tool %s', tool_name)
         return True
 
     # Relations
@@ -544,8 +513,7 @@ class AITool(models.Model):
                 if bt.name == self.builtin_name:
                     return bt
             _logger.warning(
-                'Builtin tool %s not found in builtin_tools() — faller '
-                'tillbaka på custom-konvertering', self.builtin_name)
+                'Builtin tool %s not found in builtin_tools() — falling back to custom conversion', self.builtin_name)
 
         params = json.loads(self.parameters) if self.parameters else {
             "type": "object", "properties": {}, "required": []

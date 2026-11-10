@@ -28,7 +28,7 @@
              posted session — so a retried run posts nothing twice.
              ============================================================ -->
         <record id="cron_task_mail_reply_due" model="cron.task">
-            <field name="name">AI: Posta fördröjda mail-svar</field>
+            <field name="name">AI: Post delayed mail replies</field>
             <field name="technical_name">ai_mail_reply_due</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.coworker.session</field>

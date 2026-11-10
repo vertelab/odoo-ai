@@ -24,9 +24,7 @@ class AIArtifactType(models.Model):
         ('memory', 'Memory'),
         ('knowledge', 'Knowledge'),
     ], string='Kind', required=True, default='knowledge',
-        help='memory = Odoo Mind dynamiskt minne (LLM-genererat, ADD-only, '
-             'ägar-scope); knowledge = kunskapsinjektion (kuraterade '
-             'artefakter, stale-policy från källa)')
+        help='memory = Odoo Mind dynamic memory (LLM-generated, ADD-only, owner scope); knowledge = knowledge injection (curated artifacts, stale policy from the source)')
 
     model_id = fields.Many2one(
         'ir.model', string='Source Model',

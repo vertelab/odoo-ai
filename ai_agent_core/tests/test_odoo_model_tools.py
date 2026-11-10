@@ -96,16 +96,17 @@ class TestDefaultCoworkerSeed(TransactionCase):
     def test_seed_is_idempotent(self):
         """_ensure_default_coworker skapar inga duplikat vid återkörning (8.6)."""
         env = self.env
-        # Skapa en default-coworker (utan xmlid, som legacy)
-        cw = env['ai.coworker'].create({
-            'name': 'Allmän',
-            'status': 'active',
-            'is_default': True,
-        })
-        # Adoption: den riktiga default-coworkern behålls, testets arkiveras
-        env['ai.coworker'].browse(cw.id)._ensure_default_coworker()
-        default = env['ai.coworker'].search(
-            [('is_default', '=', True), ('active', '=', True)], limit=1)
+        # Default-coworkern hittas via xmlid (flaggan is_default är borta
+        # sedan autonomy-tab-and-company-default).
+        default = env.ref(
+            'ai_agent_core.coworker_default_assistent', raise_if_not_found=False)
+        if not default:
+            self.skipTest('Ingen xmlid-bunden default-coworker i denna DB')
+        # Adoption: _ensure_default_coworker är idempotent
+        default._ensure_default_coworker()
+        default = env.ref(
+            'ai_agent_core.coworker_default_assistent', raise_if_not_found=False)
+        self.assertTrue(default, 'xmlid tappades av adoptionen')
         names = set(default.agent_ids.mapped('agent_id.name'))
         # Agenter finns
         self.assertIn('Odoo-specialist', names)

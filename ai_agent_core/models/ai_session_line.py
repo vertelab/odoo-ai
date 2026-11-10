@@ -7,10 +7,20 @@ Each line represents one message in a conversation thread.
 from odoo import models, fields, api
 from datetime import timedelta
 
+#: Teckentak för listvyns förhandsvisning (`content_preview`).
+#: 120 valdes för att rymmas i en normal listcell — CSS:ens egen
+#: `text-truncate` ger annars en andra klippunkt, och två olika
+#: klippunkter ser ut som en bugg.
+PREVIEW_LENGTH = 120
+
 
 class AICoworkerSessionLine(models.Model):
     _name = 'ai.coworker.session.line'
     _description = 'Session Message Line'
+
+    # Teckentaket för listvyns förhandsvisning ligger som modulkonstant
+    # (PREVIEW_LENGTH nedanför importen), inte som klassattribut: `%`-formen i
+    # fältets `help` och compute-metodens kropp läser namnet vid modulnivå.
     _order = 'session_id, sequence asc'
 
     # Index som Odoo inte kan deklarera på ett fält (sammansatta eller
@@ -58,7 +68,7 @@ class AICoworkerSessionLine(models.Model):
     _sql_constraints = [
         ('session_sequence_uniq',
          'UNIQUE(session_id, sequence)',
-         'Sekvensen måste vara unik inom en session.'),
+         'The sequence must be unique within a session.'),
     ]
 
     session_id = fields.Many2one(
@@ -71,20 +81,21 @@ class AICoworkerSessionLine(models.Model):
     # (`session_ids.session_line_ids`) vilket tvingar Odoo att materialisera
     # varje rad som ORM-objekt innan compute ens börjar.
     coworker_id = fields.Many2one(
-        'ai.coworker', string='AI Medarbetare',
+        'ai.coworker', string='AI Coworker',
         related='session_id.coworker_id', store=True, index=True)
     # Vilken agent/roll/skill/tool som producerade denna rad — för spårning
     # per agent & modell samt smartknappar från ai.agent/ai.tool/ai.skill.
     agent_id = fields.Many2one('ai.agent', string='Agent', index=True,
-        help='Den agent som producerade denna meddelanderad. Fylls vid '
-             'multi-agent-delegering (Väg A) och enkel-assistentrader där '
-             'agenten är känd.')
+        help='The agent that produced this message line. Filled on '
+             'multi-agent delegation (path A) and on single-assistant lines '
+             'where the agent is known.')
     skill_id = fields.Many2one('ai.skill', string='Skill', index=True,
-        help='Den skill som byggdes/testades i denna meddelanderad (där det '
-             'är känt, t.ex. från agentens skill eller en skill-sessionskontext).')
+        help='The skill that was built or tested on this message line, where '
+             'that is known (e.g. from the agent skill or a skill session '
+             'context).')
     tool_id = fields.Many2one('ai.tool', string='Tool', index=True,
-        help='Verktyget som anropades (för tool-rader). Fylls från '
-             'tool_name mot ai.tool så att ai.tool kan lista sina meddelanden.')
+        help='The tool that was called (on tool lines). Filled from tool_name '
+             'against ai.tool so that ai.tool can list its messages.')
     sequence = fields.Integer('Order', default=10)
     role = fields.Selection([
         ('user', 'User'),
@@ -98,39 +109,90 @@ class AICoworkerSessionLine(models.Model):
     # sessionens alla rader (mätt: 34 866 rader i en session).
     content_hash = fields.Char(
         'Content Hash', size=32, index=True, readonly=True,
-        help='md5 av role|tool_call_id|content. Används för att dedupa '
-             'Pi-poster — samma post ska bara ge en rad per session.')
+        help='md5 of role|tool_call_id|content. Used to dedupe Pi posts — the '
+             'same post must yield only one line per session.')
     content = fields.Text('Message Content')
+    # Förhandsvisning för LISTVYN (session-line-compact-list):
+    # `content` är Text, och Odoo 18:s list-renderare ger text-fält
+    # `white-space: pre-wrap` — en rad med 2 000 tecken blir 30-40 visuella
+    # rader. Cellens `text-truncate()` biter inte mot `pre-wrap`, så
+    # klippningen måste ske i värdet. Första raden, klippt till
+    # PREVIEW_LENGTH tecken. Icke-lagrat: `content` är append-only och
+    # ändras aldrig, så ett lagrat värde hade bara krävt en migrering.
+    # Hela texten finns kvar i `content` och visas i formuläret.
+    content_preview = fields.Char(
+        'Preview', compute='_compute_content_preview', store=False,
+        help='First line of the message, cut at %d characters with an '
+             'ellipsis. A list-view projection only — the full text is in '
+             '`Message Content` and in the form view.' % PREVIEW_LENGTH)
     reasoning = fields.Text('Reasoning',
-        help='Modellens "gråa" tänketext (reasoning_content/reasoning) som '
-             'produsierades före detta meddelande; för granskning utan att det '
-             'visas i svaret.')
-    debug_info = fields.Text('Debug/Resonemang',
-        help='Agentens resonemang/narrering (visas inte i svaret till '
-             'användaren, men sparas här för granskning).')
-    source_urls = fields.Text('Käll-URL:er',
-        help='URL:er som agenten använde (en per rad).')
+        help='The model reasoning text (reasoning_content/reasoning) produced '
+             'before this message; kept for review without being shown in '
+             'the answer.')
+    debug_info = fields.Text('Debug/Reasoning',
+        help='The agent reasoning/narration (not shown in the answer to the '
+             'user, but stored here for review).')
+    source_urls = fields.Text('Source URLs',
+        help='URLs the agent used (one per line).')
     tool_calls = fields.Text('Tool Calls (JSON)')
     tool_name = fields.Char('Tool Name')
     tool_call_id = fields.Char('Tool Call ID', index=True,
-        help='OpenAI:s tool_call_id för tool-rader. Parade med assistant-'
-             'radens tool_calls[].id så att historiken kan skickas tillbaka '
-             'till providern i giltigt format. Utan detta avvisar strikta '
-             'providers (t.ex. deepseek) hela anropet med 422 '
-             '"missing field tool_call_id".')
+        help="OpenAI's tool_call_id for tool lines. Paired with the assistant "
+             "line's tool_calls[].id so the history can be sent back to the "
+             'provider in a valid format. Without it, strict providers (e.g. '
+             'deepseek) reject the whole call with 422 "missing field '
+             'tool_call_id".')
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
+    # ── Per-varv-räkning (webui-show-work-again 4.1) ────────────────────
+    # En tur som gör flera verktygsrundor skickar HELA historiken igen vid
+    # varje varv, så `token_input` är en summa över varv — inte en enda
+    # prompt. Åtta rundor à ~13k ger ~104k, vilket ser orimligt ut som ett
+    # ensamt tal (mätt: session 27953, `token_input = 104 437`).
+    #
+    # Siffran är korrekt som debiteringsunderlag och rörs inte. Dessa två
+    # fält bär UPPDELNINGEN, så talet går att förstå: hur många varv turen
+    # gjorde och vad varje varv kostade i input.
+    rounds = fields.Integer('Rounds', default=0,
+        help='Number of LLM rounds in the turn. 1 = answered directly without '
+             'tools. Each round resends the whole history, so token_input is '
+             'the sum over those rounds.')
+    round_inputs = fields.Text('Input per varv',
+        help='Comma-separated input tokens per round, in order. The sum equals '
+             'token_input. Empty for lines written before 2026-11-06.')
+
+    # ── Per-turn timing (form fields the view already referenced) ────────
+    # views/ai_session_views.xml has referenced these three since ac42d816
+    # while no field existed on the model, so every `-u ai_agent_core`
+    # aborted with:
+    #     ParseError: Field "first_token_seconds" does not exist
+    # Adding the fields is the smaller change: the view is the interface the
+    # numbers are meant to be read through, and 0 means "not measured" — the
+    # view hides the row when the value is 0, so an unmeasured turn does not
+    # look like a fast one.
+    first_token_seconds = fields.Float(
+        'First Token (s)', digits=(12, 3), default=0.0,
+        help='Seconds from the request until the first streamed token. '
+             '0 = not measured.')
+    longest_gap_seconds = fields.Float(
+        'Longest Gap (s)', digits=(12, 3), default=0.0,
+        help='Longest pause between two streamed tokens in the turn. '
+             '0 = not measured.')
+    stream_seconds = fields.Float(
+        'Stream Duration (s)', digits=(12, 3), default=0.0,
+        help='Total streaming duration of the turn, in seconds. '
+             '0 = not measured.')
 
     # Systemtoken tracking
     model_real = fields.Char('Model Used',
         help='The actual model name returned by the provider (e.g. claude-sonnet-4-20250514)')
-    sys_multiplier = fields.Float('Systemtoken-multiplikator', default=1.0,
+    sys_multiplier = fields.Float('System Token Multiplier', default=1.0,
         help='Multiplier from ai.model at the time this line was created')
     token_sys = fields.Integer('Systemtokens', compute='_compute_token_sys', store=True,
-        help='DEBITERINGSGRUND: (token_input + token_output) × sys_multiplier. '
-             'Inkluderar Vertel-marginalen — detta är vad kunden debiteras, '
-             'INTE en kostnad. Faktisk kostnad i USD ligger på radens '
-             'cost_usd (utfall-och-tokenmatning). De två slås aldrig ihop.')
+        help='BILLING BASIS: (token_input + token_output) x sys_multiplier. '
+             'Includes the Vertel margin — this is what the customer is '
+             'charged, NOT a cost. The actual cost in USD sits on the line '
+             'cost_usd. The two are never merged.')
 
     # ── Utfall per rad (utfall-och-tokenmatning) ────────────────────────
     # Radens eget utfall. `TokenEvent`/`ChatResponse` bär redan
@@ -152,11 +214,11 @@ class AICoworkerSessionLine(models.Model):
         ('interrupted', 'Interrupted'),
         ('new_session', 'New Session'),
     ], string='Finish Reason',
-        help='Varför denna rads tur/steg slutade. Samma vokabulär som '
-             'sessionens finish_reason.')
+        help='Why this line turn/step ended. Same vocabulary as the session '
+             'finish_reason.')
     interrupted = fields.Boolean('Interrupted', default=False,
-        help='True när turen avbröts mitt i en ström och det levererade '
-             'prefixet bevarades.')
+        help='True when the turn was interrupted mid-stream and the delivered '
+             'prefix was preserved.')
 
     # ── Kostnad och osäkerhet (utfall-och-tokenmatning) ────────────────
     # Ögonblicksbilder från ai.model vid radens skapande — samma mönster
@@ -167,15 +229,35 @@ class AICoworkerSessionLine(models.Model):
     cost_output_1k = fields.Float('Output Cost per 1K', digits=(12, 8),
         help='Modellens output-pris per 1K tokens vid radens skapande.')
     cached_tokens = fields.Integer('Cached Tokens', default=0,
-        help='Antal input-tokens som var cache-träffar (billigare).')
+        help='Number of input tokens that were cache hits (cheaper).')
     usage_reported = fields.Boolean('Usage Reported', default=True,
-        help='False när providern inte rapporterade token-usage. Skiljer '
-             '"inga tokens" från "vi vet inte" — en omätt rad får inte se '
-             'gratis ut.')
+        help='False when the provider did not report token usage. Separates '
+             '"no tokens" from "we do not know" — an unmeasured line must not '
+             'look free.')
     cost_usd = fields.Float('Cost (USD)', compute='_compute_cost_usd',
         store=True, digits=(16, 8),
-        help='Faktisk kostnad i USD: (in − cached)/1000 × cost_input_1k '
-             '+ ut/1000 × cost_output_1k. Omätt (0) när usage_reported=False.')
+        help='Actual cost in USD: (in - cached)/1000 x cost_input_1k '
+             '+ out/1000 x cost_output_1k. Unmeasured (0) when '
+             'usage_reported=False.')
+
+    def _compute_content_preview(self):
+        """Första raden av `content`, klippt till PREVIEW_LENGTH tecken.
+
+        Ordningen är viktig: FÖRST första raden, SEDAN teckentaket. Ett
+        flerradigt meddelande ska inte bli "första 120 tecken inklusive
+        radbrytningar" — det läses som en mening som slutar mitt i.
+
+        En rad som bara innehåller blanksteg ger tom sträng: ett tomt
+        meddelande ska se tomt ut, inte som ett mellanslag. Aldrig ett
+        undantag — en listcell får inte fälla vyn.
+        """
+        for r in self:
+            text = (r.content or '').strip()
+            first_line = text.split('\n', 1)[0].strip()
+            if len(first_line) > PREVIEW_LENGTH:
+                r.content_preview = first_line[:PREVIEW_LENGTH - 1] + '…'
+            else:
+                r.content_preview = first_line
 
     @api.depends('token_input', 'token_output', 'cached_tokens',
                  'cost_input_1k', 'cost_output_1k', 'usage_reported')
@@ -191,6 +273,39 @@ class AICoworkerSessionLine(models.Model):
                 + (line.token_output or 0) / 1000.0 * (line.cost_output_1k or 0.0)
             )
 
+    # ── Tidsmått per tur (kanalprestanda D1) ────────────────────────────
+    # Måtten bor på assistentraden — den enda raden som skapas exakt en gång
+    # per tur i ALLA kanaler. På sessionen skulle varje tur skriva över
+    # föregående (precis vad `end_date` redan gör).
+    #
+    # `0` betyder EJ TILLÄMPLIGT/INTE MÄTT — inte "snabb". En synkron kanal
+    # (DM, webhook, cron) har inget första tecken att tidsätta och skriver 0;
+    # att skriva den totala tiden i TTFT-fältet vore en lögn som gör att DM
+    # ser ut att ha perfekt TTFT i varje aggregering (kanalprestanda D4).
+    # Aggregeringar som vill ha strömdata filtrerar på `> 0`.
+    #
+    # Total väggklocka kräver inget fält: user-radens `create_date` →
+    # assistentradens `create_date` (båda `_log_access`, indexerade).
+    first_token_seconds = fields.Float(
+        'Time to first token (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Seconds from the turn starting to the first content token '
+             'being available to the channel. 0 = not applicable (the '
+             'channel does not stream) or not measured. An upper bound: '
+             'the stamp is taken when the chunk consumer sees the event, '
+             'which is what the user waits for.')
+    longest_gap_seconds = fields.Float(
+        'Longest gap (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='The longest continuous silence between two consecutive '
+             'content events during the turn. 0 = not applicable or not '
+             'measured.')
+    stream_seconds = fields.Float(
+        'Streaming time (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Seconds from the first to the last content event. 0 = not '
+             'applicable (the channel does not stream) or not measured.')
+
     # ── Informativa rader (utfall-och-tokenmatning) ────────────────────
     # Rader som bär spårbarhet men INTE ska räknas i budgeten (t.ex.
     # per-agent-tokens från supervisor/konsensus, där den aggregerade
@@ -202,7 +317,8 @@ class AICoworkerSessionLine(models.Model):
     # Migration 18.0.1.335 backfillar dem; create()/write() normaliserar
     # None → False så inget nytt NULL kan uppstå.
     informative = fields.Boolean('Informative', default=False, index=True,
-        help='True = raden är spårbarhet men räknas INTE i budget/burn rate.')
+        help='True = the line is traceability but is NOT counted in the budget '
+             'or burn rate.')
 
     @api.depends('token_input', 'token_output', 'sys_multiplier')
     def _compute_token_sys(self):
@@ -284,11 +400,75 @@ class AICoworkerSessionLine(models.Model):
         return super().write(
             self._strip_nul(self._normalize_informative(vals)))
 
+    def _enrich_from_client(self, vals):
+        """Berika en server-skriven rad med klientens metadata.
+
+        Enda legitima vägen runt append-only-skyddet (webui-show-work-again
+        5.3): servern skriver turens rad först (content, reasoning, tokens),
+        och klientens POST får fylla på de fält servern inte hade —
+        `debug_info`, `source_urls`, `tool_calls`.
+
+        Skyddet finns för att INNEHÅLLET inte får skrivas om: `content`,
+        `role`, tokens. Den här metoden rör bara metadata, och bara fält som
+        är tomma på raden — den kan därför aldrig skriva över något servern
+        redan satt, och aldrig nolla något.
+
+        Anropas av `ai.coworker.session._save_client_response`. Använd den
+        inte för att ändra innehåll; då är `create()` rätt väg.
+        """
+        allowed = {'debug_info', 'source_urls', 'tool_calls'}
+        safe = {}
+        for fname, value in (vals or {}).items():
+            if fname not in allowed:
+                continue
+            if not value:
+                continue
+            if (getattr(self, fname) or '').strip():
+                continue  # serverns värde vinner — aldrig överskrivning
+            safe[fname] = value
+        if not safe:
+            return False
+        return super(AICoworkerSessionLine, self).write(
+            self._strip_nul(safe))
+
     def unlink(self):
         """Sessionsrader får inte raderas (append-only, granskningsbart)."""
         from odoo.exceptions import UserError
         raise UserError(
             'Session lines are append-only and cannot be deleted.')
+
+    # ── Spåret på raden (session-observability) ─────────────────────────
+    # Konversationen säger VAD som sades; dessa två samlingar säger VAD SOM
+    # GJORDES. De är One2many (inte related) eftersom en rad kan ha flera
+    # körningar och flera verktygsanrop, och de skrivs av spår-vägen
+    # (`_trace_tool_calls` / `_write_agent_run`) — inte av `line.create`.
+    #
+    # ⚠ De påverkar INGEN budget: `informative`-regeln och
+    # `_token_totals` läser bara radens egna tokenfält.
+    agent_run_ids = fields.One2many(
+        'ai.coworker.session.agent_run', 'line_id',
+        string='Agent Runs', readonly=True)
+    tool_call_ids = fields.One2many(
+        'ai.coworker.session.tool_call', 'line_id',
+        string='Tool Calls', readonly=True)
+    # Gateway-måtten bor på sessionen men nås från meddelandet (Gateway-
+    # fliken). `related` här är rätt plats: vyn kan då läsa dem som vanliga
+    # fält på raden, och de är alltid i synk med sessionen.
+    gateway_session_id = fields.Char(
+        related='session_id.gateway_session_id', string='Gateway Session ID',
+        readonly=True)
+    bifrost_cost = fields.Float(
+        related='session_id.bifrost_cost', string='Gateway Cost (USD)',
+        readonly=True)
+    bifrost_retries = fields.Integer(
+        related='session_id.bifrost_retries', string='Gateway Retries',
+        readonly=True)
+    bifrost_fallbacks = fields.Integer(
+        related='session_id.bifrost_fallbacks', string='Gateway Fallbacks',
+        readonly=True)
+    bifrost_synced_at = fields.Datetime(
+        related='session_id.bifrost_synced_at', string='Gateway Synced',
+        readonly=True)
 
     # ── Token-totaler (coworker-form-performance D1) ─────────────────────
     # EN grupperad fråga för alla perioder som formuläret frågar efter.

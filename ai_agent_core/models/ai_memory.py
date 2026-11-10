@@ -89,7 +89,7 @@ class AIMemory(models.Model):
     content = fields.Text(
         'Content', compute='_compute_content',
         inverse='_inverse_content', search='_search_content',
-        help='Alias för okf_body — behålls för bakåtkompatibilitet.')
+        help='Alias for okf_body — kept for backward compatibility.')
 
     @api.depends('okf_body')
     def _compute_content(self):
@@ -114,8 +114,7 @@ class AIMemory(models.Model):
         ('attachments', 'Bilagor'),
         ('youtube', 'YouTube'),
     ], default='text',
-        help='Var innehållet kom ifrån. Lagringsformatet är alltid '
-             'pgvector och styrs inte härifrån.')
+        help='Where the content came from. The storage format is always pgvector and is not steered from here.')
 
     # Embedding
     embedding_model = fields.Char('Embedding Model')
@@ -178,7 +177,7 @@ class AIMemory(models.Model):
     # medan kolumnen aldrig uppstod.
     embedding = PgVector(
         string='Embedding', dimension=_OKF_EMBEDDING_DIM,
-        help='pgvector(%d) embedding av okf_body. Kolumnen är vector(%d)-typ.'
+        help='pgvector(%d) embedding of okf_body. The column is vector(%d) type.'
              % (_OKF_EMBEDDING_DIM, _OKF_EMBEDDING_DIM))
 
     # search_vector — GENERATED COLUMN, skapad av SQL i hooks.py.
@@ -195,8 +194,7 @@ class AIMemory(models.Model):
     # satt; create_vector skriver chunkar i stället.
     faiss_attachment_id = fields.Many2one(
         'ir.attachment', string='Legacy FAISS Index', readonly=True,
-        help='Serialiserat FAISS-index från tiden före pgvector. Läses '
-             'bara av re-embedding-cronen — används aldrig för sökning.')
+        help='Serialised FAISS index from before pgvector. Read only by the re-embedding cron — never used for search.')
     source_attachment_id = fields.Many2one('ir.attachment',
         string='Source File',
         help='The original uploaded file (ir.attachment) this memory '
@@ -204,14 +202,12 @@ class AIMemory(models.Model):
              'download link.')
     chunk_count = fields.Integer(
         'Chunk Count', compute='_compute_chunk_count', store=True,
-        help='Antal chunkar i artefakten. Räknas ur rag_ids — inte ett '
-             'fält någon måste komma ihåg att skriva.')
+        help='Number of chunks in the artifact. Computed from rag_ids — not a field anyone has to remember to write.')
 
     # ── Chunkar (ai-memory-pgvector) ──
     rag_ids = fields.One2many(
         'ai.memory.chunk', 'memory_id', string='Chunks',
-        help='Chunkar av artefaktens text. Ersätter det serialiserade '
-             'FAISS-indexet.')
+        help='Chunks of the artifact text. Replaces the serialised FAISS index.')
 
     @api.depends('rag_ids')
     def _compute_chunk_count(self):
@@ -304,7 +300,7 @@ class AIMemory(models.Model):
         self.write(vals)
 
         _logger.info(
-            'pgvector: %d chunkar för minne %s (%d med vektor)',
+            'pgvector: %d chunks for memory %s (%d with vector)',
             len(chunks), self.name, sum(1 for v in vectors if v))
         return len(chunks)
 
@@ -393,9 +389,7 @@ class AIMemory(models.Model):
             _root = self.env.ref('base.user_root', raise_if_not_found=False)
             if _root and att.create_uid and att.create_uid.id != _root.id:
                 _logger.error(
-                    'FAISS load avvisad för memory %s: bilagan är inte '
-                    'systemskapad (create_uid=%s) — pickle-deserialisering '
-                    'skulle köra godtycklig kod.',
+                    'FAISS load refused for memory %s: the attachment was not created by the system (create_uid=%s) — pickle deserialisation would execute arbitrary code.',
                     self.name, att.create_uid.login)
                 return None
 
@@ -444,7 +438,7 @@ class AIMemory(models.Model):
             return docs
         except Exception as e:
             _logger.error(
-                'Legacy FAISS-utdrag misslyckades för %s: %s', self.name, e)
+                'Legacy FAISS extraction failed for %s: %s', self.name, e)
             return []
 
     # ── Re-embedding av legacy-artefakter (ai-memory-pgvector T4.3) ──
@@ -494,7 +488,7 @@ class AIMemory(models.Model):
                             metadata={'source': att.name})]
             except Exception as exc:
                 _logger.warning(
-                    'Re-embedding: kunde inte läsa bilaga %s: %s',
+                    'Re-embedding: could not read attachment %s: %s',
                     att.name, exc)
 
         # 2. Texten på posten
@@ -544,18 +538,17 @@ class AIMemory(models.Model):
                     skipped += 1
             except Exception as exc:
                 _logger.warning(
-                    'Re-embedding misslyckades för %s (id=%s): %s',
+                    'Re-embedding failed for %s (id=%s): %s',
                     mem.name, mem.id, exc, exc_info=True)
                 skipped += 1
 
         if done or dead or skipped:
             _logger.info(
-                'Re-embedding: %d klara, %d överhoppade, %d utan text',
+                'Re-embedding: %d done, %d skipped, %d without text',
                 done, skipped, len(dead))
         if dead:
             _logger.warning(
-                'Re-embedding: ingen text kunde hittas för %s — dessa '
-                'artefakter är osökbara tills en källa laddas upp igen',
+                'Re-embedding: no text could be found for %s — these artifacts are unsearchable until a source is uploaded again',
                 ', '.join(dead))
         return done
 
@@ -602,7 +595,7 @@ class AIMemory(models.Model):
 
         except Exception as e:
             _logger.error(
-                'Chunksökning misslyckades för minne %s: %s', self.name, e)
+                'Chunk search failed for memory %s: %s', self.name, e)
             return []
 
     def _bm25_matches(self, query):
@@ -644,7 +637,7 @@ class AIMemory(models.Model):
             if raw:
                 vec = '[' + ','.join(str(v) for v in raw) + ']'
         except Exception as exc:
-            _logger.warning('Fråge-embedding misslyckades: %s', exc)
+            _logger.warning('Query embedding failed: %s', exc)
 
         scored = {}
 
@@ -676,7 +669,7 @@ class AIMemory(models.Model):
                         }
             except Exception as exc:
                 _logger.warning(
-                    'Cosine-sökning över chunkar misslyckades: %s', exc)
+                    'Cosine search over chunks failed: %s', exc)
 
         # SIGNAL 2: svensk BM25 (tsvector)
         try:
@@ -702,7 +695,7 @@ class AIMemory(models.Model):
                             'score': ts,
                         }
         except Exception as exc:
-            _logger.warning('BM25-sökning över chunkar misslyckades: %s', exc)
+            _logger.warning('BM25 search over chunks failed: %s', exc)
 
         if not scored:
             return []
@@ -744,17 +737,12 @@ class AIMemory(models.Model):
                 'ai_agent_core.faiss_allow_download', '')
             if str(allow).lower() not in ('1', 'true', 'yes'):
                 _logger.warning(
-                    'FAISS: ingen embedding-provider konfigurerad, och '
-                    'lokal HuggingFace-nedladdning är inte tillåten '
-                    '(sätt ai_agent_core.faiss_allow_download=1 för att '
-                    'tillåta den). Minnesindexet kan inte byggas.')
+                    'FAISS: no embedding provider configured, and local HuggingFace download is not allowed (set ai_agent_core.faiss_allow_download=1 to allow it). The memory index cannot be built.')
                 return None
 
             from langchain_community.embeddings import HuggingFaceEmbeddings
             _logger.info(
-                'FAISS: använder lokal HuggingFace-modell '
-                '(all-MiniLM-L6-v2) — nedladdning tillåten via '
-                'ai_agent_core.faiss_allow_download')
+                'FAISS: using the local HuggingFace model (all-MiniLM-L6-v2) — download allowed via ai_agent_core.faiss_allow_download')
             return HuggingFaceEmbeddings(
                 model_name='sentence-transformers/all-MiniLM-L6-v2'
             )

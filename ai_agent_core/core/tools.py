@@ -34,6 +34,12 @@ from odoo.addons.ai_agent_core.core.ssrf import (
 
 _logger = logging.getLogger(__name__)
 
+#: Total tidsbudget för web_search:s leverantörskedja (webui-stream-feedback
+#: 5.1). Kedjan DDGS×2 + DDG HTML + Bing + Brave har 20 s timeout VAR —
+#: värsta fallet var ~80 s, tillräckligt för att chatten ska ge upp innan
+#: första träffen. Budgeten styr helheten, inte den enskilda leverantören.
+_WEB_SEARCH_BUDGET = 15.0
+
 # ---------------------------------------------------------------------------
 # Tool (TOOL-001)
 # ---------------------------------------------------------------------------
@@ -414,8 +420,8 @@ def _tool_personal_memory(env, action: str = "", content: str = "",
         if not (content or "").strip():
             return _missing_argument_error(
                 'content',
-                'texten som ska sparas (t.ex. "användaren vill ha fem nyheter")',
-                example="content='Användaren vill ha fem nyheter'",
+                'the text to store (e.g. "the user wants five news items")',
+                example="content='The user wants five news items'",
                 tool_name='personal_memory').to_json()
         valid_cat = dict(Memory._fields['category'].selection)
         valid_imp = dict(Memory._fields['importance'].selection)
@@ -561,6 +567,20 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
     import html as _html
     from bs4 import BeautifulSoup as _Soup
     from urllib.parse import quote_plus as _q
+    import time as _t
+
+    # Total tidsbudget för hela leverantörskedjan (webui-stream-feedback 5.1).
+    #
+    # VARFÖR: kedjan DDGS×2 + DDG HTML + Bing + Brave har 20 s timeout VAR.
+    # Värsta fallet var ~80 s — tillräckligt för att chatten ska ge upp
+    # innan första träffen. Mätt 2026-11-05 tog sju sökningar 7–20 s.
+    #
+    # Budgeten styr HELHETEN, inte den enskilda leverantören: en långsam men
+    # fungerande leverantör ska fortfarande få sin chans om den är först.
+    _deadline = _t.monotonic() + _WEB_SEARCH_BUDGET
+
+    def _out_of_budget():
+        return _t.monotonic() >= _deadline
 
     UA = ('Mozilla/5.0 (X11; Linux x86_64; rv:126.0) '
           'Gecko/20100101 Firefox/126.0')
@@ -594,7 +614,7 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
             soup = _Soup(r.text, 'html.parser')
             items = parser(soup)
             if not items:
-                _logger.info('web_search: %s gav inga parsade träffar', label)
+                _logger.info('web_search: %s gave no parsed hits', label)
             return items
         except Exception as exc:
             _logger.info('web_search: %s misslyckades: %s', label, exc)
@@ -623,6 +643,10 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
                             _html.unescape(sn.get_text(strip=True)) if sn else ''))
         return res
 
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan DDG HTML — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
     links = await _search('ddg',
         'https://html.duckduckgo.com/html/?q=' + _q(query) + '&kl=wt-wt&l=wt-wt'
         + ('&df=' + _df if _df else ''),
@@ -650,6 +674,10 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
         # formen (&filters=ex1%3a%22ez<kod>%22) är stabil över tid.
         _bing_fresh = {'d': '1', 'w': '2', 'm': '3', 'y': '4'}[_df]
         _bing_url += '&filters=ex1%3a%22ez' + _bing_fresh + '%22'
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan Bing — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
     lines2 = await _search('bing', _bing_url, _bing)
     out = await _to_lines(lines2 or [])
     if out:
@@ -671,6 +699,10 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
     _brave_url = 'https://search.brave.com/search?q=' + _q(query)
     if _df:
         _brave_url += '&tf=' + {'d': 'pd', 'w': 'pw', 'm': 'pm', 'y': 'py'}[_df]
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan Brave — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
     lines3 = await _search('brave', _brave_url, _brave)
     out3 = await _to_lines(lines3 or [])
     if out3:
@@ -811,19 +843,52 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000,
 
 
 def _sanitize_tool_name(name: str) -> str:
-    """Transliterera icke-ASCII-tecken i verktygsnamn.
+    """Gör ett verktygsnamn giltigt för en provider: ``^[a-zA-Z0-9_-]+$``.
 
-    Cerebras/Bifrost kan inte kompilera JSON-schema-grammatik för verktyg
-    med icke-ASCII-namn (t.ex. 'driftlarm_update_bedömning' → 400
-    'Failed to compile the JSON schema grammar').
+    VARFÖR (fix-tool-name-sanitization): ett verktygsnamn med `&` gav
+    `[InvalidParameter] invalid function name format` från opencode-go, och
+    hela webbchatten svarade "Anslutningen till AI-servern bröts". Felet kom
+    från agenten `SEO & GEO-specialist` → `call_specialist_seo_&_geo_specialist`.
+
+    Den tidigare implementationen translittererade BARA icke-ASCII:
+
+        if name.isascii():
+            return name          # & ÄR ascii → oförändrat
+
+    Två hål: (1) ASCII-specialtecken som `&`, `+`, `/` passerade rakt igenom;
+    (2) vissa icke-ASCII-tecken bryts inte ner av NFKD (`→` U+2192 har ingen
+    kompatibilitetsuppdelning), så `mail_→_partner` förblev ogiltigt.
+
+    Cerebras nekar dessutom att kompilera JSON-schema för icke-ASCII-namn
+    ('driftlarm_update_bedömning' → 400 'Failed to compile the JSON schema
+    grammar'), så translittereringen behövs fortfarande — den är steg 1.
+
+    Ordningen är viktig: translitterera FÖRE ersättning, annars blir `allmän`
+    till `allm_n` i stället för `allman`.
+
+    Idempotent: ``f(f(x)) == f(x)``. Det krävs av `stream.py`, som slår upp ett
+    verktyg med både det råt och det saniterade namnet.
     """
+    import re
     import unicodedata
-    if name.isascii():
+
+    if not name:
         return name
+
+    # 1. Translitterera icke-ASCII: å → a. Görs först så att `allmän` blir
+    #    `allman` och inte `allm_n`.
     normalized = unicodedata.normalize('NFKD', name)
     ascii_name = ''.join(
         c for c in normalized if not unicodedata.combining(c))
-    return ascii_name
+
+    # 2. Ersätt allt utanför regexet. Fångar både ASCII-specialtecken
+    #    (&, +, /) och icke-ASCII som NFKD inte bryter ner (→, emoji).
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', ascii_name)
+
+    # 3. Kollapsa upprepningar och trimma kanter, annars blir `a & b` →
+    #    `a___b` och namnet varierar med hur många mellanslag någon skrev.
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+    return sanitized
 
 
 def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
@@ -908,7 +973,7 @@ def _capability_enum_schema(members):
         'operation': {
             'type': 'string',
             'enum': [m.name for m in members],
-            'description': 'Operation att utföra. Välj exakt en av enumen.',
+            'description': 'Operation to perform. Choose exactly one from the enum.',
         },
     }
     for m in members:
@@ -940,8 +1005,8 @@ def capability_enum_tool(cap_name, cap_desc, members):
     if len(members) > CAPABILITY_ENUM_MAX_OPS:
         raise ValueError(
             f"Capability '{cap_name}' has {len(members)} operations "
-            f"> {CAPABILITY_ENUM_MAX_OPS} — dela förmågan eller använd "
-            'namespace-läge (spec tool-capability-serialization).')
+            f"> {CAPABILITY_ENUM_MAX_OPS} — split the capability or use "
+            'namespace mode (spec tool-capability-serialization).')
 
     by_name = {m.name: m for m in members}
     max_risk = max(
@@ -983,7 +1048,7 @@ def capability_namespace_prompt(capabilities):
     """
     if not capabilities:
         return ''
-    lines = ['', '## Förmågor (capabilities)', '']
+    lines = ['', '## Capabilities', '']
     for cap in capabilities:
         lines.append(f'### {cap["name"]}')
         lines.append(cap.get('description') or '')
@@ -1036,6 +1101,71 @@ def apply_capability_serialization(registry, capabilities, mode):
         return ''
 
     return ''
+
+
+def _tool_push_notification(env, title='', body='', url=None):
+    """Skicka en push-notis till sessionens användare (push-notification 1.1).
+
+    Mottagaren är ALLTID sessionens `user_id` — verktyget tar ingen
+    mottagare. Ett verktyg som tog en mottagare vore en kanal för spam och
+    för notiser som ser ut att komma från någon annan (design D1).
+
+    Sessionen läses ur `env.context` med samma två nycklar som HITL:s
+    `_resolve_session`: `_ai_context_model`/`_ai_context_id` (kanonisk
+    aktuell session) eller `ai_lineage_session_id`.
+
+    Returnerar JSON med `queued` (bool) och, när notisen inte kunde köas,
+    en `reason` som säger varför. Vi påstår aldrig att en notis levererats:
+    `_push_user_notification` köar den bara, och returnerar False när
+    användaren saknar enheter eller VAPID-nycklarna saknas.
+    """
+    import json as _json
+    if not title or not (title or '').strip():
+        return _json.dumps({'queued': False,
+                            'reason': 'title is required'})
+    if 'web.pwa.push' not in env:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'web push is not installed in this database'})
+
+    sess_id = 0
+    if env.context.get('_ai_context_model') == 'ai.coworker.session':
+        sess_id = env.context.get('_ai_context_id') or 0
+    if not sess_id:
+        sess_id = env.context.get('ai_lineage_session_id') or 0
+    if not sess_id:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'no session in context - the notification needs a '
+                      'session to know its recipient'})
+
+    try:
+        session = env['ai.coworker.session'].sudo().browse(int(sess_id))
+        if not session.exists():
+            return _json.dumps({'queued': False,
+                                'reason': 'session not found'})
+        user = session.user_id
+        if not user:
+            return _json.dumps({
+                'queued': False,
+                'reason': 'the session has no user to notify'})
+        queued = env['web.pwa.push']._push_user_notification(
+            user,
+            title=(title or '').strip(),
+            body=(body or '').strip(),
+            url=(url or '/ai/chat'),
+        )
+    except Exception as e:  # noqa: BLE001
+        _logger.warning('push_notification failed: %s', e, exc_info=True)
+        return _json.dumps({'queued': False,
+                            'reason': 'push failed: %s' % e})
+
+    if not queued:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'the user has no registered device, or the server '
+                      'has no VAPID keys - nothing was sent'})
+    return _json.dumps({'queued': True, 'recipient': user.display_name})
 
 
 def builtin_tools() -> list[Tool]:
@@ -1214,7 +1344,7 @@ def builtin_tools() -> list[Tool]:
                     },
                     "content": {
                         "type": "string",
-                        "description": "The memory to store (required for action='write'), e.g. 'Användaren vill ha fem nyheter'",
+                        "description": "The memory to store (required for action='write'), e.g. 'The user wants five news items'",
                     },
                     "query": {
                         "type": "string",
@@ -1273,6 +1403,7 @@ def builtin_tools() -> list[Tool]:
             risk_level="read_only",
             source="builtin",
             executor="nats",
+            trust="untrusted",
             capabilities=["browser"],
             nats_subject="pi.task.do",
             nats_skills="agent-browser",
@@ -1645,7 +1776,7 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="odoo_create",
-            description="Create a record via the ORM (affärslager) — defaults/onchange tillämpas. Returns id and display_name. Requires approval.",
+            description="Create a record via the ORM (business layer) — defaults/onchange are applied. Returns id and display_name. Requires approval.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -1757,15 +1888,7 @@ def builtin_tools() -> list[Tool]:
         Tool(
             name="delegate_task",
             description=(
-                "Lägg ett uppdrag hos en kollega (ai.coworker) i din "
-                "avdelning. Använd när uppgiften ligger utanför din egen "
-                "förmåga men inom din avdelning (sidledes) eller under dig "
-                "(neråt) — t.ex. en redovisningscoworker som ber en "
-                "driftcoworker kolla loggarna. Delegering går ALDRIG uppåt "
-                "(det är eskalering) eller tvärs över avdelningar. "
-                "Uppdraget bär ditt tillitssteg och utförs av kollegan i "
-                "deras egen takt (heartbeat); du får svaret därifrån. "
-                "Se kollegakatalogen i systemprompten för giltiga mottagare."
+                "Place an assignment with a colleague (ai.coworker) in your department. Use it when the task is outside your own ability but within your department (sideways) or below you (down) — e.g. an accounting coworker asking an operations coworker to check the logs. Delegation NEVER goes upward (that is escalation) or across departments. The assignment carries your trust level and is carried out by the colleague at their own pace (heartbeat); you get the answer from there. See the colleague catalog in the system prompt for valid recipients."
             ),
             parameters={
                 "type": "object",
@@ -1776,7 +1899,7 @@ def builtin_tools() -> list[Tool]:
                     },
                     "description": {
                         "type": "string",
-                        "description": "Vad som ska göras (krävs — en tom uppgift ruttnar)",
+                        "description": "What should be done (required — an empty task rots)",
                     },
                     "name": {
                         "type": "string",
@@ -1785,12 +1908,46 @@ def builtin_tools() -> list[Tool]:
                     "priority": {
                         "type": "string",
                         "enum": ["0", "1", "2", "3"],
-                        "description": "0=Låg, 1=Normal, 2=Hög, 3=Brådskande",
+                        "description": "0=Low, 1=Normal, 2=High, 3=Urgent",
                     },
                 },
                 "required": ["target_coworker", "description"],
             },
             handler=_tool_delegate_task,
+            risk_level="write",
+            source="builtin",
+        ),
+        Tool(
+            name="push_notification",
+            description=(
+                "Send a push notification to the user who owns this "
+                "session. Use it BEFORE a long job so the user can leave "
+                "the chat, or when a background job finishes. The "
+                "recipient is always the session's user - you cannot "
+                "address anyone else. Returns whether the notification "
+                "could be queued; a user without registered devices gets "
+                "a clear negative answer, not a claim that it was sent."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short heading (max ~60 chars)",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "One or two sentences of context",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": (
+                            "Path opened on click, e.g. /ai/chat. "
+                            "Defaults to /ai/chat."),
+                    },
+                },
+                "required": ["title", "body"],
+            },
+            handler=_tool_push_notification,
             risk_level="write",
             source="builtin",
         ),
@@ -1881,7 +2038,7 @@ def nats_kv_create(key: str, value: str) -> bool:
         return asyncio.run(_run())
     except Exception as e:
         # Konflikt (nyckeln finns) eller NATS otillgängligt → neka.
-        _logger.info('NATS KV create nekad för %s: %s', key, e)
+        _logger.info('NATS KV create denied for %s: %s', key, e)
         return False
 
 
@@ -1904,7 +2061,7 @@ def nats_kv_delete(key: str) -> bool:
     try:
         return asyncio.run(_run())
     except Exception as e:
-        _logger.debug('NATS KV delete misslyckades för %s: %s', key, e)
+        _logger.debug('NATS KV delete failed for %s: %s', key, e)
         return False
 
 
@@ -2070,33 +2227,46 @@ class TodoList:
         return self.done_count / self.total_count * 100
 
 
-async def _tool_todo_write(todos: list = None, items: list = None) -> str:
-    """Replace the task list. Each item has 'content' and 'status'.
+def _make_todo_write(holder: 'TodoList'):
+    """Bygg `todo_write` som stänger över EN hållare (D6).
 
-    Status must be one of: pending, in_progress, done.
-    The list replaces any previous list — provide ALL items each call.
+    Tidigare skrev verktyget till en modulnivå-global (`_TODO_HOLDER`) som
+    sattes när en loop skapades. Två loopar i samma worker — supervisor +
+    specialist, eller två samtidiga sessioner — skrev då över varandras
+    state. Det är ett korrekthetsfel, inte bara en läcka: den första loopens
+    `todo_write` hamnade i den andras lista.
+
+    En closure per `planning_tools()`-anrop ger varje loop sin egen lista
+    utan att någon global behöver existera.
     """
-    import json
-    from .tools import _TODO_HOLDER
 
-    normalized = []
-    for entry in (todos if todos is not None else items) or []:
-        if isinstance(entry, dict):
-            status = entry.get("status", "pending")
-            if status == "completed":
-                status = "done"
-            if status not in ("pending", "in_progress", "done"):
-                status = "pending"
-            normalized.append({
-                "content": str(entry.get("content", "")),
-                "status": status,
-            })
-        else:
-            normalized.append({"content": str(entry), "status": "pending"})
+    async def _tool_todo_write(todos: list = None, items: list = None) -> str:
+        """Replace the task list. Each item has 'content' and 'status'.
 
-    if _TODO_HOLDER is not None:
-        _TODO_HOLDER.items = normalized
-    return json.dumps({"count": len(normalized), "todos": normalized})
+        Status must be one of: pending, in_progress, done.
+        The list replaces any previous list — provide ALL items each call.
+        """
+        import json
+
+        normalized = []
+        for entry in (todos if todos is not None else items) or []:
+            if isinstance(entry, dict):
+                status = entry.get("status", "pending")
+                if status == "completed":
+                    status = "done"
+                if status not in ("pending", "in_progress", "done"):
+                    status = "pending"
+                normalized.append({
+                    "content": str(entry.get("content", "")),
+                    "status": status,
+                })
+            else:
+                normalized.append({"content": str(entry), "status": "pending"})
+
+        holder.items = normalized
+        return json.dumps({"count": len(normalized), "todos": normalized})
+
+    return _tool_todo_write
 
 
 def _tool_propose_plan(plan: str = "") -> str:
@@ -2116,34 +2286,43 @@ def _tool_propose_plan(plan: str = "") -> str:
     })
 
 
-# Module-level holder for todo state — set by AgentLoop
-_TODO_HOLDER: TodoList | None = None
+# Modulnivå-globaler för todo-state och skill-källa togs bort (D6):
+# de gjorde att två loopar i samma worker skrev över varandras state.
+# `planning_tools()` och `skill_tools()` returnerar nu verktyg som stänger
+# över sin egen hållare/källa.
 
-# Module-level skill source — set by AgentLoop or Odoo environment
-_SKILL_SOURCE: callable | None = None  # async (name: str) -> dict
 
+def _make_load_skill(skill_source: callable | None):
+    """Bygg `load_skill` som stänger över EN källa (D6).
 
-async def _tool_load_skill(name: str = "") -> str:
-    """Load a skill's full instructions by name. Call this when a skill from
+    Samma skäl som för `todo_write`: en global källa sattes när en loop
+    skapades, så två samtidiga loopar läste varandras skills. En closure per
+    `skill_tools()`-anrop ger varje loop sin egen källa.
+    """
+
+    async def _tool_load_skill(name: str = "") -> str:
+        """Load a skill's full instructions by name. Call this when a skill from
 the catalog is relevant to the current task."""
-    import json
-    if not name or not name.strip():
-        return _missing_argument_error(
-            'name', 'the name of a skill from the catalog',
-            example='saltstack',
-            tool_name='load_skill').to_json()
+        import json
+        if not name or not name.strip():
+            return _missing_argument_error(
+                'name', 'the name of a skill from the catalog',
+                example='saltstack',
+                tool_name='load_skill').to_json()
 
-    if _SKILL_SOURCE is None:
-        return json.dumps({
-            "error": "no skill source configured",
-            "note": "This environment doesn't support dynamic skill loading.",
-        })
+        if skill_source is None:
+            return json.dumps({
+                "error": "no skill source configured",
+                "note": "This environment doesn't support dynamic skill loading.",
+            })
 
-    try:
-        result = await _SKILL_SOURCE(name.strip())
-        return json.dumps(result, default=str)
-    except Exception as e:
-        return json.dumps({"error": f"failed to load skill '{name}': {e}"})
+        try:
+            result = await skill_source(name.strip())
+            return json.dumps(result, default=str)
+        except Exception as e:
+            return json.dumps({"error": f"failed to load skill '{name}': {e}"})
+
+    return _tool_load_skill
 
 
 def skill_tools(skill_source: callable | None = None) -> list[Tool]:
@@ -2154,10 +2333,7 @@ def skill_tools(skill_source: callable | None = None) -> list[Tool]:
                       a dict with name, instructions, resources_path etc.
                       If None, load_skill returns an error.
     """
-    global _SKILL_SOURCE
-    if skill_source is not None:
-        _SKILL_SOURCE = skill_source
-
+    load_skill = _make_load_skill(skill_source)
     return [
         Tool(
             name="load_skill",
@@ -2177,7 +2353,7 @@ def skill_tools(skill_source: callable | None = None) -> list[Tool]:
                 },
                 "required": ["name"],
             },
-            handler=_tool_load_skill,
+            handler=load_skill,
             risk_level="safe",
             source="builtin",
         ),
@@ -2189,13 +2365,11 @@ def planning_tools(todo_holder: TodoList | None = None) -> list[Tool]:
 
     Args:
         todo_holder: A TodoList instance to hold the agent's task state.
-                     If None, a module-level holder is used.
+                     If None, a fresh holder is created for this call — it
+                     is NOT stored in a module-level global (D6).
     """
-    global _TODO_HOLDER
-    if todo_holder is not None:
-        _TODO_HOLDER = todo_holder
-    elif _TODO_HOLDER is None:
-        _TODO_HOLDER = TodoList()
+    holder = todo_holder if todo_holder is not None else TodoList()
+    todo_write = _make_todo_write(holder)
 
     return [
         Tool(
@@ -2233,7 +2407,7 @@ def planning_tools(todo_holder: TodoList | None = None) -> list[Tool]:
                 },
                 "required": ["todos"],
             },
-            handler=_tool_todo_write,
+            handler=todo_write,
             risk_level="safe",
             source="builtin",
         ),
@@ -2774,7 +2948,7 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
     Model = env[model]
     vals = dict(values or {})
     if not vals:
-        return json.dumps({"error": "values krävs"})
+        return json.dumps({"error": "values is required"})
     try:
         fg = Model.fields_get(list(vals.keys()))
     except Exception:
@@ -3091,9 +3265,9 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
     """
     import json as _json
     if not query:
-        return json.dumps({"error": "query krävs"})
+        return json.dumps({"error": "query is required"})
     if 'ai.okf.concept' not in env:
-        return json.dumps({"error": "OKF inte tillgängligt"})
+        return json.dumps({"error": "OKF not available"})
     try:
         kw = {'query': query, 'limit': limit or 10}
         if scope in ('company', 'personal', 'coworker'):
@@ -3114,8 +3288,7 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
                         cw_id = sess.coworker_id.id if sess.exists() else None
                 if not cw_id:
                     return json.dumps({
-                        "error": "coworker-scope kräver en coworker i "
-                                 "kontexten (default_coworker_id)"})
+                        "error": "coworker scope requires a coworker in the context (default_coworker_id)"})
                 kw['owner_id'] = cw_id
         results = env['ai.okf.concept']._okf_search(**kw)
         out = [{
@@ -3189,19 +3362,17 @@ def _tool_delegate_task(env, target_coworker='', description='',
     requester = _current_coworker(env)
     if requester is None:
         return _delegation_error(
-            'delegate_task kan bara användas inuti en coworker-körning '
-            '(ingen aktuell session i kontexten).',
+            'delegate_task can only be used inside a coworker run (no current session in the context).',
             parameter='target_coworker', retryable=False)
     if not (description or '').strip():
         return _delegation_error(
-            'description krävs — en uppgift utan beskrivning köas inte.',
+            'description is required — a task without a description is not queued.',
             parameter='description',
             expected='en tydlig beskrivning av uppdraget', retryable=True)
     target_coworker = str(target_coworker or '').strip()
     if not target_coworker:
         return _delegation_error(
-            'target_coworker krävs — ange kollegans namn (se '
-            'kollegakatalogen).', parameter='target_coworker',
+            'target_coworker is required — give the colleague name (see the colleague catalog).', parameter='target_coworker',
             expected='en kollega i din avdelning (eller under dig)',
             retryable=True)
 
@@ -3218,8 +3389,7 @@ def _tool_delegate_task(env, target_coworker='', description='',
         return _delegation_error(
             'Hittade ingen kollega som matchar "%s".' % target_coworker,
             parameter='target_coworker',
-            expected='exakt namn på en kollega i din avdelning '
-                     '(se kollegakatalogen)', retryable=True)
+            expected='exact name of a colleague in your department (see the colleague catalog)', retryable=True)
 
     try:
         task = requester._delegate_task_to(
@@ -3238,8 +3408,7 @@ def _tool_delegate_task(env, target_coworker='', description='',
         "name": task.name,
         "target": target.name,
         "delegation_depth": task.delegation_depth,
-        "message": ("Uppdraget ligger nu hos %s. Du får svaret därifrån när "
-                    "kollegan plockar upp det." % target.name),
+        "message": ("The assignment now sits with %s. You get the answer from there once the colleague picks it up." % target.name),
     }, ensure_ascii=False)
 
 
@@ -3896,18 +4065,27 @@ def specialist_tools(agents) -> list[Tool]:
     tools = []
     for name, description, loop in agents:
         safe_name = name.strip().lower().replace(' ', '_').replace('-', '_')
-        # Sanitera icke-ASCII (t.ex. 'allmän_kärna' → 'allman_karna') —
-        # Bifrost nekar verktygsnamn som inte matchar ^[a-zA-Z0-9_-]+$
+        # Sanitera till ^[a-zA-Z0-9_-]+$ — providers nekar namn med `&`, `→`
+        # m.fl. (`[InvalidParameter] invalid function name format`).
         safe_name = _sanitize_tool_name(safe_name)
+        tool_name = f"call_specialist_{safe_name}"
+        # Vakt: efter saniteringen ska namnet ALLTID matcha regexet. Om det
+        # inte gör det är saniteringen trasig, och då vill vi veta det här
+        # i stället för att providern svarar 400 mitt i en användares tur.
+        import re as _re
+        if not _re.match(r'^[a-zA-Z0-9_-]+$', tool_name):
+            _logger.error(
+                'specialist_tools: built tool name %r does not match ^[a-zA-Z0-9_-]+$ (agent name=%r) — the sanitisation is broken',
+                tool_name, name)
         tool = Tool(
-            name=f"call_specialist_{safe_name}",
+            name=tool_name,
             description=(
-                f"Delegera EN konkret delfråga till specialisten '{name}'. "
-                f"{description or ''}. VIKTIGT: `query` MÅSTE alltid vara en konkret, "
-                f"specifik sök-/arbetsuppgift som du bygger ur användarens fråga "
-                f"(t.ex. exakt ämne/term att undersöka) — skicka ALDRIG en tom eller "
-                f"vag query. Om du inte kan formulera en konkret delfråga åt "
-                f"specialisten, anropa INTE verktyget."
+                f"Delegate ONE concrete sub-question to the specialist '{name}'. "
+                f"{description or ''}. IMPORTANT: `query` MUST always be a concrete, "
+                f"specific search/work task that you build from the user question "
+                f"(e.g. the exact topic/term to investigate) — NEVER send an empty or "
+                f"vague query. If you cannot formulate a concrete sub-question for "
+                f"the specialist, do NOT call the tool."
             ),
             parameters={
                 "type": "object",
@@ -3915,11 +4093,11 @@ def specialist_tools(agents) -> list[Tool]:
                     "query": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Precis uppgift att utföra."
+                        "description": "The exact task to perform."
                     },
                     "context": {
                         "type": "string",
-                        "description": "Relevant bakgrund för uppgiften (valfritt)."
+                        "description": "Relevant background for the task (optional)."
                     },
                 },
                 "required": ["query"],
@@ -3937,7 +4115,7 @@ def specialist_tools(agents) -> list[Tool]:
                 return _missing_argument_error(
                     'query',
                     'a concrete task for the specialist (not empty)',
-                    example='Sammanfatta senaste driftlarmet för web01',
+                    example='Summarise the latest operational alert for web01',
                     tool_name='call_specialist').to_json()
             prompt = f"{context}\n\n{query}" if context else query
             try:

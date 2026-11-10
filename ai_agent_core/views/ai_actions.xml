@@ -12,7 +12,7 @@
         <field name="view_mode">kanban,list,form</field>
     </record>
     <record id="action_ai_settings" model="ir.actions.act_window">
-        <field name="name">Inställningar</field>
+        <field name="name">Settings</field>
         <field name="res_model">res.config.settings</field>
         <field name="view_mode">form</field>
         <field name="target">inline</field>

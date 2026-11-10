@@ -9,7 +9,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_personal_memory_index" model="cron.task">
-            <field name="name">AI: Indexera personliga minneskällor (roll + mål)</field>
+            <field name="name">AI: Index personal memory sources (role + goals)</field>
             <field name="technical_name">ai_personal_memory_index</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.okf.concept</field>

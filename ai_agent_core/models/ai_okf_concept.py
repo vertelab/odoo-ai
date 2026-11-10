@@ -117,21 +117,19 @@ class AIOkfConcept(models.Model):
     # för alla användare.
     source_user_id = fields.Many2one(
         'res.users', string='Source User', index=True,
-        help='Användaren vars session konceptet lärdes ur. '
-             'Avgränsar coworker-scopet per användare. Tomt = '
-             'coworker-globalt.')
+        help='The user whose session the concept was learned from. Scopes the coworker scope per user. Empty = coworker-global.')
 
     scope = fields.Selection([
         ('company', 'Company'),
         ('personal', 'Personal'),
         ('coworker', 'Coworker'),
     ], string='Scope', required=True,
-        help='Härlett från ägarfältet. Unik per (scope, concept_key).')
+        help='Derived from the owner field. Unique per (scope, concept_key).')
 
     # ── Artefakttyp + kind ──
     artifact_type_id = fields.Many2one(
         'ai.artifact.type', string='Artifact Type', required=True,
-        help='Bär med sig kind (memory|knowledge) som styr beteendet.')
+        help='Carries kind (memory|knowledge), which steers the behaviour.')
 
     # -- Identitet: ETT koncept per (scope, agare, concept_key) --
     #
@@ -157,19 +155,17 @@ class AIOkfConcept(models.Model):
     title = fields.Char(string='Title')
     summary = fields.Text(
         string='Summary',
-        help='Markdown summary — det tunna konceptet (ingen innehållskopia).')
+        help='Markdown summary — the thin concept (no copy of the content).')
     attribution = fields.Json(
         string='Attribution',
-        help='Per-rad källattribution: [{"line": 1, "source_ref": "res.partner,42"}, ...]')
+        help='Per-line source attribution: [{"line": 1, "source_ref": "res.partner,42"}, ...]')
     okf_tags = fields.Many2many(
         'ai.okf.tag', 'ai_okf_concept_tag_rel', 'concept_id', 'tag_id',
         string='Tags',
-        help='OKF-frontmatterns tags — etiketter, inte länkar. En tagg har '
-             'inget innehåll att indexera och får därför ingen egen mixin.')
+        help='The OKF frontmatter tags — labels, not links. A tag has no content to index and therefore gets no mixin of its own.')
     source_text = fields.Text(
         'Source Text',
-        help='Källtexten som summary härleddes ur (okf-mixin D5). Styr '
-             'Sparas som den är — konceptet speglar källan.')
+        help='The source text the summary was derived from (okf-mixin D5). Stored as it is — the concept mirrors the source.')
     source_ref = fields.Char(
         string='Source Ref',
         help='Primary source reference, t.ex. res.partner,42')
@@ -219,20 +215,13 @@ class AIOkfConcept(models.Model):
     # av `stale_after`.
     retention_end = fields.Datetime(
         string='Retention End', index=True,
-        help='Sista datum konceptet får behållas, beräknat ur '
-             'artefakttypens retention_days och konceptets create_date. '
-             'Tomt = ingen frist. Verkställs av _cron_enforce_retention(), '
-             'som arkiverar (aldrig raderar) utgångna koncept.')
+        help='The last date the concept may be kept, computed from the artifact type retention_days and the concept create_date. Empty = no deadline. Enforced by _cron_enforce_retention(), which archives (never deletes) expired concepts.')
     retention_warned_at = fields.Datetime(
         string='Retention Warned At', readonly=True,
-        help='När ägaren varnades om att fristen närmar sig. Gör '
-             'varningen engångs — annars blir den en daglig aktivitet som '
-             'ingen läser.')
+        help='When the owner was warned that the deadline approaches. Makes the warning one-shot — otherwise it becomes a daily activity nobody reads.')
     archived = fields.Boolean(
         string='Archived', default=False,
-        help='Global soft-delete — tas bort från ALL sökning + injektion. '
-             'Sätts av retention-cronen när fristen passerats; raden finns '
-             'kvar så att gallringen går att spåra och ångra.')
+        help='Global soft delete — removed from ALL search and injection. Set by the retention cron once the deadline has passed; the row remains so the purge can be traced and undone.')
 
     # `archived` är INTE modellens active-fält: Odoo 18 tillåter bara
     # `active`/`x_active` som `_active_name` (assert i models._setup_base).
@@ -254,17 +243,12 @@ class AIOkfConcept(models.Model):
     is_my_memory = fields.Boolean(
         string='Mina minnen', compute='_compute_is_my_memory',
         search='_search_is_my_memory',
-        help="Koncept som hör till den inloggade användaren: personliga "
-             "(owner_user_id) eller coworker-koncept lärda ur dennes session "
-             "(source_user_id). Coworker-globala koncept ingår inte.")
+        help="Concepts belonging to the logged-in user: personal (owner_user_id) or coworker concepts learned from their session (source_user_id). Coworker-global concepts are not included.")
 
     # ── Vektorer (pushdown, beslut 11) ──
     embedding = PgVector(
         string='Embedding', dimension=EMBEDDING_DIM,
-        help='pgvector(%d) embedding (text-embedding-3-small @ 1024d). '
-             'Kolumnen är vector(%d)-typ — satt av hooks.py och migration '
-             '18.0.1.202 (migration 1.11 misslyckades tyst: kolumnen var '
-             'dimensionslös `vector`, vilket blockerade ivfflat-indexet).'
+        help='pgvector(%d) embedding (text-embedding-3-small @ 1024d). The column is vector(%d) type — set by hooks.py and migration 18.0.1.202 (migration 1.11 failed silently: the column was a dimensionless `vector`, which blocked the ivfflat index).'
              % (EMBEDDING_DIM, EMBEDDING_DIM))
     # search_vector — GENERATED COLUMN, skapad av SQL (hooks.py:
     # okf_ensure_search_infrastructure, körs i post_init_hook + migration
@@ -280,8 +264,7 @@ class AIOkfConcept(models.Model):
     # ── Trigger-modell ──
     dirty = fields.Boolean(
         string='Dirty', default=False,
-        help='Sätts av write()-hooks på källmodeller; cron plockar upp och '
-             'rensar efter _okf_upsert().')
+        help='Set by write() hooks on the source models; cron picks it up and clears it after _okf_upsert().')
 
     embedding_state = fields.Selection(
         selection=[('pending', 'Pending'),
@@ -289,13 +272,7 @@ class AIOkfConcept(models.Model):
                    ('failed', 'Failed'),
                    ('skipped', 'Skipped')],
         string='Embedding State', default='pending', index=True,
-        help='Hur det gick att skapa konceptets vektor. '
-             'pending = ingen provider/nyckel stund; cron fyller på. '
-             'failed = providern svarade men vektorn var felaktig '
-             '(fel dimension) — kräver åtgärd. '
-             'skipped = ingen text att vektorisera. '
-             'Behövs för att efterfyllnad ska veta vad som saknas — '
-             'utan markering ser en tom kolumn likadan ut oavsett orsak.')
+        help='How creating the concept vector went. pending = no provider/key at the time; cron fills in. failed = the provider answered but the vector was wrong (wrong dimension) — needs action. skipped = no text to vectorise. Needed so backfill knows what is missing — without the marker an empty column looks the same whatever the reason.')
 
     # Hybrid-sökningens vikt (okf-recall-path 2.4): hur mycket vektorsignalen
     # väger mot BM25-textsignalen. Konfigurerbar i stället för hårdkodad —
@@ -304,9 +281,7 @@ class AIOkfConcept(models.Model):
     # inte skickar en explicit `semantic_weight`.
     hybrid_semantic_weight = fields.Float(
         'Semantisk vikt (hybrid)', default=0.7,
-        help='Vikt för vektorsignalen i hybrid-sökningen (0–1). '
-             '0.7 = semantik dominerar; 0 = ren BM25 (för installationer '
-             'utan embeddings).')
+        help='Weight for the vector signal in hybrid search (0-1). 0.7 = semantics dominate; 0 = pure BM25 (for installations without embeddings).')
 
     _sql_constraints = [
         # ETT koncept per (scope, AGARE, concept_key).
@@ -434,8 +409,7 @@ class AIOkfConcept(models.Model):
             return False
         if not self.create_date:
             _logger.warning(
-                'OKF: koncept %s saknar create_date — ingen retention_end '
-                'beräknad trots retention_days=%s', self.id, days)
+                'OKF: concept %s has no create_date — no retention_end computed despite retention_days=%s', self.id, days)
             return False
         return self.create_date + timedelta(days=days)
 
@@ -487,8 +461,7 @@ class AIOkfConcept(models.Model):
             user = rec._retention_recipient()
             if not user:
                 _logger.warning(
-                    'OKF retention: koncept %s (%s) går ut %s men ingen '
-                    'mottagare kunde lösas — ingen varning skickad',
+                    'OKF retention: concept %s (%s) expires %s but no recipient could be resolved — no warning sent',
                     rec.id, rec.concept_key, rec.retention_end)
                 continue
             rec._schedule_retention_warning(user)
@@ -516,8 +489,7 @@ class AIOkfConcept(models.Model):
         if admin:
             return admin
         _logger.warning(
-            'OKF retention: ingen mottagare för koncept %s (ingen ägare, '
-            'ingen coworker-ägare, ingen base.user_admin)', self.id)
+            'OKF retention: no recipient for concept %s (no owner, no coworker owner, no base.user_admin)', self.id)
         return self.env['res.users']
 
     def _schedule_retention_warning(self, user):
@@ -540,7 +512,7 @@ class AIOkfConcept(models.Model):
             )
         except Exception as e:  # noqa: BLE001 — en varning får ej stoppa cronen
             _logger.warning(
-                'OKF retention: kunde inte skapa aktivitet för koncept %s: %s',
+                'OKF retention: could not create an activity for concept %s: %s',
                 self.id, e)
             return None
 
@@ -582,7 +554,7 @@ class AIOkfConcept(models.Model):
             'ai_agent_core.retention_metrics',
             json.dumps(metrics, ensure_ascii=False))
         _logger.info(
-            'OKF retention: %d koncept arkiverade, %d förfallna kvar',
+            'OKF retention: %d concepts archived, %d expired left',
             archived, remaining)
         return metrics
 
@@ -675,48 +647,72 @@ class AIOkfConcept(models.Model):
             if not emp or not emp.job_id:
                 return 0
             dept = emp.department_id.name or ''
-            summary = f"{user.name} är {emp.job_id.name}"
+            summary = f"{user.name} is {emp.job_id.name}"
             if dept:
-                summary += f" på avdelningen {dept}"
+                summary += f" in the department {dept}"
             self._okf_upsert(
                 'roll',
                 concept_key=f'user.{user.id}.role',
                 summary=summary,
                 title=f'Roll: {emp.job_id.name}',
                 source_ref=f'hr.employee,{emp.id}',
-                attribution=[{'source': f'hr.employee,{emp.id}', 'role': 'hr'}],
+                # Schemat kräver source_ref + int line (se
+                # _validate_attribution). Nyckeln 'source' utan 'line' gav
+                # "Invalid attribution: each attribution item needs an int
+                # line" — felet svaldes och roll-koncept skapades aldrig.
+                attribution=[{
+                    'source_ref': f'hr.employee,{emp.id}',
+                    'line': 1,
+                    'role': 'hr',
+                }],
                 owner_user_id=user.id,
                 generated_by='hr_indexer',
             )
             return 1
         except Exception as e:
-            _logger.warning('HR-indexerare misslyckades för %s: %s', user_id, e)
+            _logger.warning('HR indexer failed for %s: %s', user_id, e)
             return 0
 
     @api.model
     def _index_user_goals(self, user_id):
-        """Mål-indexerare: ai.personal.goal → OKF personal (mål)."""
+        """Mål-indexerare: ai.personal.goal → OKF personal (mål).
+
+        ⚠️ FYND 2026-11-05 (companion-memory-completeness 4.6): sökningen
+        filtrerade på `('active', '=', True)`, men `ai.personal.goal` har
+        INGET `active`-fält — den har `status` (proposed/accepted/active/
+        completed/cancelled) och `archived`. Sökningen kastade därför
+        `ValueError: Invalid field 'active'`, felet svaldes av
+        `_index_all_personal_sources`, och resultatet blev F1:s mätning
+        "goal_indexer = 0": L2-blocket för mål var alltid tomt.
+
+        Urvalet är nu de mål som ska synas i minnet: aktiva eller accepterade,
+        och inte arkiverade. `completed`/`cancelled` utesluts — de markeras
+        dessutom `deprecated` i OKF av `action_complete`/`action_cancel`.
+        """
         user = self.env['res.users'].browse(user_id)
         if not user.exists():
             return 0
         goals = self.env['ai.personal.goal'].search([
             ('user_id', '=', user.id),
-            ('active', '=', True),
+            ('status', 'in', ['active', 'accepted']),
+            ('archived', '=', False),
         ])
         count = 0
         for goal in goals:
-            summary = f"Mål: {goal.name}"
+            summary = f"Goal: {goal.name}"
             if goal.description:
                 summary += f" — {goal.description[:200]}"
             try:
                 self._okf_upsert(
-                    'mål',
+                    'goal',
                     concept_key=f'user.{user.id}.goal.{goal.id}',
                     summary=summary,
                     title=goal.name[:80],
                     source_ref=f'ai.personal.goal,{goal.id}',
+                    # Samma schema som hr_indexer: source_ref + int line.
                     attribution=[{
-                        'source': f'ai.personal.goal,{goal.id}',
+                        'source_ref': f'ai.personal.goal,{goal.id}',
+                        'line': 1,
                         'role': 'goal',
                     }],
                     owner_user_id=user.id,
@@ -724,7 +720,7 @@ class AIOkfConcept(models.Model):
                 )
                 count += 1
             except Exception as e:
-                _logger.warning('Mål-indexerare misslyckades för mål %s: %s',
+                _logger.warning('Goal indexer failed for goal %s: %s',
                                 goal.id, e)
         return count
 
@@ -747,17 +743,17 @@ class AIOkfConcept(models.Model):
             except Exception as e:
                 errors += 1
                 _logger.warning(
-                    'Personlig indexering: roll för användare %s misslyckades: %s',
+                    'Personal indexing: role for user %s failed: %s',
                     u.id, e, exc_info=True)
             try:
                 goals += self._index_user_goals(u.id)
             except Exception as e:
                 errors += 1
                 _logger.warning(
-                    'Personlig indexering: mål för användare %s misslyckades: %s',
+                    'Personal indexing: goal for user %s failed: %s',
                     u.id, e, exc_info=True)
         _logger.info(
-            'Personliga minneskällor: %d roller, %d mål, %d fel',
+            'Personal memory sources: %d roles, %d goals, %d errors',
             roles, goals, errors)
         return {'roles': roles, 'goals': goals, 'errors': errors}
 
@@ -793,9 +789,7 @@ class AIOkfConcept(models.Model):
         provider = self.env['ai.provider']._embedding_provider()
         if not provider:
             _logger.warning(
-                'OKF: ingen provider som kan embedda — konceptet sparas utan '
-                'vektor '
-                '(embedding_state=pending, cron fyller på senare)')
+                'OKF: no provider that can embed — the concept is saved without a vector (embedding_state=pending, cron fills in later)')
             return (None, 'pending')
 
         model = provider._effective_embedding_model()
@@ -806,8 +800,7 @@ class AIOkfConcept(models.Model):
             model=model, input=text, input_type='search_document')
         if not vector:
             _logger.warning(
-                'OKF: embedding misslyckades för koncept %r '
-                '(provider=%s, modell=%s)',
+                'OKF: embedding failed for concept %r (provider=%s, model=%s)',
                 self.env.context.get('okf_key', '?'), provider.name, model)
             return (None, 'pending')
 
@@ -931,12 +924,7 @@ class AIOkfConcept(models.Model):
                     len(c.summary or ''))
                 for c in candidates) or '  (inga kandidater hittades)'
             raise UserError(_(
-                'Det personliga minnet är fullt.\n\n'
-                'Budget: %(budget)d tecken · i bruk: %(usage)d · '
-                'skrivningen skulle lägga till %(add)d.\n\n'
-                'Konsolidera genom att arkivera eller slå ihop — '
-                'minnet är ADD-only, inget skrivs över.\n\n'
-                'Kandidater att arkivera (äldst först):\n%(names)s'
+                'The personal memory is full.\n\nBudget: %(budget)d characters · in use: %(usage)d · the write would add %(add)d.\n\nConsolidate by archiving or merging — memory is ADD-only, nothing is overwritten.\n\nCandidates to archive (oldest first):\n%(names)s'
             ) % {
                 'budget': budget,
                 'usage': usage,
@@ -996,9 +984,7 @@ class AIOkfConcept(models.Model):
             return
         uid = user.id if hasattr(user, 'id') else user
         _logger.warning(
-            'OKF: personlig kunskap för användare %s är %d tecken, över '
-            'taket %d (%d %%). Kunskap spärras inte — arkivera eller '
-            'flytta till företagsomfattning om volymen ska ner.',
+            'OKF: personal knowledge for user %s is %d characters, over the cap %d (%d %%). Knowledge is not blocked — archive it or move it to company scope if the volume must come down.',
             uid, usage, budget, usage * 100 // budget)
 
     def _record_personal_budget_warning(self, user, budget, projected):
@@ -1009,8 +995,7 @@ class AIOkfConcept(models.Model):
             pct = (projected * 100 // budget) if budget else 0
             self.env['workspace.activity.suggestion']._create_suggestion(
                 summary='Personligt minne %d %% fullt — konsolidera' % pct,
-                detail=('Det personliga minnet är %d av %d tecken (%d %%). '
-                        'Arkivera eller slå ihop koncept för att göra plats.'
+                detail=('The personal memory is %d of %d characters (%d %%). Archive or merge concepts to make room.'
                         % (projected, budget, pct)),
                 suggestion_type='mail.activity', source='coworker',
                 user=user,
@@ -1217,7 +1202,7 @@ class AIOkfConcept(models.Model):
             row = self.env.cr.fetchone()
         except Exception as e:  # noqa: BLE001 — får ej stoppa sökningen
             _logger.warning(
-                'OKF: kunde inte mäta brusgolvet (%s) — använder 0.39', e)
+                'OKF: could not measure the noise floor (%s) — using 0.39', e)
             return 0.39
         if not row or row[0] is None:
             return 0.39
@@ -1291,15 +1276,13 @@ class AIOkfConcept(models.Model):
             owner_column = 'owner_coworker_id'
         if scope and owner_column and owner_id is None:
             raise ValueError(
-                "_okf_search(scope=%r) kräver owner_id — en sökning "
-                "utan ägare skulle tyst returnera andra ägares koncept "
-                "(odoo-mind-memory-scope-isolation)." % scope)
+                "_okf_search(scope=%r) requires owner_id — a search without an owner would silently return other user concepts (odoo-mind-memory-scope-isolation)." % scope)
         if scope and not owner_column:
             raise ValueError(
-                "_okf_search: okänt scope %r" % scope)
+                "_okf_search: unknown scope %r" % scope)
         if not scope:
             _logger.warning(
-                '_okf_search utan scope/ägare (bred sökning) — query=%.60s',
+                '_okf_search without scope/owner (broad search) — query=%.60s',
                 query)
 
         domain = self._fresh_domain(include_stale_searchable=False)
@@ -1314,8 +1297,7 @@ class AIOkfConcept(models.Model):
             domain.append(('source_user_id', 'in', [False, src_user]))
         if cross_user:
             _logger.info(
-                '_okf_search cross_user=True (scope=%s, owner=%s) — '
-                'läser över alla användare (kaizen-vägen)',
+                '_okf_search cross_user=True (scope=%s, owner=%s) — reads across all users (the kaizen path)',
                 scope, owner_id)
         if artifact_type_ids:
             domain.append(('artifact_type_id', 'in', artifact_type_ids))
@@ -1350,13 +1332,11 @@ class AIOkfConcept(models.Model):
                     input=query, input_type='search_query')
                 if not embedding:
                     _logger.warning(
-                        'OKF-sökning: ingen query-vektor (provider=%s). '
-                        'Endast BM25-signalen bär resultatet (query=%.60s)',
+                        'OKF search: no query vector (provider=%s). Only the BM25 signal carries the result (query=%.60s)',
                         provider.name, query)
             else:
                 _logger.warning(
-                    'OKF-sökning utan aktiv ai.provider — endast BM25 '
-                    '(query=%.60s)', query)
+                    'OKF search without an active ai.provider — BM25 only (query=%.60s)', query)
 
         # 2. Vikten. `semantic_weight` kommer från anroparen; annars
         #    modellens `hybrid_semantic_weight` (okf-recall-path 2.4) —
@@ -1464,8 +1444,7 @@ class AIOkfConcept(models.Model):
             # Alla källmodeller är STÄNGDA (eller kunde inte prövas). Inget
             # koncept kan vara läsbart — ärligt tomt, ingen SQL behövs.
             _logger.info(
-                'OKF-sökning: alla källmodeller stängda för uid=%s — '
-                'tomt resultat (query=%.60s)',
+                'OKF search: all source models closed for uid=%s — empty result (query=%.60s)',
                 user.id if user else self.env.uid, query)
             return self.browse([])
         if access_condition:
@@ -1708,8 +1687,7 @@ class AIOkfConcept(models.Model):
                     rows = [r[0] for r in self.env.cr.fetchall()]
                     if rows:
                         _logger.info(
-                            'OKF-sökning: korpusen saknar textindex, '
-                            'vektorn bär %d rader (query=%.60s)',
+                            'OKF search: the corpus has no text index, the vector carries %d rows (query=%.60s)',
                             len(rows), query)
         except Exception as e:
             # Logga HELA felet, inte bara meddelandet. En tyst try/except
@@ -1718,7 +1696,7 @@ class AIOkfConcept(models.Model):
             # typfel såg ut som "inga träffar". Ett sökresultat som är tomt
             # för att frågan KRASCHADE är inte samma sak som ett tomt
             # resultat för att inget matchade.
-            _logger.warning('OKF hybridsökning misslyckades: %s', e,
+            _logger.warning('OKF hybrid search failed: %s', e,
                             exc_info=True)
             rows = []
 
@@ -1727,7 +1705,7 @@ class AIOkfConcept(models.Model):
             # semantik". Utan detta ser en BM25-only-körning (vektor saknas)
             # likadan ut som en hybrid-körning i loggen.
             _logger.debug(
-                'OKF-sökning: %d träffar (läge=%s, vikt=%.2f, query=%.60s)',
+                'OKF search: %d hits (mode=%s, weight=%.2f, query=%.60s)',
                 len(rows), 'hybrid' if embedding and w > 0 else 'bm25-only',
                 w, query)
             return self.browse(rows)
@@ -1737,8 +1715,7 @@ class AIOkfConcept(models.Model):
         # om de vore svar.
         in_scope = self.search_count(domain)
         _logger.info(
-            'OKF-sökning gav 0 träffar (läge=%s, query=%.60s, scope=%s, '
-            '%d koncept i scopet, vektor=%s)',
+            'OKF search gave 0 hits (mode=%s, query=%.60s, scope=%s, %d concepts in scope, vector=%s)',
             'hybrid' if embedding and w > 0 else 'bm25-only',
             query, scope or '-', in_scope,
             'ja' if embedding else 'nej')
@@ -2192,8 +2169,7 @@ class AIOkfConcept(models.Model):
                 return sorted(r[0] for r in self.env.cr.fetchall() if r[0])
         except Exception as e:  # noqa: BLE001
             _logger.warning(
-                'OKF access: kunde inte läsa källmodeller — tom lista '
-                '(fail-closed): %s', e)
+                'OKF access: could not read the source models — empty list (fail-closed): %s', e)
             return []
 
     def _split_source_ref(self, source_ref):
@@ -2377,8 +2353,7 @@ class AIOkfConcept(models.Model):
             return self.activity_schedule(
                 'mail.mail_activity_data_todo',
                 summary='AI: organisera i PARA (projekt/area)?',
-                note='Konceptet är i din inbox. Placera i ett projekt eller en '
-                     'area för att aktivera aktivitetsförslag.',
+                note='The concept is in your inbox. Place it in a project or an area to activate activity suggestions.',
                 user_id=self.owner_user_id.id or self.env.uid,
             )
         except Exception:
@@ -2598,16 +2573,16 @@ class AIOkfConcept(models.Model):
                 html_parts.append(
                     f'<p>{line} <a href="#" '
                     f'onclick="return false;" '
-                    f'title="Källa: {src}" class="text-muted" '
+                    f'title="Source: {src}" class="text-muted" '
                     f'style="font-size: 0.8em; text-decoration: underline; '
                     f'cursor: help;">⤴ {src}</a></p>')
             else:
                 html_parts.append(
-                    f'<p>{line} <span title="Källa saknas — osäker rad" '
+                    f'<p>{line} <span title="Source missing — uncertain line" '
                     f'class="text-warning" style="font-size: 0.8em;">'
-                    f'⚠ osäker</span></p>')
+                    f'⚠ uncertain</span></p>')
         if not html_parts:
-            html_parts.append('<p><i>Ingen sammanfattning än.</i></p>')
+            html_parts.append('<p><i>No summary yet.</i></p>')
         return '<div class="okf-attribution">' + ''.join(html_parts) + '</div>'
 
     # ════════════════════════════════════════════
@@ -2699,8 +2674,7 @@ class AIOkfConcept(models.Model):
             # värdet. Att kasta vidare hade fällt anroparens write — det var
             # precis vad som gav 500 på AI-endpoints (67 ggr/dygn).
             _logger.info(
-                'OKF: %s bumpades av en annan transaktion — hoppar över '
-                'den här gången (%s)', key, e)
+                'OKF: %s was bumped by another transaction — skipping this time (%s)', key, e)
             return False
         except Exception as e:
             # En cache-ogiltigförklaring får ALDRIG fälla anroparens write:
@@ -2841,7 +2815,7 @@ class AIOkfConcept(models.Model):
                                        user=None, include_level1=True,
                                        injection_level='summary_and_key',
                                        semantic_weight=None, limit=None,
-                                       hybrid=True):
+                                       hybrid=True, semantic=None):
         """Bygg Hermes-kompatibel system prompt-block från ai.okf.concept.
 
         Nivåordning (task 7.4):
@@ -2870,6 +2844,11 @@ class AIOkfConcept(models.Model):
                 medarbetarens sökstrategi (fas 13.10).
             limit (int, optional): Max antal L1-koncept. None → 10.
             hybrid (bool): Slå samman vektor- och textsignalen (fas 12).
+            semantic (bool, optional): Skickas vidare till `_okf_search`.
+                None → läs `ai_agent_core.injection_semantic` (default False).
+                Injektionen går i request-tråden, och ett synkront
+                embedding-anrop (20 s × 3 försök) kan blockera workern i upp
+                till 60 s per scope. BM25 räcker för injektionens syfte.
 
         Returns:
             str: Formatterad block eller tom sträng
@@ -2931,17 +2910,17 @@ class AIOkfConcept(models.Model):
         # (D6). Kriteriet är TYP, inte innehåll — annars blir det en
         # LLM-dom som kan flippra mellan körningar. Bara två typer lyfts:
         #   - artifact_type 'roll' → L2 (vem användaren är)
-        #   - artifact_type 'mål'  → L2 (vart de är på väg)
+        #   - artifact_type 'goal' → L2 (vart de är på väg)
         #
         # FYND (test 2026-10-14): `status` på ai.okf.concept är
         # draft/stable/deprecated — INTE active/completed (de
         # tillhör ai.personal.goal). Ett OKF-koncept för ett mål skapas
         # bara för mål med active=True (_index_user_goals), så ett
-        # icke-deprecated 'mål'-koncept ÄR ett aktivt mål. Att filtrera på
+        # icke-deprecated 'goal'-koncept ÄR ett aktivt mål. Att filtrera på
         # status='active' här hade tystat regeln helt.
         if scope == 'personal':
             personal_l2 = self.search(domain + [
-                ('artifact_type_id.name', 'in', ['roll', 'mål']),
+                ('artifact_type_id.name', 'in', ['roll', 'goal']),
                 ('status', 'not in', ['deprecated']),
             ], order='id desc', limit=10)
             personal_l2 = personal_l2._latest_per_key()
@@ -2955,11 +2934,16 @@ class AIOkfConcept(models.Model):
         # Level 1 — Indexerad data via _okf_search
         want_l1 = injection_level in ('summary_and_key', 'full')
         if want_l1 and include_level1 and query:
+            if semantic is None:
+                # Injektionens semantik är opt-in (D7): anropet är synkront
+                # och körs i request-tråden. Default av — se docstring.
+                semantic = self.env['ir.config_parameter'].sudo().get_param(
+                    'ai_agent_core.injection_semantic', 'False') == 'True'
             search_results = self._okf_search(
                 query, scope=scope, owner_id=owner_id,
                 artifact_type_ids=artifact_type_ids,
                 limit=limit or 10, user=user, hybrid=hybrid,
-                semantic_weight=semantic_weight)
+                semantic_weight=semantic_weight, semantic=semantic)
             if search_results:
                 # D6: koncept som redan lyfts till L2 ska inte injiceras en
                 # andra gång i L1 — samma budget, dubbel kostnad.
@@ -2981,7 +2965,7 @@ class AIOkfConcept(models.Model):
             ], order='create_date desc', limit=3)
             if raw:
                 raw_block = self._format_concept_block(
-                    raw._latest_per_key(), max_chars // 3, 'RÅMATERIAL',
+                    raw._latest_per_key(), max_chars // 3, 'RAW MATERIAL',
                     user=user)
                 if raw_block:
                     parts.append(raw_block)
@@ -3035,13 +3019,13 @@ class AIOkfConcept(models.Model):
             if refs:
                 if not any(vis.get(r, False) for r in refs):
                     _logger.info(
-                        'OKF injektion: avför %s,%s (källor osynliga: %s)',
+                        'OKF injection: removes %s,%s (sources invisible: %s)',
                         c._name, c.id, sorted(refs)[:3])
                     continue
             else:
                 # Ingen källhänvisning alls → ingen källa att pröva. Avför.
                 _logger.info(
-                    'OKF injektion: avför %s,%s (ingen källhänvisning)',
+                    'OKF injection: removes %s,%s (no source reference)',
                     c._name, c.id)
                 continue
             # Radnivå-filtreringen: använd bara de läsbara raderna.
@@ -3053,8 +3037,7 @@ class AIOkfConcept(models.Model):
                 content = c.summary or c.title or ''
             else:
                 _logger.info(
-                    'OKF injektion: avför %s,%s (inga läsbara rader, '
-                    '%s dolda)', c._name, c.id, row.get('hidden', 0))
+                    'OKF injection: removes %s,%s (no readable lines, %s hidden)', c._name, c.id, row.get('hidden', 0))
                 continue
             if chars + len(content) > max_chars:
                 break
@@ -3102,8 +3085,7 @@ class AIOkfConcept(models.Model):
         provider = self.env['ai.provider']._embedding_provider()
         if not provider:
             _logger.warning(
-                'OKF efterfyllnad: ingen provider som kan embedda — %s koncept '
-                'väntar fortfarande', len(pending))
+                'OKF backfill: no provider that can embed — %s concepts still waiting', len(pending))
             return 0
 
         # Providerns EGNA modell — inte den hårdkodade konstanten.
@@ -3249,8 +3231,8 @@ class AIOkfConcept(models.Model):
             },
             "target": "current",
             "help": _(
-                "<p>%s koncept ägs av den här posten.</p>"
-                "<p>Koncept är ADD-only och genereras av indexeraren — "
-                "de redigeras inte för hand.</p>"
+                "<p>%s concepts are owned by this record.</p>"
+                "<p>Concepts are ADD-only and generated by the indexer — "
+                "they are not edited by hand.</p>"
             ) % count,
         }

@@ -429,3 +429,110 @@ class TestPersistSessionRetry(common.TransactionCase):
         # Ska returnera False, inte kasta — svaret har redan streamats.
         self.assertFalse(self._call(_persist, max_attempts=3))
         self.assertEqual(len(calls), 3, 'ska försöka exakt max_attempts gånger')
+
+
+class TestAgentConfigMaxRoundsNormalization(common.TransactionCase):
+    """Regressionstest för fix-stream-max-rounds-none.
+
+    Felklass: en konfiguration når körvägen i ett tillstånd dess egen logik
+    inte kan hantera — `max_rounds=None` där loopvillkoret
+    (`while round_num < self.config.max_rounds`) kräver ett heltal.
+
+    Symptomet i drift (ledningssystem 2026-11-05) var att hela webbchatten
+    svarade "❌ Anslutningen till AI-servern bröts" på varje fråga:
+    `TypeError: '<' not supported between instances of 'int' and 'NoneType'`
+    i `core/loop.py:1214`.
+    """
+
+    def test_none_normaliseras_till_positivt_heltal(self):
+        """AgentConfig(max_rounds=None) ska ge ett positivt heltal.
+
+        Fallerar om __post_init__ tas bort — dataclassens default gäller
+        bara när argumentet UTELÄMNAS, inte när None skickas explicit.
+        """
+        from odoo.addons.ai_agent_core.core.loop import (
+            AgentConfig, DEFAULT_MAX_ROUNDS)
+        cfg = AgentConfig(max_rounds=None)
+        self.assertEqual(cfg.max_rounds, DEFAULT_MAX_ROUNDS)
+        self.assertIsInstance(cfg.max_rounds, int)
+        self.assertGreaterEqual(cfg.max_rounds, 1)
+
+    def test_noll_och_negativt_normaliseras(self):
+        """0 och negativa värden är inte "inga varv" — de är osatta."""
+        from odoo.addons.ai_agent_core.core.loop import (
+            AgentConfig, DEFAULT_MAX_ROUNDS)
+        for bad in (0, -1, -100):
+            cfg = AgentConfig(max_rounds=bad)
+            self.assertEqual(
+                cfg.max_rounds, DEFAULT_MAX_ROUNDS,
+                'max_rounds=%r borde normaliseras' % bad)
+
+    def test_giltiga_varden_ror_s_inte(self):
+        """Normaliseringen får inte påverka värden som redan är giltiga."""
+        from odoo.addons.ai_agent_core.core.loop import AgentConfig
+        for good in (1, 5, 20, 50):
+            self.assertEqual(AgentConfig(max_rounds=good).max_rounds, good)
+
+    def test_utelamnat_falt_ger_default(self):
+        """Utan argument gäller dataclassens default oförändrat."""
+        from odoo.addons.ai_agent_core.core.loop import (
+            AgentConfig, DEFAULT_MAX_ROUNDS)
+        self.assertEqual(AgentConfig().max_rounds, DEFAULT_MAX_ROUNDS)
+
+    def test_run_stream_kastar_inte_typfelet(self):
+        """Körvägen: StreamingAgentLoop med max_rounds=None får inte kasta.
+
+        Testar felklassen på körvägsnivå, inte bara konfigurationsnivå —
+        en import eller en fältkontroll räcker inte som täckning
+        (core-fault-regression).
+        """
+        from odoo.addons.ai_agent_core.core.loop import (
+            StreamingAgentLoop, AgentConfig)
+        provider = _ToolLoopingProvider()
+        loop = StreamingAgentLoop(
+            provider=provider,
+            tools=_dummy_tools(),
+            config=AgentConfig(model='test-model', system_prompt='sys',
+                               max_rounds=None),
+        )
+        events = []
+
+        async def _collect():
+            async for ev in loop.run_stream('hej', history=[]):
+                events.append(ev)
+
+        # Före rättningen kastade detta TypeError på första varvet.
+        try:
+            asyncio.new_event_loop().run_until_complete(_collect())
+        except TypeError as e:
+            self.fail(
+                'run_stream kastade TypeError med max_rounds=None: %s' % e)
+        self.assertTrue(events, 'loopen producerade inga events')
+
+    def test_samma_gransvarde_oavsett_korvag(self):
+        """Samma indata ger samma effektiva gräns på båda vägarna.
+
+        Den schemalagda vägen (_build_loop) härleder ur medarbetarens
+        max_iterations (fallback 8); den strömmande vägen gör nu detsamma
+        via gen_max_rounds. Ingen av dem får förlita sig på att den andra
+        normaliserar åt den.
+        """
+        from odoo.addons.ai_agent_core.core.loop import (
+            AgentConfig, DEFAULT_MAX_ROUNDS)
+
+        # _build_loop-regeln, uttryckt som ren funktion
+        def _build_loop_rule(max_iterations):
+            return max_iterations or 8
+
+        # stream.py-regeln (gen_max_rounds), samma uttryck
+        def _stream_rule(max_iterations):
+            return max_iterations or 8
+
+        for mi in (None, 0, 3, 12):
+            self.assertEqual(
+                _build_loop_rule(mi), _stream_rule(mi),
+                'vägarna är oense för max_iterations=%r' % mi)
+
+        # Och säkerhetsventilen ger samma svar oavsett väg
+        self.assertEqual(
+            AgentConfig(max_rounds=None).max_rounds, DEFAULT_MAX_ROUNDS)

@@ -21,15 +21,10 @@ def pre_init_hook_check_conflicts(env):
     row = cr.fetchone()
     if row and row[0] in ('installed', 'to upgrade', 'to remove'):
         _logger.error(
-            'ai_agent_core installation blocked: ai_agent är installerad '
-            '(state=%s). Modulerna är inkompatibla — avinstallera ai_agent '
-            'innan du installerar ai_agent_core.', row[0])
+            'ai_agent_core installation blocked: ai_agent is installed (state=%s). The modules are incompatible — uninstall ai_agent before installing ai_agent_core.', row[0])
         from odoo.exceptions import UserError
         raise UserError(
-            'ai_agent_core kan inte installeras samtidigt som ai_agent.\n\n'
-            'De definierar samma modeller/vyer (ai.tool, view_ai_tool_*,\n'
-            'action_ai_tool) och är inkompatibla. Avinstallera ai_agent '
-            'först (Appar → ai_agent → Avinstallera).'
+            'ai_agent_core cannot be installed alongside ai_agent.\n\nThey define the same models/views (ai.tool, view_ai_tool_*,\naction_ai_tool) and are incompatible. Uninstall ai_agent first (Apps → ai_agent → Uninstall).'
         )
 
 
@@ -129,8 +124,7 @@ def ensure_vector_column(cr, table, column='embedding', dim=1024):
     cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
     if not cr.fetchone():
         _logger.warning(
-            'pgvector-extensionen saknas — hoppar över %s.%s. '
-            'Kör: salt \'*\' state.apply postgres.pgvector', table, column)
+            'The pgvector extension is missing — skipping %s.%s. Run: salt \'*\' state.apply postgres.pgvector', table, column)
         result['skipped'] = 'no_vector_extension'
         return result
 
@@ -158,15 +152,13 @@ def ensure_vector_column(cr, table, column='embedding', dim=1024):
             .format(t=table, c=column, d=int(dim)))
         result['converted'] = True
         _logger.info(
-            '%s.%s: dimensionslös vector → vector(%s) '
-            '(dimensionslösa vektorer kan inte castas; nollställda)',
+            '%s.%s: dimensionless vector -> vector(%s) (dimensionless vectors cannot be cast; zeroed)',
             table, column, dim)
 
     after = _vector_column_type(cr, table, column)
     if after != 'vector(%s)' % dim:
         raise Exception(
-            'ensure_vector_column: %s.%s är %r efter konvertering, '
-            'förväntade vector(%s)' % (table, column, after, dim))
+            'ensure_vector_column: %s.%s is %r after conversion, expected vector(%s)' % (table, column, after, dim))
 
     # (e) Indexet — i SAMMA anrop som konverteringen.
     index_name = 'idx_%s_embedding' % table
@@ -178,7 +170,7 @@ def ensure_vector_column(cr, table, column='embedding', dim=1024):
             'CREATE INDEX {i} ON {t} USING ivfflat ({c} vector_cosine_ops) '
             'WITH (lists = 100)'.format(i=index_name, t=table, c=column))
         result['index_created'] = True
-        _logger.info('Skapade ivfflat-index %s på %s.%s',
+        _logger.info('Created ivfflat index %s on %s.%s',
                      index_name, table, column)
 
     return result
@@ -561,26 +553,46 @@ def okf_ensure_search_infrastructure(env):
     """)
     if not cr.fetchone():
         raise Exception(
-            'ai_okf_concept-tabellen finns inte — '
-            'okf_ensure_search_infrastructure måste köras efter tabellskapande'
+            'The ai_okf_concept table does not exist — okf_ensure_search_infrastructure must run after table creation'
         )
 
-    # 1. search_vector — GENERATED STORED över summary + title (svensk stemming)
+    # 1. search_vector — GENERATED STORED över summary + title + source_text
+    #
+    # `source_text` lades till 2026-11-05: fältet bär postens FAKTISKA
+    # innehåll (mailens brödtext, dokumentets text), medan `summary` är en
+    # deterministisk etikett på 1–2 rader. Utan source_text i vektorn var
+    # brödtexten osökbar trots att den lagrades — mätt på luke18: konceptet
+    # för ett mail innehöll ordet "förfallodatum" i `source_text`, men
+    # `_okf_search('förfallodatum')` gav noll träffar. Det gjorde hela
+    # mail-indexeringen meningslös för sitt syfte: "hitta mailet där det
+    # står".
+    #
+    # Kolumnen är GENERATED, så den kan inte ändras med ALTER utan att
+    # släppas och byggas om. Vi kontrollerar uttrycket och bygger om när
+    # source_text saknas i det — idempotent, och en befintlig vektor utan
+    # source_text uppgraderas vid första körningen.
     cr.execute("""
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'ai_okf_concept' AND column_name = 'search_vector'
+        SELECT column_name, generation_expression
+          FROM information_schema.columns
+         WHERE table_name = 'ai_okf_concept' AND column_name = 'search_vector'
     """)
-    if not cr.fetchone():
+    row = cr.fetchone()
+    has_source = bool(row and row[1] and 'source_text' in row[1])
+    if row and not has_source:
+        cr.execute('ALTER TABLE ai_okf_concept DROP COLUMN search_vector')
+        _logger.info('OKF: bygger om search_vector (source_text saknades)')
+        row = None
+    if not row:
         cr.execute("""
             ALTER TABLE ai_okf_concept
             ADD COLUMN search_vector tsvector
             GENERATED ALWAYS AS (
                 to_tsvector('swedish',
-                            coalesce(summary, '') || ' ' || coalesce(title, ''))
+                            coalesce(summary, '') || ' ' || coalesce(title, '')
+                            || ' ' || coalesce(source_text, ''))
             ) STORED
         """)
-        _logger.info('OKF: skapade search_vector på ai_okf_concept'
-                     ' (svensk FTS över summary + title)')
+        _logger.info('OKF: created search_vector on ai_okf_concept (Swedish FTS over summary + title + source_text)')
 
     # 2. GIN-index för fulltext
     cr.execute("""
@@ -621,8 +633,7 @@ def okf_ensure_search_infrastructure(env):
                     USING NULL
                 """)
                 _logger.info(
-                    'OKF: satte embedding till vector(1024) — kolumnen var '
-                    'dimensionslös sedan migration 1.11 misslyckats tyst')
+                    'OKF: set embedding to vector(1024) — the column was dimensionless since migration 1.11 failed silently')
 
             cr.execute("""
                 SELECT 1 FROM pg_indexes
@@ -636,7 +647,7 @@ def okf_ensure_search_infrastructure(env):
                     USING ivfflat (embedding vector_cosine_ops)
                     WITH (lists = 100)
                 """)
-                _logger.info('OKF: skapade ivfflat-index över embedding')
+                _logger.info('OKF: created ivfflat index over embedding')
 
     # 4. B-tree för versionsuppslag (scope, concept_key, version DESC)
     cr.execute("""
@@ -677,9 +688,7 @@ def memory_ensure_search_infrastructure(env):
     """)
     if not cr.fetchone():
         raise Exception(
-            'ai_memory-tabellen finns inte — '
-            'memory_ensure_search_infrastructure måste köras efter '
-            'tabellskapande (post_init_hook, inte en migration)'
+            'The ai_memory table does not exist — memory_ensure_search_infrastructure must run after table creation (post_init_hook, not a migration)'
         )
 
     # 1. search_vector — GENERATED STORED över okf_body + name (svensk stemming)
@@ -705,8 +714,7 @@ def memory_ensure_search_infrastructure(env):
             ) STORED
         """ % body_col)
         _logger.info(
-            'Memory: skapade search_vector på ai_memory '
-            '(svensk FTS över %s + name)', body_col)
+            'Memory: created search_vector on ai_memory (Swedish FTS over %s + name)', body_col)
 
     # 2. GIN-index för fulltext
     cr.execute("""
@@ -739,8 +747,7 @@ def memory_ensure_search_infrastructure(env):
                 USING NULL
             """)
             _logger.info(
-                'Memory: satte embedding till vector(1024) — kolumnen var '
-                'dimensionslös')
+                'Memory: set embedding to vector(1024) — the column was dimensionless')
 
         cr.execute("""
             SELECT 1 FROM pg_indexes
@@ -753,7 +760,7 @@ def memory_ensure_search_infrastructure(env):
                 ON ai_memory USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = 100)
             """)
-            _logger.info('Memory: skapade ivfflat-index över embedding')
+            _logger.info('Memory: created ivfflat index over embedding')
 
     # ── ai_memory_chunk ──────────────────────────────────────────────
     # Chunkarna bär sin egen text och vektor; BM25 sker på chunkens
@@ -767,8 +774,7 @@ def memory_ensure_search_infrastructure(env):
         # post_init kan köra före den finns. Inte ett fel: nästa
         # uppgradering skapar kolumnerna.
         _logger.info(
-            'Memory: ai_memory_chunk finns inte än — hoppar över '
-            'chunk-index (skapas vid nästa uppgradering)')
+            'Memory: ai_memory_chunk does not exist yet — skipping the chunk index (created on the next upgrade)')
         return
 
     cr.execute("""
@@ -783,7 +789,7 @@ def memory_ensure_search_infrastructure(env):
                 to_tsvector('swedish', coalesce(content, ''))
             ) STORED
         """)
-        _logger.info('Memory: skapade search_vector på ai_memory_chunk')
+        _logger.info('Memory: created search_vector on ai_memory_chunk')
 
     cr.execute("""
         SELECT 1 FROM pg_indexes
@@ -825,7 +831,7 @@ def memory_ensure_search_infrastructure(env):
             WITH (lists = 100)
         """)
         _logger.info(
-            'Memory: skapade ivfflat-index över ai_memory_chunk.embedding')
+            'Memory: created ivfflat index over ai_memory_chunk.embedding')
 
 
 def post_init_hook(env):
@@ -864,17 +870,27 @@ def post_init_hook(env):
 
     # Kanal-registreringen (channel-adapter-wiring 4.5).
     #
-    # `channel_registry` är en process-global singleton. Att registrera vid
-    # import hade räckt för en worker som importerar modulen, men hooken är
-    # den plats där modulen redan säkrar annat som ska finnas efter en
-    # (upp)installation — och registreringen är idempotent.
+    # ⚠ Den RIKTIGA registreringen sker nu vid modulimport
+    # (`core/channels.py::_register_channels_on_import`) — inte här.
+    #
+    # Fällan (mätt 2026-11-09): `channel_registry` är process-global och
+    # töms vid varje processstart, men `post_init_hook` körs bara vid
+    # (upp)installation. Efter en omstart var registret tomt,
+    # `process_item()` gav 'no_processor' och `dispose()` anropades aldrig
+    # — mail-svar skickades aldrig i drift, tyst. Att bara registrera här
+    # räckte alltså inte.
+    #
+    # Anropet nedan är kvar som en idempotent försäkran (register()
+    # skriver över samma nyckel) och för att logga att kanalerna finns.
     try:
-        from .core.channels import register_mail_channel
+        from .core.channels import (
+            register_chat_channel, register_mail_channel)
         register_mail_channel()
-        _logger.info('channel_registry: mail-kanalen registrerad')
+        register_chat_channel()
+        _logger.info('channel_registry: mail- och chat-kanalerna registrerade')
     except Exception as e:
         _logger.warning(
-            'channel_registry: kunde inte registrera mail-kanalen: %s', e)
+            'channel_registry: kunde inte registrera kanalerna: %s', e)
 
     # Quest Builder
     if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):
@@ -940,9 +956,7 @@ def post_init_hook(env):
         except Exception as e:
             cr.execute('ROLLBACK TO SAVEPOINT age_graph_init')
             _logger.warning(
-                'AGE-grafen kunde inte initieras (%s) — grafen är avstängd, '
-                'resten av hooken fortsätter. Kör GRANT på ag_catalog för '
-                'app-rollen om grafen ska användas.', e)
+                'The AGE graph could not be initialised (%s) — the graph is off, the rest of the hook continues. Run GRANT on ag_catalog for the app role if the graph is to be used.', e)
 
         # 3. Create cron_sync_graph if not exists (delad med
         # _ensure_graph_cron så uppgraderade system också får den).
@@ -1038,8 +1052,7 @@ def _ensure_default_model(env):
         model = Model.search([('active', '=', True)], limit=1)
     if not model:
         _logger.warning(
-            'Ingen aktiv ai.model finns — default-modellen kunde inte sättas. '
-            'Agenter utan model_id kan inte köra.')
+            'No active ai.model exists — the default model could not be set. Agents without model_id cannot run.')
         return
 
     env['ir.config_parameter'].sudo().set_param(param, str(model.id))

@@ -13,17 +13,17 @@
                     <!-- ════════════════════════════════════════════
                          Företagsidentitet
                          ════════════════════════════════════════════ -->
-                    <block title="Företagsidentitet">
+                    <block title="Company Identity">
 
                         <!-- Mission -->
                         <setting id="company_mission_setting">
                             <div class="d-flex align-items-center mb8">
                                 <span class="h5 mb0 me-2 fw-bold">Mission</span>
-                                <span class="text-muted small">— Företagets existensberättigande</span>
+                                <span class="text-muted small">— The company reason for being</span>
                             </div>
                             <div class="well well-sm mb8 p-2 bg-light rounded">
                                 <field name="company_mission" readonly="1"
-                                       placeholder="Ingen mission satt ännu..."
+                                       placeholder="No mission set yet..."
                                        class="d-inline"/>
                             </div>
                             <div class="d-flex align-items-center gap-2">
@@ -31,7 +31,7 @@
                                         string="✏️ Redigera" class="oe_link"/>
                                 <span class="text-muted small mx-2">|</span>
                                 <button type="object" name="action_suggest_mission"
-                                        string="💡 Skapa förslag från webben"
+                                        string="💡 Create suggestions from the web"
                                         class="oe_link"/>
                                 <span class="text-muted small ms-3">
                                     Senast: <field name="company_mission_last_review" class="d-inline"/>
@@ -43,11 +43,11 @@
                         <setting id="company_values_setting">
                             <div class="d-flex align-items-center mb8">
                                 <span class="h5 mb0 me-2 fw-bold">Values</span>
-                                <span class="text-muted small">— Företagets kärnvärderingar</span>
+                                <span class="text-muted small">— The company core values</span>
                             </div>
                             <div class="well well-sm mb8 p-2 bg-light rounded">
                                 <field name="company_values" readonly="1"
-                                       placeholder="Inga values satta ännu..."
+                                       placeholder="No values set yet..."
                                        class="d-inline"/>
                             </div>
                             <div class="d-flex align-items-center gap-2">
@@ -55,7 +55,7 @@
                                         string="✏️ Redigera" class="oe_link"/>
                                 <span class="text-muted small mx-2">|</span>
                                 <button type="object" name="action_suggest_values"
-                                        string="💡 Skapa förslag från webben"
+                                        string="💡 Create suggestions from the web"
                                         class="oe_link"/>
                                 <span class="text-muted small ms-3">
                                     Senast: <field name="company_values_last_review" class="d-inline"/>
@@ -65,7 +65,7 @@
 
                         <!-- Webbplats -->
                         <setting id="company_website_setting"
-                                 title="Webbplats för RAG">
+                                 title="Website for RAG">
                             <div class="d-flex align-items-center gap-2 mb4">
                                 <span class="fw-bold me-2">URL:</span>
                                 <field name="company_website_url_edit"
@@ -91,7 +91,7 @@
                     <block title="Odoo Mind">
                         <setting>
                             <div class="text-muted mb8">
-                                Företagets och dess medarbetares andra hjärna
+                                The second brain of the company and its employees
                             </div>
                         </setting>
                         <setting id="odoo_mind_graph_status" title="Graph Status">
@@ -123,7 +123,7 @@
                         <setting id="personal_memory_settings" title="Personal Memory">
                             <div class="d-flex align-items-center gap-3">
                                 <field name="personal_memory_learning_enabled"/>
-                                <label for="personal_memory_learning_enabled" string="Lär från Discuss"/>
+                                <label for="personal_memory_learning_enabled" string="Learn from Discuss"/>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
                                 <field name="personal_memory_auto_nudge"/>
@@ -158,14 +158,14 @@
                                 <span>sessioner</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <span>Glöm efter</span>
+                                <span>Forget after</span>
                                 <field name="coworker_memory_forget_days" class="d-inline"/>
                                 <span>dag(ar)</span>
                             </div>
                         </setting>
 
                         <setting id="okf_budget_settings" title="Embedding-budget (OKF)"
-                                 help="Kostnaden belastar den coworker som utför indexeringen (session_line_count/started_mtokens).">
+                                 help="The cost is charged to the coworker that performs the indexing (session_line_count/started_mtokens).">
                             <div class="d-flex align-items-center gap-3">
                                 <label for="company_memory_coworker_id" string="Company-minne indexeras av"/>
                                 <field name="company_memory_coworker_id"/>
@@ -176,32 +176,32 @@
                             </div>
                         </setting>
 
-                        <setting id="okf_dept_health_settings" title="Avdelningshälsa-trösklar (OKF)"
-                                 help="Gränsvärdena för röd/gul/grön avdelningshälsa — inte hårdkodade.">
+                        <setting id="okf_dept_health_settings" title="Department Health Thresholds (OKF)"
+                                 help="The thresholds for red/yellow/green department health — not hardcoded.">
                             <div class="d-flex align-items-center gap-3">
                                 <label for="health_heartbeat_stale_days" string="Heartbeat stale efter"/>
                                 <field name="health_heartbeat_stale_days" class="d-inline"/>
                                 <span>dagar</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <label for="health_active_ratio" string="Grön kräver ≥"/>
+                                <label for="health_active_ratio" string="Green requires ≥"/>
                                 <field name="health_active_ratio" class="d-inline"/>
                                 <span>% heartbeatar</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <label for="health_no_session_days" string="Gul/röd utan session efter"/>
+                                <label for="health_no_session_days" string="Yellow/red without a session after"/>
                                 <field name="health_no_session_days" class="d-inline"/>
                                 <span>dagar</span>
                             </div>
                             <div class="d-flex align-items-center gap-3 mt4">
-                                <label for="health_zero_tokens_days" string="Röd vid 0 tokens efter"/>
+                                <label for="health_zero_tokens_days" string="Red at 0 tokens after"/>
                                 <field name="health_zero_tokens_days" class="d-inline"/>
                                 <span>dagar</span>
                             </div>
                         </setting>
 
                         <setting id="okf_catalog_settings" title="OKF-katalog (artefakttyper, resolvers, koncept)"
-                                 help="Status för det registrerbara artefakt-lagret — öppna listorna för att hantera.">
+                                 help="Status of the registrable artifact layer — open the lists to manage.">
                             <div class="d-flex align-items-center gap-3">
                                 <field name="okf_artifact_type_count" class="d-inline"/>
                                 <span>artefakttyper</span>
@@ -227,14 +227,12 @@
                          AI API
                          ════════════════════════════════════════════ -->
                     <block title="AI API">
-                        <setting id="ai_api_default_provider" title="Default Provider">
-                            <field name="ai_api_default_provider_id"/>
-                        </setting>
-                        <setting id="ai_api_default_model" title="Default Model">
-                            <field name="ai_api_default_model_id"/>
-                        </setting>
+                        <!-- Default Provider och Default Model är borttagna.
+                             Defaulten är en medarbetare (AI Agents → Default
+                             AI Coworker) — inte en lös provider eller modell.
+                             Se models/res_config_settings.py för motivering. -->
                         <setting id="ai_google_api_key" title="Google API Key"
-                                 help="För YouTube-/Google-baserade AI-verktyg. Tomt → fallback till GOOGLE_API_KEY.">
+                                 help="For YouTube/Google-based AI tools. Empty → falls back to GOOGLE_API_KEY.">
                             <field name="ai_google_api_key" widget="password"/>
                         </setting>
                     </block>
@@ -275,9 +273,38 @@
                         <setting id="agent_default_identity" title="Default Identity">
                             <field name="ai_agent_default_identity_id"/>
                         </setting>
+                        <setting id="agent_default_coworker" title="Default AI Coworker"
+                                 help="The AI Coworker preselected in the web chat and used by onboarding when no other is chosen. Per company.">
+                            <!-- Förklaring i klartext (design D7). Syns utan
+                                 hover med flit: mekanismen är osynlig tills
+                                 den går fel, och den som felsöker läser inte
+                                 tooltips. Inga interna parameternamn — de
+                                 hör i Technical-menyn. -->
+                            <div class="well well-sm mb8 p-2 bg-light rounded">
+                                <strong>How the default coworker works</strong>
+                                <p class="mb-1 mt-1">
+                                    När du använder AI utan att välja en specifik
+                                    medarbetare — via AI-ikonen, ett API-anrop eller
+                                    en schemalagd körning — används
+                                    <strong>default-medarbetaren</strong>. Den bär hela
+                                    kedjan: agent, kompetenser, verktyg och modell.
+                                </p>
+                                <ul class="mb-1 ps-3">
+                                    <li><strong>The field above</strong> wins when it is set.</li>
+                                    <li><strong>If the field is empty</strong> the first coworker you have access to is used.</li>
+                                    <li><strong>Saknar en medarbetare en egen modell</strong> borrows the default coworker model instead of running without one.</li>
+                                </ul>
+                                <p class="mb-0">
+                                    Modellvalet är inte längre en egen inställning — det
+                                    följer av vilken medarbetare som är default. Vill du
+                                    byta modell byter du modell på den medarbetarens agent.
+                                </p>
+                            </div>
+                            <field name="ai_default_coworker_id"/>
+                        </setting>
                         <setting id="agent_default_tools"
                                  title="Default Tools (nya agenter)"
-                                 help="Vilka verktyg nya agenter får när de skapas utan explicita verktyg. Builtin-verktyg (describe_model, odoo_search m.fl.) syns här efter moduluppdatering.">
+                                 help="Which tools new agents get when created without explicit tools. Builtin tools (describe_model, odoo_search and others) appear here after a module update.">
                             <field name="ai_default_tool_ids" widget="many2many_tags"
                                    options="{'no_create_edit': True}"/>
                         </setting>
@@ -288,16 +315,16 @@
                          ════════════════════════════════════════════ -->
                     <!-- ════════════════════════════════ Heartbeat Settings ════════════════════════════════ -->
                     <block title="Heartbeat">
-                        <setting id="heartbeat_enabled" help="Slå på/av heartbeat för alla coworkers">
+                        <setting id="heartbeat_enabled" help="Turn heartbeat on/off for all coworkers">
                             <field name="heartbeat_enabled"/>
                         </setting>
-                        <setting id="heartbeat_interval" help="Hur ofta coworkers vaknar och kollar läget">
+                        <setting id="heartbeat_interval" help="How often coworkers wake and check in">
                             <field name="heartbeat_interval"/>
                         </setting>
-                        <setting id="heartbeat_max_tasks_per_tick" help="Antalstak: högst så här många uppgifter delas ut per tick">
+                        <setting id="heartbeat_max_tasks_per_tick" help="Count cap: at most this many tasks are handed out per tick">
                             <field name="heartbeat_max_tasks_per_tick"/>
                         </setting>
-                        <setting id="heartbeat_max_seconds_per_tick" help="Tidsgräns: sluta dela ut uppgifter efter så här många sekunder (300 = tickens 5-minutersfönster)">
+                        <setting id="heartbeat_max_seconds_per_tick" help="Time limit: stop handing out tasks after this many seconds (300 = the tick 5-minute window)">
                             <field name="heartbeat_max_seconds_per_tick"/>
                         </setting>
                     </block>
@@ -316,7 +343,7 @@
                                         <field name="cron_failure_count" readonly="1"/>
                                         <field name="cron_code" readonly="1"/>
                                         <button name="action_run_now" type="object"
-                                                string="Kör nu" icon="fa-play"/>
+                                                string="Run now" icon="fa-play"/>
                                     </group>
                                 </form>
                                 <list>

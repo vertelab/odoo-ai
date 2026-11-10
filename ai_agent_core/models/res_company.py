@@ -10,6 +10,16 @@ _logger = logging.getLogger(__name__)
 class ResCompany(models.Model):
     _inherit = 'res.company'
 
+    # ── Default coworker (organisation, inte medarbetaregenskap) ──
+    #
+    # Vilken AI-medarbetare som är förvald är ett BOLAGSBESLUT. Fältet låg
+    # tidigare som `is_default` på ai.coworker, vilket gjorde en
+    # organisationsinställning till en egenskap hos en medarbetare och
+    # krävde att exakt en rad bar flaggan. Här är det ett fält per bolag.
+    ai_default_coworker_id = fields.Many2one(
+        'ai.coworker', string='Default AI Coworker',
+        help='The AI Coworker preselected in the web chat and used by onboarding when no other is chosen. Per company.')
+
     # ── Company Identity (ported from ai_agent) ──
     company_mission = fields.Html(
         'Our Mission',
@@ -48,8 +58,7 @@ class ResCompany(models.Model):
     okf_memory_count = fields.Integer(
         string='OKF Memory Count',
         compute='_compute_okf_memory_count',
-        help='Antal levande OKF-koncept som ägs av bolaget (company-scope). '
-             'Detta är vad som faktiskt injiceras i prompten.')
+        help='Number of live OKF concepts owned by the company (company scope). This is what is actually injected into the prompt.')
 
     @api.depends('company_memory_ids')
     def _compute_company_memory_count(self):
@@ -66,6 +75,20 @@ class ResCompany(models.Model):
                 ('archived', '=', False),
             ])
 
+    def _ai_default_coworker(self):
+        """Bolagets förvalda coworker, eller None.
+
+        Enda uppslagningen av default-coworkern (D6). Returnerar None när
+        fältet är tomt, när posten raderats eller när den är avaktiverad —
+        anroparen äger sin egen fallback (webbchatten: första tillgängliga
+        web_ui-coworker; onboarding: ValidationError).
+        """
+        self.ensure_one()
+        coworker = self.ai_default_coworker_id
+        if coworker and coworker.active:
+            return coworker
+        return None
+
     def action_open_company_memory(self):
         """Smartknapp: öppna bolagets LEVANDE minne (ai.okf.concept).
 
@@ -75,7 +98,7 @@ class ResCompany(models.Model):
         """
         self.ensure_one()
         return {
-            'name': 'Företagsminne',
+            'name': 'Company Memory',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.okf.concept',
             'view_mode': 'list,form',
@@ -238,7 +261,7 @@ class ResCompany(models.Model):
         rag_attachment = self.website_rag_attachment_id.sudo()
         rag_content = rag_attachment.raw.decode('utf-8') if rag_attachment.raw else ''
 
-        lines = ['Du är en konsult som hjälper företag att formulera sin mission och värderingar.']
+        lines = ['You are a consultant helping companies formulate their mission and values.']
         lines.append('')
 
         if self.company_mission:
@@ -255,11 +278,11 @@ class ResCompany(models.Model):
             lines.append(current_values)
             lines.append('')
 
-        lines.append('## Innehåll från företagets webbplats')
+        lines.append('## Content from the company website')
         lines.append(rag_content[:8000])  # Limit context
         lines.append('')
-        lines.append('Föreslå uppdaterad mission och values baserat på webbplatsens innehåll.')
-        lines.append('Bygg vidare på befintlig mission/values om de finns.')
+        lines.append('Propose an updated mission and values based on the website content.')
+        lines.append('Build on the existing mission/values if they exist.')
         lines.append('')
         lines.append('Svara exakt i detta format:')
         lines.append('MISSION:')
@@ -275,13 +298,13 @@ class ResCompany(models.Model):
             # och gjorde knappen till en tyst no-op.
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import (
-                Message, _run_provider, get_default_provider,
+                Message, Role, _run_provider, get_default_provider,
                 get_default_model_name)
 
             provider, model_rec = get_default_provider(self.env)
             if not provider:
                 _logger.error(
-                    'Identitetsförslag: ingen provider tillgänglig')
+                    'Identity proposal: no provider available')
                 return
 
             # En enda provider-chat, ingen loop: förslaget är ett anrop
@@ -291,7 +314,7 @@ class ResCompany(models.Model):
                 provider.chat(
                     model=(model_rec and model_rec._get_api_name())
                     or get_default_model_name(),
-                    messages=[Message(role='user', content=prompt)],
+                    messages=[Message(role=Role.USER, content=prompt)],
                     max_tokens=2000),
                 provider)
             response_text = (raw.text or '').strip()
@@ -334,8 +357,8 @@ class ResCompany(models.Model):
     # ── Organization Goals (OKR) ──
     company_objective_ids = fields.One2many(
         'ai.org.goal', compute='_compute_company_objectives',
-        string='Företagsmål',
-        help='Mål på company-nivå (ai.org.goal level=company).')
+        string='Company Goals',
+        help='Goals at company level (ai.org.goal level=company).')
 
     @api.depends('company_objective_ids')
     def _compute_company_objectives(self):

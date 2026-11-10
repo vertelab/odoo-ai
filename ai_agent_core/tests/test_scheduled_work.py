@@ -385,14 +385,14 @@ class TestOperationalAndActivation(HeartbeatBase):
         cw = self._cw('Op-Off', heartbeat_enabled=False)
         ok, reason = cw._heartbeat_operational()
         self.assertFalse(ok)
-        self.assertIn('avstängt', reason)
+        self.assertIn('turned off', reason)
 
     def test_not_operational_without_owner(self):
         """5.1/5.3: ingen ägare → icke-operativ, ingen systemuser-fallback."""
         cw = self._cw('Op-NoOwner', chat_user_id=False)
         ok, reason = cw._heartbeat_operational()
         self.assertFalse(ok)
-        self.assertIn('ägare', reason)
+        self.assertIn('owner', reason)
 
     def test_not_operational_when_budget_exhausted(self):
         """5.1: tömd budget → icke-operativ."""
@@ -419,7 +419,7 @@ class TestOperationalAndActivation(HeartbeatBase):
         target = self._cw('Op-Target', heartbeat_enabled=False)
         ok, reason = target._heartbeat_operational()
         self.assertFalse(ok)
-        self.assertIn('avstängt', reason)
+        self.assertIn('turned off', reason)
 
     def test_enable_heartbeat_requires_write_access(self):
         """5.4: utan skrivrätt nekas aktiveringen.

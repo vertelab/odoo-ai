@@ -13,7 +13,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_backfill_retention" model="cron.task">
-            <field name="name">OKF: Efterfyll retention_end (engångs)</field>
+            <field name="name">OKF: Backfill retention_end (one-off)</field>
             <field name="technical_name">ai_retention_backfill</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.okf.concept</field>
@@ -28,7 +28,7 @@
             <field name="active" eval="False"/>
         </record>
         <record id="cron_task_cron_warn_retention" model="cron.task">
-            <field name="name">OKF: Varna före retention-utgång</field>
+            <field name="name">OKF: Warn before retention expiry</field>
             <field name="technical_name">ai_retention_warn</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.okf.concept</field>
@@ -39,7 +39,7 @@
             <field name="active" eval="True"/>
         </record>
         <record id="cron_task_cron_enforce_retention" model="cron.task">
-            <field name="name">OKF: Verkställ retention (arkivera utgångna)</field>
+            <field name="name">OKF: Enforce retention (archive expired)</field>
             <field name="technical_name">ai_retention_enforce</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.okf.concept</field>

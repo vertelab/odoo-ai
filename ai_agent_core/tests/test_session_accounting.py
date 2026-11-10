@@ -152,7 +152,11 @@ class TestSessionAccounting(common.TransactionCase):
         old1 = self._mk_session(status='active')
         old2 = self._mk_session(status='active')
         # En redan avslutad session rörs inte
+        # En redan avslutad session bär ett eget finish_reason — annars är
+        # det inget att pröva "oförändrad" mot. `_mk_session(status='done')`
+        # lämnade fältet tomt, så asserten jämförde False med 'done'.
         done_old = self._mk_session(status='done')
+        done_old.finish_reason = 'stop'
         new = self._mk_session(status='active')
 
         # Controllerns logik: stäng alla aktiva utom den nya
@@ -173,6 +177,6 @@ class TestSessionAccounting(common.TransactionCase):
         self.assertEqual(old1.status, 'done')
         self.assertEqual(old2.status, 'done')
         self.assertEqual(done_old.status, 'done')
-        self.assertEqual(done_old.finish_reason, 'done')  # oförändrad
+        self.assertEqual(done_old.finish_reason, 'stop')  # oförändrad
         self.assertEqual(new.status, 'active')
         self.assertEqual(old1.finish_reason, 'new_session')

@@ -17,8 +17,25 @@ def migrate(cr, version):
     _logger.info("Running migration 1.8: AI Organization init")
 
     # ── 1. Create default coworker if missing ──
+    #
+    # `is_default` togs bort i 18.0.2.0.30. Kolumnen prövas innan den
+    # läses, så migrationen är körbar även mot en DB där fältet redan är
+    # släppt (och faller då tillbaka på xmlid).
+    cr.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'ai_coworker' AND column_name = 'is_default'"
+    )
+    has_flag = bool(cr.fetchone())
     try:
-        if not env['ai.coworker'].search_count([('is_default', '=', True)]):
+        if has_flag:
+            already = env['ai.coworker'].search_count(
+                [('is_default', '=', True)])
+        else:
+            already = env['ai.coworker'].search_count(
+                [('id', '=', env.ref(
+                    'ai_agent_core.coworker_default_assistent',
+                    raise_if_not_found=False) or 0)])
+        if not already:
             agent = env['ai.agent'].create({
                 'name': 'Allmän assistent',
                 'ai_role': 'General purpose AI assistant',
@@ -34,7 +51,6 @@ def migrate(cr, version):
                 'heartbeat_enabled': True,
                 'inject_company_memory': True,
                 'inject_nudging': True,
-                'is_default': True,
             })
             env['ai.coworker.agent'].create({
                 'coworker_id': coworker.id,

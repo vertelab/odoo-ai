@@ -27,7 +27,7 @@ _logger = logging.getLogger(__name__)
 
 class AILineageLink(models.Model):
     _name = 'ai.lineage.link'
-    _description = 'AI Lineage Link — förklarbara AI-beslut'
+    _description = 'AI Lineage Link — explainable AI decisions'
     _order = 'create_date desc, id desc'
 
     kind = fields.Selection([

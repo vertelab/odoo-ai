@@ -200,7 +200,6 @@ class TestDefaultToolIds(TransactionCase):
         cp_keys = [
             'ai_agent_core.default_tool_ids',
             'ai_agent_core.default_identity_id',
-            'ai_agent_core.default_provider_id',
             'ai_agent_core.default_model_id',
             'odoomind.okf.company_memory_coworker_id',
             'odoomind.okf.personal_memory_coworker_id',

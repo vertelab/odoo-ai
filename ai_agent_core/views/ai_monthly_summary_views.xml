@@ -51,10 +51,10 @@
 
     <!-- Dashboard action -->
     <record id="ai_monthly_summary_action" model="ir.actions.act_window">
-        <field name="name">Månadsrapporter</field>
+        <field name="name">Monthly Reports</field>
         <field name="res_model">ai.coworker.monthly_summary</field>
         <field name="view_mode">pivot,graph,list</field>
-        <field name="help">Systemtoken-förbrukning per quest och månad. Historisk rapportering för fakturering.</field>
+        <field name="help">System token usage per coworker and month. Historical reporting for invoicing.</field>
     </record>
 
     <!-- Search for monthly summaries -->
@@ -65,12 +65,12 @@
             <search>
                 <field name="coworker_id"/>
                 <field name="month"/>
-                <filter string="Denna månad" name="this_month"
+                <filter string="This Month" name="this_month"
                         domain="[('month', '=', context_today().strftime('%Y-%m'))]"/>
                 <separator/>
                 <group expand="0" string="Group By">
                     <filter string="Medarbetare" name="group_quest" context="{'group_by':'coworker_id'}"/>
-                    <filter string="Månad" name="group_month" context="{'group_by':'month'}"/>
+                    <filter string="Month" name="group_month" context="{'group_by':'month'}"/>
                 </group>
             </search>
         </field>

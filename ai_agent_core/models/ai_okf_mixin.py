@@ -50,6 +50,14 @@ from psycopg2.extras import Json
 
 _logger = logging.getLogger(__name__)
 
+#: Modeller som bryggor registrerat för dirty-indexering.
+#: Modulglobal, inte ett klassattribut: Odoos testramverk fäller varje nytt
+#: klassattribut på en modell ("Found unexpected attributes on
+#: ai.okf.mixin: _okf_extra_indexable_models"), och `type(self)._x = []`
+#: skapar ett nytt attribut på den ÄRVDA modellen, inte på basen.
+#: Processvid är rätt livstid: registreringen görs en gång per register.
+_OKF_EXTRA_INDEXABLE = []
+
 #: Systemparameter för sammanfattningens maxlängd.
 #: Default 2000 — samma tal `ai.memory.mixin` redan använde, så att
 #: ärvningen är beteende-bevarande.
@@ -89,11 +97,11 @@ class AIOkfMixin(models.AbstractModel):
     # (_okf_index_record sätter relationen om fältet finns).
     okf_dirty = fields.Boolean(
         'OKF Dirty', default=True, index=True, copy=False,
-        help='Satt när OKF-fälten är inaktuella och måste genereras om. '
-             'Sätts av create()/write(), rensas av indexeraren.')
+        help='Set when the OKF fields are stale and must be regenerated. '
+             'Set by create()/write(), cleared by the indexer.')
     okf_indexed_at = fields.Datetime(
         'OKF Indexed At', readonly=True, copy=False,
-        help='När OKF-fälten senast genererades.')
+        help='When the OKF fields were last generated.')
 
     # ==================================================================
     # Källmetoder — modellen svarar, mixinen läser aldrig själv
@@ -449,6 +457,37 @@ class AIOkfMixin(models.AbstractModel):
             self._set_okf_dirty()
         return result
 
+    def _lock_rows_in_order(self):
+        """Ta radlås på `self.ids` i stigande id-ordning.
+
+        VARFÖR (T/12475): `_set_okf_dirty()` och `_write_okf_fields()` gör rå
+        SQL-`UPDATE` utanför ORM:en. Två Odoo-workers som sparade samma post
+        samtidigt tog båda ett tuple-lås på samma rad och väntade sedan på
+        varandra — en evig väntan, eftersom `lock_timeout` var 0. Posten gick
+        inte att spara och skärmen "fastnade i uppdateringen" utan ett enda
+        felmeddelande.
+
+        `SELECT ... ORDER BY id FOR UPDATE` ger en deterministisk låsordning:
+        två transaktioner som rör samma rader tar dem alltid i samma följd och
+        kan därför inte låsa varandra i en cirkel. Det är samma grepp Odoo
+        själv använder i `_flush_update`.
+
+        PostgreSQL stödjer INTE `UPDATE ... ORDER BY` — därför ett separat
+        `SELECT ... FOR UPDATE` före UPDATE:en. Låsen hålls till
+        transaktionens slut, så de täcker den efterföljande UPDATE:en.
+
+        `FOR UPDATE` på en rad som redan är låst väntar — men nu är väntan
+        alltid enkelriktad (lägre id först), så den kan inte bli cirkulär.
+        Skulle en rad ändå vara låst länge tar `lock_timeout` (10s på
+        postgres16) över och ger ett tydligt fel i stället för en hangning.
+        """
+        if not self:
+            return
+        self.env.cr.execute(
+            'SELECT id FROM %s WHERE id = ANY(%%s) ORDER BY id FOR UPDATE'
+            % self._table,
+            (list(self.ids),))
+
     def _set_okf_dirty(self):
         """Sätt okf_dirty direkt i SQL — kringgår write()-hooken.
 
@@ -456,10 +495,20 @@ class AIOkfMixin(models.AbstractModel):
         buffert skrivas EFTER vårt `UPDATE` och skriva över flaggan med det
         gamla värdet. Det var precis vad som hände i testet — flaggan sattes
         och försvann i samma andetag.
+
+        LÅSORDNING (T/12475): två Odoo-workers som sparade samma post
+        samtidigt tog båda ett tuple-lås på samma rad och väntade sedan på
+        varandra — en evig väntan, eftersom `lock_timeout` var 0. Posten gick
+        inte att spara och skärmen "fastnade i uppdateringen" utan ett enda
+        felmeddelande.
+
+        Låsen tas av `_lock_rows_in_order()` innan UPDATE:en körs — se den
+        metoden för varför.
         """
         if not self:
             return
         self.flush_recordset(['okf_dirty'])
+        self._lock_rows_in_order()
         self.env.cr.execute(
             'UPDATE %s SET okf_dirty = TRUE WHERE id = ANY(%%s)' % self._table,
             (list(self.ids),))
@@ -511,6 +560,10 @@ class AIOkfMixin(models.AbstractModel):
             else:
                 params.append(value)
         assignments = ', '.join('%s = %%s' % f for f in vals)
+        # Samma låsordning som `_set_okf_dirty()` — annars kan en
+        # indexerings-cron och en användares sparning låsa samma rader i olika
+        # följd och dödläges-krascha (T/12475).
+        self._lock_rows_in_order()
         self.env.cr.execute(
             'UPDATE %s SET %s WHERE id = ANY(%%s)' % (self._table, assignments),
             params + [list(self.ids)],
@@ -534,7 +587,7 @@ class AIOkfMixin(models.AbstractModel):
             value = int(raw)
         except (TypeError, ValueError):
             _logger.warning(
-                'OKF: parametern %s är inte ett tal (%r) — använder %s',
+                'OKF: the parameter %s is not a number (%r) — using %s',
                 SUMMARY_MAX_CHARS_PARAM, raw, SUMMARY_MAX_CHARS_DEFAULT)
             return SUMMARY_MAX_CHARS_DEFAULT
         return value if value > 0 else SUMMARY_MAX_CHARS_DEFAULT
@@ -553,8 +606,8 @@ class AIOkfMixin(models.AbstractModel):
                                 raise_if_not_found=False)
         if not coworker:
             _logger.warning(
-                'OKF: coworker_default_assistent saknas — kan inte '
-                'sammanfatta långa texter')
+                'OKF: coworker_default_assistent is missing — cannot '
+                'summarise long texts')
             return None
         session = self.env['ai.coworker.session'].sudo().search([
             ('coworker_id', '=', coworker.id),
@@ -605,8 +658,8 @@ class AIOkfMixin(models.AbstractModel):
         # 4. Trunkering — sista utväg. Loggas: tyst trunkering är samma
         #    felklass som `except: pass`.
         _logger.warning(
-            'OKF: kunde inte sammanfatta %s,%s (%d tecken) — trunkerar vid '
-            '%d. Posten får ett ofullständigt koncept.',
+            'OKF: could not summarise %s,%s (%d characters) — truncating at '
+            '%d. The record gets an incomplete concept.',
             self._name, self.id, len(text), max_chars)
         return text[:max_chars], 'truncated'
 
@@ -619,17 +672,17 @@ class AIOkfMixin(models.AbstractModel):
         if session is None:
             session = self._okf_summarize_session()
         prompt = (
-            'Sammanfatta texten nedan på högst %d tecken.\n'
-            'Behåll fakta, namn, siffror och datum. Tappa ingen innebörd.\n'
-            'Svara med ENDAST sammanfattningen — ingen inledning, ingen '
-            'förklaring, ingen rubrik.\n\n'
+            'Summarise the text below in at most %d characters.\n'
+            'Keep facts, names, numbers and dates. Lose no meaning.\n'
+            'Answer with ONLY the summary — no preamble, no '
+            'explanation, no heading.\n\n'
             '---\n%s' % (max_chars, text)
         )
         try:
             result = coworker.sudo().run(prompt, session=session)
         except Exception as e:  # noqa: BLE001 — felvägen är ett giltigt utfall
             _logger.warning(
-                'OKF: sammanfattning via Allmän assistent misslyckades för '
+                'OKF: summarisation via the General Assistant failed for '
                 '%s,%s: %s', self._name, self.id, e)
             return None
         if not result or not str(result).strip():
@@ -639,6 +692,20 @@ class AIOkfMixin(models.AbstractModel):
     # ==================================================================
     # Indexerarens ingång — EN väg, delad av cron och debug-knappen
     # ==================================================================
+
+    def _okf_is_ready(self):
+        """Är posten mogen att indexeras nu? Default: alltid.
+
+        TRE UTVALL, INTE TVÅ. `_okf_skip_reason()` svarar på "ska posten
+        avföras?" — men en post kan också vara "ännu inte mogen" (ett mail
+        som väntar på klassificering). Det läget kunde inte uttryckas:
+        `None` betyder "indexera", så en omogen post indexerades direkt och
+        kön tömdes innan den hade sitt innehåll.
+
+        Bryggor som har ett mognadsläge överrider denna. En post som inte är
+        redo BEHÅLLER sin `okf_dirty`-flagga och plockas upp nästa varv.
+        """
+        return True
 
     def _okf_skip_reason(self):
         """Varför posten inte ska indexeras — eller None.
@@ -895,21 +962,33 @@ class AIOkfMixin(models.AbstractModel):
             if concept and first is None:
                 first = concept
 
-        # Flaggan rensas EN gång, efter samtliga ägare och språk — ÄVEN när
-        # inget koncept skapades (tom text, eller posten avfördes). Anroparen
+        # Flaggan rensas EN gång, efter samtliga ägare och språk. Anroparen
         # äger rensningen just för att N ägare inte ska ge N rensningar (som
         # var och en kunde återtända flaggan).
         #
-        # FYND (2026-10-06): den första versionen rensade bara när
-        # `first is not None`. Det bröt två befintliga tester: en tom post
-        # blockerade kön för evigt ("tombstone: flaggan rensas ändå"), och
-        # cronen rapporterade 0 skrivna trots att den rensat. `_okf_skip_reason`
-        # och den tomma kroppen MÅSTE rensa — det var beteendet före ändringen.
+        # MEN INTE när posten är "oklassificerad": `_okf_skip_reason()` säger
+        # uttryckligen "oklassificerat → BEHÅLL flaggan, försök igen efter
+        # klassificering" (returnerar None, inte en orsak). Den här raden
+        # rensade ändå ovillkorligt, så ett oklassificerat mail tappades
+        # permanent ur kön — det blev aldrig indexerat, och ingenstans syntes
+        # att det hänt. Mätt på luke18 2026-11-05: tre ingesterade mail
+        # (status='new') försvann ur kön utan att ge koncept.
+        #
+        # Rensningen sker därför bara när posten antingen gav ett koncept,
+        # avfördes med en ORSAK (`skip`), eller har tom kropp. Ett tomt mail
+        # ska inte blockera kön för evigt ("tombstone"), och en avförd post
+        # ska inte heller försöka igen — men en post som väntar på
+        # klassificering ska ligga kvar.
         #
         # OBS: `_clear_okf_dirty` bor på MIXINEN (källposten) — inte på
         # `ai.okf.concept`. Att anropa den på det returnerade konceptet
         # kastar AttributeError (fångat av testet 2026-10-06).
-        self._clear_okf_dirty()
+        if first is not None or self._okf_skip_reason() or not (
+                self._okf_body_source() or '').strip() \
+                or not self._okf_is_ready():
+            # `_okf_is_ready()` False → rensningen sker INTE; posten väntar.
+            if self._okf_is_ready():
+                self._clear_okf_dirty()
         return first
 
     def _okf_index_record_one(self, lang=None, max_chars=None, session=None,
@@ -949,19 +1028,28 @@ class AIOkfMixin(models.AbstractModel):
         body = self._okf_body_source() or ''
         skip = self._okf_skip_reason()
 
+        if not skip and not self._okf_is_ready():
+            # Mognar senare (t.ex. mail före klassificering) — behåll
+            # flaggan, rör inget. Utan detta indexerades posten med tom
+            # kategori, och kön tömdes innan innehållet fanns.
+            _logger.debug(
+                'OKF: %s,%s is not mature yet — keeping the flag',
+                self._name, self.id)
+            return None
+
         if skip:
             # "Tomt för alltid" — rensa så posten inte blockerar kön.
             if clear_dirty:
                 self._clear_okf_dirty(
                     {'okf_body': body, 'okf_summary': ''})
-            _logger.info('OKF: avför %s,%s (%s)', self._name, self.id, skip)
+            _logger.info('OKF: removes %s,%s (%s)', self._name, self.id, skip)
             return None
 
         if not body.strip():
             # "Tomt just nu" — behåll flaggan, försök nästa körning.
             # Annars tappar vi poster permanent (D5-fällan: "vägen är byggd"
             # utan att ha sett den köra).
-            _logger.debug('OKF: %s,%s har ingen text än — behåller flaggan',
+            _logger.debug('OKF: %s,%s has no text yet — keeping the flag',
                           self._name, self.id)
             return None
 
@@ -1030,7 +1118,7 @@ class AIOkfMixin(models.AbstractModel):
 
         concept = self.env['ai.okf.concept']._okf_upsert(**vals)
         _logger.info(
-            'OKF: indexerade %s (summary-källa: %s, %d -> %d tecken)',
+            'OKF: indexed %s (summary source: %s, %d -> %d characters)',
             source_ref, source, len(body), len(summary))
         return concept
 
@@ -1050,10 +1138,10 @@ class AIOkfMixin(models.AbstractModel):
                 'type': 'success' if concept else 'warning',
                 'title': 'OKF',
                 'message': (
-                    'Koncept sparat.'
+                    'Concept saved.'
                     if concept else
-                    'Inget koncept skapades — texten är tom eller posten '
-                    'avfördes. Se loggen.'),
+                    'No concept was created — the text is empty or the '
+                    'record was removed. See the log.'),
                 'sticky': False,
             },
         }
@@ -1079,7 +1167,11 @@ class AIOkfMixin(models.AbstractModel):
     #: returnerar — `@api.model`-uppslagningen sker på den abstrakta modellen,
     #: inte på den ärvande. Mätt i test på luke18 2026-09-22: en överridning
     #: på `website.page` hade ingen verkan på cronen.
-    _okf_extra_indexable_models = None  # sätts lazy (klassattribut får inte vara muterbart)
+    # INGEN klassattribut-deklaration: Odoos testramverk fäller varje nytt
+    # klassattribut på en modell ("Found unexpected attributes on
+    # ai.okf.mixin"). Registreringen bor därför i en modulglobal — den är
+    # processvid, vilket är rätt: registreringen görs en gång per register.
+    # Se `_OKF_EXTRA_INDEXABLE` nedanför klassdefinitionen.
 
     @api.model
     def _okf_register_indexable(self, model_name):
@@ -1087,12 +1179,19 @@ class AIOkfMixin(models.AbstractModel):
 
         Idempotent. Modellen behöver inte finnas än — listan filtreras mot
         `self.env` när cronen kör.
+
+        MUTATION PÅ KLASSEN, INTE PÅ INSTANSEN: `type(self)._x = []` skapar
+        ett NYTT klassattribut, och Odoos testramverk fäller det
+        ("Found unexpected attributes on ai.okf.mixin:
+        _okf_extra_indexable_models"). Attributet finns redan i klassens
+        `__dict__` (deklarerat `= None`), så vi muterar listan in-place i
+        stället för att sätta ett nytt attribut. Samma fälla som
+        `_okf_summary_takes_owner` redan dokumenterar.
         """
-        if self._okf_extra_indexable_models is None:
-            type(self)._okf_extra_indexable_models = []
-        if model_name not in self._okf_extra_indexable_models:
-            self._okf_extra_indexable_models.append(model_name)
-            _logger.info('OKF: registrerade %s för dirty-indexering',
+        extra = _OKF_EXTRA_INDEXABLE
+        if model_name not in extra:
+            extra.append(model_name)
+            _logger.info('OKF: registered %s for dirty indexing',
                          model_name)
         return True
 
@@ -1107,7 +1206,7 @@ class AIOkfMixin(models.AbstractModel):
         Modeller som inte finns i miljön hoppas över utan fel.
         """
         models = ['ai.personal.memory', 'ai.company.memory']
-        for name in (self._okf_extra_indexable_models or []):
+        for name in list(_OKF_EXTRA_INDEXABLE):
             if name not in models:
                 models.append(name)
         return models
@@ -1198,10 +1297,10 @@ class AIOkfMixin(models.AbstractModel):
         params.set_param(key, today)
         remaining = Model.search_count([('okf_dirty', '=', True)])
         _logger.warning(
-            'OKF stillestånd: %s har %d poster kvar att indexera, äldsta '
-            'är %.1f timmar gammal (tröskel %d h). Ingen post har '
-            'indexerats på den tiden — kontrollera om indexeringen kastar '
-            'fel per post (failure_count är 0 även då).',
+            'OKF standstill: %s has %d records left to index, the oldest '
+            'is %.1f hours old (threshold %d h). No record has been indexed '
+            'in that time — check whether the indexing raises per record '
+            '(failure_count is 0 even then).',
             model_name, remaining, age_hours, hours)
 
     @api.model
@@ -1216,7 +1315,7 @@ class AIOkfMixin(models.AbstractModel):
             current.append(model_name)
             self.env['ir.config_parameter'].sudo().set_param(
                 self.OKF_PRIORITY_PARAM, ','.join(current))
-            _logger.info('OKF: %s får garanterad andel (sökdrivande)',
+            _logger.info('OKF: %s gets a guaranteed share (search-driven)',
                          model_name)
         return True
 
@@ -1363,7 +1462,7 @@ class AIOkfMixin(models.AbstractModel):
         cap = self._okf_adaptive_cap(batch_size, queue_depth)
         if cap != batch_size:
             _logger.info(
-                'OKF cron: ködjup %s → tak %s (golv %s, max %s)',
+                'OKF cron: queue depth %s -> cap %s (floor %s, max %s)',
                 queue_depth, cap, batch_size, self.OKF_CRON_TAK_MAX)
 
         # Garanterad andel per modell — aldrig mindre än 1, och minst en
@@ -1396,8 +1495,21 @@ class AIOkfMixin(models.AbstractModel):
             self._okf_check_stall(model_name)
 
         for idx, model_name in enumerate(ordered):
-            if total >= cap:
-                break
+            # En PRIORITERAD modell får aldrig hoppas över för att taket
+            # redan är nått. `_okf_priority_indexable()` finns just för att
+            # en modell som driver en yta (sökfältet) inte ska svälta bakom
+            # ett arkiv — men `total >= cap: break` körde först, så låg den
+            # prioriterade modellen sist i ordningen fick den aldrig en
+            # plats. Mätt på luke18 2026-11-05: `res.partner` (145 dirty)
+            # åt hela taket och `user_mail_ai.mail` (position 11 av 12)
+            # indexerades aldrig, trots att den är prioriterad.
+            #
+            # Ordningen roterar per varv, så "sist" är inte permanent — men
+            # ett varv där den prioriterade modellen uteblir är ett varv för
+            # mycket. Prioriterade modeller får därför gå före taket.
+            is_priority = model_name in priority_share
+            if total >= cap and not is_priority:
+                continue
             consumed += 1
             # Egen andel + eventuell outnyttjad reserv från tidigare modeller.
             remaining = per_model + spare
@@ -1406,6 +1518,13 @@ class AIOkfMixin(models.AbstractModel):
             remaining = max(remaining, priority_share.get(model_name, 0))
             if remaining > cap - total:
                 remaining = cap - total
+            if is_priority:
+                # Den prioriterade modellen får sin andel ÄVEN om taket är
+                # nått — annars blir `remaining = cap - total = 0` och
+                # `search(limit=0)` hittar ingenting. Taket är ett mål för
+                # det totala antalet, inte ett tak som får svälta en
+                # prioriterad modell.
+                remaining = max(remaining, priority_share.get(model_name, 1))
             Model = self.env[model_name].sudo()
             dirty = Model.search(
                 [('okf_dirty', '=', True)], limit=remaining,
@@ -1424,7 +1543,7 @@ class AIOkfMixin(models.AbstractModel):
                     # exc_info: ett kraschande resultat får inte se ut som
                     # ett tomt (okf-recall-path §16).
                     _logger.warning(
-                        'OKF cron: indexering misslyckades för %s,%s: %s',
+                        'OKF cron: indexing failed for %s,%s: %s',
                         model_name, rec.id, e, exc_info=True)
             # Outnyttjad del av modellens andel går till nästa modell.
             spare = max(0, spare - max(0, remaining - len(dirty)))
@@ -1436,8 +1555,8 @@ class AIOkfMixin(models.AbstractModel):
 
         if skipped_for_time:
             _logger.info(
-                'OKF cron: tidsbudgeten (%ss) slut efter %s poster — '
-                '%s kvar till nästa varv',
+                'OKF cron: the time budget (%ss) ran out after %s records — '
+                '%s left for the next round',
                 time_budget, total, skipped_for_time)
         return total
 

@@ -82,7 +82,7 @@ class TestSkillExperience(TransactionCase):
         self.assertEqual(n2, 1, 'samma not ska dedupas, inte bli ny rad')
 
         line = skill.failure_cases
-        self.assertIn('sedd 2 ggr', line, 'räknaren ska ha ökat')
+        self.assertIn('seen 2 times', line, 'räknaren ska ha ökat')
         self.assertIn('999', line, 'källhänvisningen ska vara den senaste')
 
     # ── 3.3 radtaket ──────────────────────────────────────────────────
@@ -142,7 +142,7 @@ class TestSkillExperience(TransactionCase):
         self.assertTrue(made, 'loopen får aldrig vara tyst')
         self.assertTrue(skill.improvement_suggested_recipe)
         # Fallbacken ska nämna de inlärda falska positiva.
-        self.assertIn('falska positiva', skill.improvement_suggested_recipe.lower())
+        self.assertIn('false positives', skill.improvement_suggested_recipe.lower())
 
     def test_llm_exception_falls_back_to_deterministic(self):
         """3.6: ett kastat fel i LLM-vägen ger ändå ett underlag."""

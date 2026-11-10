@@ -116,7 +116,7 @@ class TestDispatchOwnerResolution(TransactionCase):
 
         with self.assertRaises(ValidationError) as ctx:
             coworker._resolve_dispatch_user(init_type='cron')
-        self.assertIn('Ägare', str(ctx.exception))
+        self.assertIn('Owner', str(ctx.exception))
 
     def test_systemuser_still_refused(self):
         """Systemuser-spärren är orörd — den är korrekt."""
@@ -126,7 +126,7 @@ class TestDispatchOwnerResolution(TransactionCase):
         })
         with self.assertRaises(ValidationError) as ctx:
             coworker._resolve_dispatch_user(init_type='cron')
-        self.assertIn('systemuser', str(ctx.exception))
+        self.assertIn('system user', str(ctx.exception))
 
 
 class TestRepairMissingChatUsers(TransactionCase):

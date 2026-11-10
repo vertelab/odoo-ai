@@ -4,9 +4,9 @@
         <field name="name">ai.coworker.mail.test.wizard.form</field>
         <field name="model">ai.coworker.mail.test.wizard</field>
         <field name="arch" type="xml">
-            <form string="Testa mail-flödet">
+            <form string="Test the Mail Flow">
                 <header>
-                    <button name="action_close" string="Stäng"
+                    <button name="action_close" string="Close"
                             type="object" invisible="state != 'done'"/>
                 </header>
                 <sheet>
@@ -15,9 +15,9 @@
                             <field name="coworker_id" invisible="1"/>
                             <field name="eml_file" filename="eml_filename"
                                    widget="binary"
-                                   help="Ladda upp en .eml-fil (mail) som startar mail-testflödet. Bilagor i filen läggs som bilagor + minnen på sessionen."/>
+                                   help="Upload an .eml file (mail) that starts the mail test flow. Attachments in the file are added as attachments + memories on the session."/>
                             <field name="eml_filename" invisible="1"/>
-                            <button name="action_run" string="Testa mail-flödet"
+                            <button name="action_run" string="Test the Mail Flow"
                                     type="object" class="btn-primary"
                                     invisible="state != 'input'"/>
                         </group>
@@ -33,7 +33,7 @@
     </record>
 
     <record id="ai_coworker_mail_test_wizard_action" model="ir.actions.act_window">
-        <field name="name">Testa mail-flödet</field>
+        <field name="name">Test the Mail Flow</field>
         <field name="res_model">ai.coworker.mail.test.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>

@@ -30,10 +30,7 @@ class ResUsers(models.Model):
     # ── Company Memory Access ──
     learn_from_discuss = fields.Boolean(
         'Learn from Discuss', default=True,
-        help='Lär sig av dina egna meddelanden i publika Discuss-kanaler '
-             '(bara dina egna yttranden, aldrig andras). Stäng av för att '
-             'inte extrahera några lärdomar från Discuss till ditt '
-             'personliga minne.')
+        help='Learns from your own messages in public Discuss channels (only your own statements, never others). Turn off to extract no lessons from Discuss into your personal memory.')
 
     company_memory_categories = fields.Many2many(
         'ai.company.memory.category',
@@ -50,8 +47,7 @@ class ResUsers(models.Model):
     okf_memory_count = fields.Integer(
         string='OKF Memory Count',
         compute='_compute_okf_memory_count',
-        help='Antal levande OKF-koncept som ägs av användaren (personal-'
-             'scope). Detta är vad som faktiskt injiceras i prompten.')
+        help='Number of live OKF concepts owned by the user (personal scope). This is what is actually injected into the prompt.')
 
     @api.depends('personal_memory_ids')
     def _compute_personal_memory_count(self):
@@ -72,12 +68,12 @@ class ResUsers(models.Model):
     personal_goal_ids = fields.One2many(
         'ai.personal.goal', 'user_id',
         string='Personal Goals',
-        help='Alla personliga mål för denna användare.')
+        help='All personal goals for this user.')
 
     personal_goal_count = fields.Integer(
         string='Goal Count',
         compute='_compute_personal_goal_count',
-        help='Antal personliga mål för denna användare.')
+        help='Number of personal goals for this user.')
 
     @api.depends('personal_goal_ids')
     def _compute_personal_goal_count(self):
@@ -180,6 +176,5 @@ class ResUsers(models.Model):
         ])
         if archived:
             archived.write({'archived': True})
-            _logger.info('Offboarding: arkiverade %s personliga koncept '
-                         'för användare %s', len(archived), self.id)
+            _logger.info('Offboarding: archived %s personal concepts for user %s', len(archived), self.id)
         return len(archived)

@@ -117,7 +117,7 @@
                        decoration-success="status=='active'"
                        decoration-warning="status=='draft'"/>
                 <field name="agent_count"/>
-                <field name="session_count" string="Sessions (månad)"/>
+                <field name="session_count" string="Sessions (month)"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>
@@ -128,7 +128,7 @@
         <field name="name">ai.coworker.search</field>
         <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
-            <search string="Sök medarbetare">
+            <search string="Search Coworker">
                 <field name="name"/>
                 <field name="description"/>
                 <field name="tag_ids"/>
@@ -161,30 +161,32 @@
                             <field name="agent_count" widget="statinfo"/>
                         </button>
                         <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered"
-                                help="Antal sessioner som startade denna månad. Klick öppnar samtliga sessioner — månaden ligger som ett filter du kan ta bort.">
+                                help="Sessions started in the current calendar month (see the filter for which month). A click opens all sessions — the month sits as a filter you can remove.">
+                            <!-- Två barn, inte tre: `o_stat_info` är flex-column
+                                 och `oe_stat_button` har fast höjd, så en tredje
+                                 rad (månadsetiketten) gjorde knappen tvåradig
+                                 och sprängde knappraden
+                                 (session-machine-and-filter D1). Månaden bor
+                                 nu i hjälptexten; siffran mäter fortfarande
+                                 innevarande kalendermånad. -->
                             <div class="o_stat_info">
-                                <!-- Etiketten namnger månaden: "Sessions (okt)".
-                                     Utan månaden läses siffran som ett totalantal,
-                                     vilket var hela buggen
-                                     (coworker-session-smart-button D4). -->
                                 <span class="o_stat_text">Sessions</span>
                                 <span class="o_stat_value"><field name="session_count" widget="statinfo"/></span>
-                                <span class="o_stat_text"><field name="session_count_label"/></span>
                             </div>
                         </button>
                         <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money"
-                                help="Systemtokens för innevarande kalendermånad (informativa rader uteslutna).">
+                                help="System tokens for the current calendar month (informative lines excluded).">
                             <field name="session_line_count" widget="statinfo" string="Tokens"/>
                         </button>
                         <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece"
-                                help="Affärsobjekt som medarbetarens sessioner SKAPADE (operation = created).">
+                                help="Business objects the coworker sessions CREATED (operation = created).">
                             <field name="session_object_count" widget="statinfo" string="Objects"/>
                         </button>
                         <!-- Odoo Mind: koncept som medarbetaren ÄGER
                              (scope coworker). Bredvid sessionsräknarna —
                              de säger vad den GJORT, denna vad den VET. -->
                         <button name="action_open_okf_owned_concepts" class="oe_stat_button" type="object" icon="fa-brain"
-                                help="Antal distinkta konceptnycklar som ägs av medarbetaren (arkiverade koncept räknas inte).">
+                                help="Number of distinct concept keys owned by the coworker (archived concepts are not counted).">
                             <field name="okf_concept_count" widget="statinfo" string="Odoo Mind"/>
                         </button>
                         <!-- Kandidater för befordran till eval-fall
@@ -193,7 +195,7 @@
                              och som saknar ett testfall. Ingen räknare —
                              listan är en beräkning, inte ett lagrat fält. -->
                         <button name="action_open_promotion_candidates" class="oe_stat_button" type="object" icon="fa-clipboard-check"
-                                help="Sessioner som är värda att befordras till eval-fall: fel-utfall eller underkända av användaren, och som ännu saknar ett testfall.">
+                                help="Sessions worth promoting to eval cases: error outcomes or down-rated by the user, and which have no test case yet.">
                             <div class="o_stat_info">
                                 <span class="o_stat_text">Eval</span>
                                 <span class="o_stat_text">kandidater</span>
@@ -203,7 +205,7 @@
 
                     <div class="oe_title d-flex align-items-start">
                         <div class="flex-grow-1 pe-3">
-                            <h1><field name="name" placeholder="Namn på AI Medarbetare"/></h1>
+                            <h1><field name="name" placeholder="Name of AI Coworker"/></h1>
                             <field name="sub_description" placeholder="Kort beskrivning"/>
                         </div>
                         <div class="flex-shrink-0">
@@ -212,24 +214,17 @@
                     </div>
 
                     <group>
-                        <group string="Allmänt">
+                        <group string="General">
                             <field name="identity_id"/>
                             <field name="orchestration_mode" widget="radio"/>
                             <field name="orchestration_mode_help" readonly="1" class="text-muted" nolabel="1"/>
-                            <field name="supervisor_model_id" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
                             <field name="conference_mechanism" invisible="orchestration_mode != 'conference'"/>
+                        </group>
+                        <group string="Avdelning">
+                            <field name="department_id"/>
+                            <field name="supervisor_model_id" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
                             <field name="max_iterations" invisible="orchestration_mode not in ('supervisor', 'buzz', 'linear', 'conference')"/>
                             <field name="min_confidence" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
-                            <field name="department_id"/>
-                            <field name="is_default"/>
-                            <field name="heartbeat_enabled"/>
-                            <field name="heartbeat_status" readonly="1"
-                                decoration-success="heartbeat_operational"
-                                decoration-danger="heartbeat_enabled and not heartbeat_operational"/>
-                        </group>
-                        <group string="HITL">
-                            <field name="hitl_threshold" widget="radio"/>
-                            <field name="active" widget="boolean_toggle"/>
                             <field name="last_successful_run" readonly="1"/>
                         </group>
                     </group>
@@ -243,6 +238,20 @@
                             </group>
                         </page>
 
+                        <page string="Autonom" name="autonom">
+                            <group>
+                                <group string="Unattended Run">
+                                    <field name="hitl_threshold" widget="radio"/>
+                                </group>
+                                <group string="Heartbeat">
+                                    <field name="heartbeat_enabled"/>
+                                    <field name="heartbeat_status" readonly="1"
+                                        decoration-success="heartbeat_operational"
+                                        decoration-danger="heartbeat_enabled and not heartbeat_operational"/>
+                                    <field name="heartbeat_operational" readonly="1" invisible="1"/>
+                                </group>
+                            </group>
+                        </page>
                         <page string="Initiering" name="initiering">
                             <group>
                                 <group>
@@ -252,23 +261,23 @@
                                   <!-- Channel -->  
                                     <field name="init_channel"/>
                                     <field name="channel_id" invisible="not init_channel" string=" → Discuss-kanal"/>
-                                        <field name="response_mode" invisible="not init_chat and not init_channel" string=" → Svarar när"/>
-                                        <field name="channel_reply_mode" invisible="not init_channel" string=" → Svarsläge"/>
+                                        <field name="response_mode" invisible="not init_chat and not init_channel" string=" → Responds when"/>
+                                        <field name="channel_reply_mode" invisible="not init_channel" string=" → Reply Mode"/>
                                         <field name="chat_trigger_words" invisible="init_channel or response_mode != 'trigger'" string=" → Aktiveringsord"/>
                                   <!-- Mail -->
                                     <field name="init_mail"/>
                                      <field name="alias_name" invisible="not init_mail" string=" → Mail-adress (alias)"/>
                                      <field name="alias_display" invisible="not init_mail" readonly="1" string=" → Full mailadress"/>
-                                     <field name="alias_contact" invisible="not init_mail" string=" → Ta emot mail från"/>
+                                     <field name="alias_contact" invisible="not init_mail" string=" → Receive mail from"/>
                                      <button name="action_open_mail_alias" type="object"
-                                         string=" → Öppna mail-alias" icon="fa-envelope-o"
+                                         string=" → Open mail alias" icon="fa-envelope-o"
                                          invisible="not init_mail" class="btn-link p-0"/>
                                      <button name="action_test_mail_flow" type="object"
-                                         string=" → Testa mail-flödet" icon="fa-paper-plane-o"
+                                         string=" → Test the mail flow" icon="fa-paper-plane-o"
                                          invisible="not init_mail" class="btn-link p-0"/>
-                                     <field name="mail_action" invisible="not init_mail" string=" → Mail-åtgärd"/>
-                                     <field name="mail_reply_delay" invisible="not init_mail" string=" → Svarsdröjsmål (min)"/>
-                                     <field name="mail_target_model_id" invisible="not init_mail or mail_action != 'create_record'" string=" → Målmodell"/>
+                                     <field name="mail_action" invisible="not init_mail" string=" → Mail Action"/>
+                                     <field name="mail_reply_delay" invisible="not init_mail" string=" → Reply Delay (min)"/>
+                                     <field name="mail_target_model_id" invisible="not init_mail or mail_action != 'create_record'" string=" → Target Model"/>
                                      <field name="mail_find_partner" invisible="not init_mail or mail_action != 'invoice_ai'" string=" → Hitta/skapa res.partner"/>
                                   <!-- Cron -->
                                     <field name="init_cron"/>
@@ -277,7 +286,7 @@
                                     <field name="cron_interval_type" invisible="not init_cron" string="→ Intervalltyp"/>
                                     <field name="cron_model_id" invisible="not init_cron" string="→ Modell att filtrera"/>
                                     <field name="cron_model_name" invisible="1"/>
-                                    <field name="filter_domain" widget="domain" options="{'model': 'cron_model_name'}" invisible="not init_cron" string="→ Filter (domän)"/>
+                                    <field name="filter_domain" widget="domain" options="{'model': 'cron_model_name'}" invisible="not init_cron" string="→ Filter (domain)"/>
                                     <field name="cron_automation_id" invisible="not init_cron" string="→ Schedule Action" readonly="1"/>
                                     
                                   <!-- Server Action -->
@@ -352,8 +361,8 @@
                                     <field name="watch_filter_domain" widget="domain"
                                         options="{'model': 'watch_model_name', 'in_dialog': True}"
                                         invisible="watch_trigger in ['on_change', 'on_webhook'] or not init_watch"
-                                        string=" → Apply on (domän)"/>
-                                    <field name="watch_trigger_field_ids" string=" → When updating (fält)" placeholder="Select fields..."
+                                        string=" → Apply on (domain)"/>
+                                    <field name="watch_trigger_field_ids" string=" → When updating (field)" placeholder="Select fields..."
                                         options="{'no_open': True, 'no_create': True}"
                                         domain="[('model_id', '=', watch_model_id),('store','=',True)]"
                                         context="{'hide_model': 1}"
@@ -363,8 +372,8 @@
                                         domain="[('model_id', '=', watch_model_id)]"
                                         context="{'hide_model': 1}"
                                         invisible="watch_trigger != 'on_change' or not init_watch" widget="many2many_tags"/>
-                                    <field name="watch_active" widget="boolean_toggle" invisible="not init_watch" string=" → Aktiv (kör regel)"/>
-                                    <field name="watch_domain" widget="domain" options="{'model': 'watch_model_name'}" invisible="not init_watch" string="→ Domän (filter i koden)"/>
+                                    <field name="watch_active" widget="boolean_toggle" invisible="not init_watch" string=" → Active (run rule)"/>
+                                    <field name="watch_domain" widget="domain" options="{'model': 'watch_model_name'}" invisible="not init_watch" string="→ Domain (filter in the code)"/>
                                     <field name="base_automation_id" invisible="not init_watch" string="→ Base Automation" readonly="1"/>
                                 </group>
 
@@ -381,7 +390,7 @@
                                 <field name="memory_learning_direct"
                                        invisible="learning != 'active'"/>
                             </group>
-                            <group string="Sökning (fas 13)">
+                            <group string="Search (phase 13)">
                                 <field name="search_sources" widget="many2many_tags"
                                        options="{'no_create': True}"/>
                                 <field name="search_strategy" widget="radio"/>
@@ -396,10 +405,7 @@
                                 <field name="session_graph_enabled"
                                        invisible="not graph_enrichment"/>
                             </group>
-                            <group string="Hermes Injection Level">
-                                <field name="injection_level" widget="radio"/>
-                            </group>
-                            <group string="Företagsminne" invisible="'Företagets minne' in memory_scopes" >
+                            <group string="Company Memory" invisible="'Företagets minne' in memory_scopes" >
                                 <field name="inject_company_memory"/>
                                 <field name="company_memory_artifact_types" widget="many2many_tags"/>
                                 <field name="company_memory_categories" widget="many2many_tags"/>
@@ -417,7 +423,7 @@
                                      bara det som är medarbetar-globalt. -->
                                 <field name="use_time_context"/>
                                 <field name="context_max_records"
-                                       help="Standardvärde — den aktiva init-typen kan överrida."/>
+                                       help="Default value — the active trigger type can override it."/>
                             </group>
                         </page>
 
@@ -428,11 +434,11 @@
                                     <field name="agent_id"/>
                                     <field name="agent_model_id"/>
                                     <field name="block_personal" string="🔒 Personligt"/>
-                                    <field name="block_company" string="🔒 Företag"/>
+                                    <field name="block_company" string="🔒 Company"/>
                                     <field name="block_coworker" string="🔒 Medarbetare"/>
-                                    <field name="level_personal" string="Nivå pe"/>
-                                    <field name="level_company" string="Nivå co"/>
-                                    <field name="level_coworker" string="Nivå cw"/>
+                                    <field name="level_personal" string="Level pe"/>
+                                    <field name="level_company" string="Level co"/>
+                                    <field name="level_coworker" string="Level cw"/>
                                     <field name="role"/>
                                 </list>
                             </field>
@@ -471,7 +477,7 @@
                                     <field name="daily_budget_warning" readonly="1"/>
                                     <field name="daily_budget_exhausted" readonly="1"/>
                                 </group>
-                                <group string="Månadstak">
+                                <group string="Monthly Cap">
                                     <field name="monthly_cap_mtokens"/>
                                     <field name="monthly_budget_soft" widget="boolean_toggle"/>
                                     <field name="budget_warning" readonly="1"/>
@@ -485,9 +491,9 @@
                                 </group>
                             </group>
                         </page>
-                        <page string="Åtkomst" name="access">
+                        <page string="Access" name="access">
                             <group>
-                                <group string="Användare &amp; grupper">
+                                <group string="Users &amp; groups">
                                     <field name="group_ids" widget="many2many_tags"/>
                                     <field name="company_id"/>
                                 </group>

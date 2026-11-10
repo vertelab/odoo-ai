@@ -15,7 +15,7 @@
                             icon="fa-database">
                         <div class="o_stat_info">
                             <field name="okf_memory_count"/>
-                            <span class="o_stat_text">Minnen</span>
+                            <span class="o_stat_text">Memories</span>
                         </div>
                     </button>
                     <button name="action_open_personal_goals"
@@ -24,7 +24,7 @@
                             icon="fa-bullseye">
                         <div class="o_stat_info">
                             <field name="personal_goal_count"/>
-                            <span class="o_stat_text">Mål</span>
+                            <span class="o_stat_text">Goals</span>
                         </div>
                     </button>
                 </div>
@@ -43,7 +43,7 @@
             <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
             <field name="arch" type="xml">
                 <xpath expr="//page[@name='preferences_page']/group[@name='preferences']" position="before">
-                    <group name="ai_memory" string="AI-profil">
+                    <group name="ai_memory" string="AI Profile">
                         <div class="o_row">
                             <button name="action_open_personal_memory"
                                     type="object"
@@ -51,7 +51,7 @@
                                     icon="fa-database">
                                 <div class="o_stat_info">
                                     <field name="okf_memory_count"/>
-                                    <span class="o_stat_text">Minnen</span>
+                                    <span class="o_stat_text">Memories</span>
                                 </div>
                             </button>
                             <button name="action_open_personal_goals"
@@ -60,14 +60,14 @@
                                     icon="fa-bullseye">
                                 <div class="o_stat_info">
                                     <field name="personal_goal_count"/>
-                                    <span class="o_stat_text">Mål</span>
+                                    <span class="o_stat_text">Goals</span>
                                 </div>
                             </button>
                         </div>
                         <div colspan="2">
                             <p class="text-muted mb-0">
-                                Det här är vad AI-medarbetarna kommer ihåg om dig
-                                — det som injiceras i deras systemprompt.
+                                This is what the AI coworkers remember about
+                                you — what is injected into their system prompt.
                             </p>
                         </div>
                         <field name="learn_from_discuss"/>

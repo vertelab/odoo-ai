@@ -33,12 +33,17 @@
 #   och importerades aldrig av Odoo. Atgardat: 1.5.0 (monkeypatchar inte
 #   langre) + tak nedan. Poangen: aven ett paket vi inte ber om kan sla
 #   sonder pydantic for hela installationen.
+    #   TAK: extendable-pydantic>=1.5.0 (ingen .pth) + extendable>=1.4.0.
+    #   pydantic-golvet hojt till 2.9 (1.5.0:s eget krav) — se
+    #   /etc/odoo/requirements-constraints.txt for den fulla motiveringen.
+extendable-pydantic>=1.5.0
+extendable>=1.4.0
 
 # ── Karna (ai_agent_core) ────────────────────────────────────────────────
 # tenacity: retry-logik i ai_agent_core/core/provider.py. KRITISK —
 #   utan den kraschar /ai/stream med ModuleNotFoundError (2026-09-15).
 tenacity>=9.0,<10
-pydantic>=2.0,<3
+pydantic>=2.9,<3
 typing_extensions
 markupsafe
 requests
@@ -95,7 +100,12 @@ ipython
 python-docx
 openpyxl
 python-pptx
-PyPDF2
+# PyPDF2 3.0.0 REMOVED PdfFileReader.numPages/getPage(), which OCA sign_oca
+# (models/sign_oca_request.py) still calls. Without a cap repo_apply installed
+# 3.0.1 and every signature raised DeprecationError -> signing was dead.
+# 2.12.1 is the last release with the old API, and it still has
+# PdfReader().pages, which is all ai_agent_core uses. Verified 2026-11-10.
+PyPDF2>=2.12,<3
 
 # ── api_agent / MCP ──────────────────────────────────────────────────────
 # fastapi-mcp drar via mcp -> starlette -> pydantic. Taket hindrar att en ny

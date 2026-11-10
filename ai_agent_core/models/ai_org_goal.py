@@ -22,9 +22,7 @@ class AIOrgGoal(models.Model):
         ('coworker', 'Coworker'),
         ('agent', 'Agent'),
     ], required=True, default='coworker',
-        help='Hierarkisk nivå för målet. Company = företagsövergripande, '
-             'Department = avdelningsmål, Coworker = per AI-medarbetare, '
-             'Agent = per enskild agent.')
+        help='Hierarchical level for the goal. Company = company-wide, Department = department goal, Coworker = per AI Coworker, Agent = per individual agent.')
 
     sequence = fields.Integer(default=10)
 
@@ -39,19 +37,14 @@ class AIOrgGoal(models.Model):
         default=lambda self: self.env.company)
     department_id = fields.Many2one('hr.department',
         string='Department',
-        help='Avdelning som äger detta mål.')
+        help='The department that owns this goal.')
     coworker_id = fields.Many2one('ai.coworker',
         string='Coworker',
-        help='AI-medarbetare som äger detta mål (enskild ägare). '
-             'Ägarkedjan är: en angiven coworker (coworker_id), ett '
-             'deklarerat team (coworker_ids), eller — utan utsedd ägare — '
-             'avdelningen (department_id). Ett mål ägs aldrig av en agent.')
+        help='The AI Coworker that owns this goal (single owner). The ownership chain is: a named coworker (coworker_id), a declared team (coworker_ids), or — with no designated owner — the department (department_id). A goal is never owned by an agent.')
     coworker_ids = fields.Many2many(
         'ai.coworker', 'ai_org_goal_coworker_rel',
         'goal_id', 'coworker_id', string='Team',
-        help='Deklarerat team av coworker som tillsammans äger målet. '
-             'Kan sättas innan tasks finns. Tomt tillsammans med tomt '
-             'coworker_id = målet ägs av avdelningen.')
+        help='A declared team of coworkers that own the goal together. Can be set before tasks exist. Empty together with an empty coworker_id = the goal is owned by the department.')
 
     # SMART
     specific = fields.Text('Specific — what exactly?')
@@ -67,8 +60,7 @@ class AIOrgGoal(models.Model):
     # Progress
     progress = fields.Float('Progress %', default=0.0,
         aggregator='avg', compute='_compute_progress', store=True,
-        help='Automatiskt beräknad som snitt av alla key results. '
-             'Kan överskridas manuellt.')
+        help='Computed automatically as the average of all key results. Can be overridden manually.')
 
     status = fields.Selection([
         ('draft', 'Draft'),
@@ -86,8 +78,7 @@ class AIOrgGoal(models.Model):
     external_ref = fields.Reference(
         selection='_selection_external_refs',
         string='External Reference',
-        help='Länk till externt mål (t.ex. strategy.initiative). '
-             'Fylls i av bridge-moduler.')
+        help='Link to an external goal (e.g. strategy.initiative). Filled in by bridge modules.')
 
     @api.depends('key_result_ids.current_value', 'key_result_ids.target_value')
     def _compute_progress(self):

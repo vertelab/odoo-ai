@@ -24,18 +24,14 @@ class AICoworkerSessionObject(models.Model):
     session_id = fields.Many2one(
         'ai.coworker.session', string='Session', required=True,
         ondelete='cascade', index=True,
-        help='Sessionen som utförde operationen. Lineage kan inte skapas '
-             'utan en existerande session, och raderna följer sessionens '
-             'livscykel (cascade).')
+        help='The session that performed the operation. Lineage cannot be created without an existing session, and the rows follow the session lifecycle (cascade).')
     coworker_id = fields.Many2one(
         'ai.coworker', string='AI Medarbetare',
         related='session_id.coworker_id', store=True, index=True,
-        help='Medarbetaren som äger sessionen — lagras på raden så att '
-             'medarbetarens objekt kan listas utan att gå via sessionens '
-             'rader.')
+        help='The coworker that owns the session — stored on the row so the coworker objects can be listed without going through the session lines.')
     res_model = fields.Char(
         'Modell', required=True, index=True,
-        help='Tekniskt modellnamn för objektet, t.ex. project.task.')
+        help='Technical model name for the object, e.g. project.task.')
     res_id = fields.Integer(
         'Objekt-id', required=True,
         help='Objektets id i `res_model`.')
@@ -44,18 +40,15 @@ class AICoworkerSessionObject(models.Model):
         ('updated', 'Uppdaterad'),
         ('deleted', 'Raderad'),
     ], string='Operation', required=True, index=True,
-        help='Vad sessionen gjorde med objektet. `created` är den fråga '
-             'knappen Objects svarar på; `updated` och `deleted` lagras för '
-             'spårbarhet.')
+        help='What the session did with the object. `created` is the question the Objects button answers; `updated` and `deleted` are stored for traceability.')
     datetime = fields.Datetime(
         'Tidpunkt', default=fields.Datetime.now, required=True,
-        help='När operationen senast utfördes för detta objekt i denna '
-             'session (uppdateras vid upprepad skrivning).')
+        help='When the operation was last performed for this object in this session (updated on repeated writes).')
 
     _sql_constraints = [
         ('session_object_unique',
          'UNIQUE(session_id, res_model, res_id, operation)',
-         'Samma objekt och operation loggas en gång per session.'),
+         'The same object and operation are logged once per session.'),
     ]
 
     # ── Navigering till målet (session-object-navigation) ──────────────
@@ -114,23 +107,20 @@ class AICoworkerSessionObject(models.Model):
         """
         messages = {
             'missing_model': _(
-                'Modellen %(model)s är inte tillgänglig i den här '
-                'databasen. Objektet kan inte öppnas.',
+                'The model %(model)s is not available in this database. The object cannot be opened.',
                 model=self.res_model or '-'),
             'missing_record': _(
-                'Objektet finns inte längre. Det kan ha raderats efter att '
-                'sessionen loggade det.'),
+                'The object no longer exists. It may have been deleted after the session logged it.'),
             'no_access': _(
-                'Du saknar behörighet att läsa %(model)s. Objektet kan inte '
-                'öppnas.', model=self.res_model),
+                'You lack permission to read %(model)s. The object cannot be opened.', model=self.res_model),
         }
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'title': _('Objektet kan inte öppnas'),
+                'title': _('The object cannot be opened'),
                 'message': messages.get(
-                    reason, _('Objektet kan inte öppnas.')),
+                    reason, _('The object cannot be opened.')),
                 'type': 'warning',
                 'sticky': False,
                 'next': {'type': 'ir.actions.act_window_close'},

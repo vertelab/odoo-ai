@@ -70,8 +70,7 @@ class GraphNodeDefinition(models.Model):
     last_error = fields.Text('Last Error', readonly=True)
     is_healthy = fields.Boolean(
         'Healthy', compute='_compute_is_healthy',
-        help='False när senaste synken rapporterade fel — skiljer en trasig '
-             'skrivväg från en frisk men tom graf.')
+        help='False when the last sync reported an error — separates a broken write path from a healthy but empty graph.')
 
     _sql_constraints = [
         ('unique_model_graph_label',
@@ -297,6 +296,20 @@ class GraphNodeDefinition(models.Model):
                     self._create_edges(rec)
                     synced += 1
                 except Exception as e:
+                    # ROLLBACK PER RECORD, or one bad record poisons the batch.
+                    #
+                    # A failed cypher() leaves the transaction aborted; the
+                    # next record's query then fails with "current
+                    # transaction is aborted" rather than its own error, and
+                    # so does every record after it. The batch reports N
+                    # failures where the true number is 1, and first_error
+                    # describes the consequence instead of the cause.
+                    #
+                    # Verified on dms 2026-11-10: after the first cypher
+                    # failure every remaining record logged "current
+                    # transaction is aborted", and _sync_all's handler then
+                    # crashed reading defn.graph_label.
+                    self.env.cr.rollback()
                     failed += 1
                     if first_error is None:
                         first_error = str(e)
@@ -308,7 +321,7 @@ class GraphNodeDefinition(models.Model):
         # Gör det till ett synligt fel i stället för en tyst nolla.
         undefined = self._undefined_edge_labels()
         if undefined:
-            msg = ('%s: kantmål utan noddefinition: %s'
+            msg = ('%s: edge target without a node definition: %s'
                    % (self.graph_label, ', '.join(undefined)))
             _logger.warning(msg)
             failed += 1
@@ -383,6 +396,21 @@ class GraphNodeDefinition(models.Model):
                     continue
                 defn._sync_batch(model)
             except Exception as e:
+                # ROLLBACK BEFORE TOUCHING THE ORM AGAIN.
+                #
+                # The failing statement (a cypher() call) leaves the
+                # transaction aborted. Reading `defn.graph_label` or
+                # writing `last_error` on an aborted transaction raises
+                # InFailedSqlTransaction — so the error handler itself
+                # crashed, and the log line meant to explain the failure
+                # became a second, unrelated traceback.
+                #
+                # Verified on dms 2026-11-10:
+                #   ai_graph_node.py:304  -> cypher failed
+                #   ai_graph_node.py:385  -> logging the failure crashed
+                #   cron_task.py:699      -> recording it crashed too
+                # Three tracebacks for one root cause, none naming it.
+                self.env.cr.rollback()
                 _logger.error("Sync failed for %s: %s", defn.graph_label, e)
                 defn.write({'last_error': str(e)})
 
@@ -392,6 +420,56 @@ class GraphExecutor(models.Model):
     _name = 'graph.executor'
     _description = 'Graph Executor'
     _abstract = True
+
+    @api.model
+    def _load_age_extension(self):
+        """Ladda AGE-biblioteket i den här sessionen (``LOAD 'age'``).
+
+        Fällan (2026-11-09): ``ag_catalog.cypher()`` svarar
+        ``unhandled cypher(cstring) function call`` om AGE:s bibliotek inte
+        är laddat i sessionen — även när extensionen finns, grafen finns och
+        ``search_path`` innehåller ``ag_catalog``. Verifierat manuellt:
+
+            SET search_path = ag_catalog, public;
+            SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$);
+            -- ERROR:  unhandled cypher(cstring) function call
+
+            LOAD 'age';                       -- ← den här raden krävs
+            SET search_path = ag_catalog, public;
+            SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$);
+            -- 1
+
+        ``LOAD`` är sessionslokalt och billigt (biblioteket är redan laddat
+        andra gången). Vi sväljer fel: saknas extensionen ska anroparen få
+        sitt eget, tydligare fel från ``cypher()``.
+        """
+        try:
+            self.env.cr.execute("LOAD 'age'")
+        except Exception:
+            # ROLLBACK IS MANDATORY, not defensive.
+            #
+            # A failed statement inside a transaction leaves PostgreSQL in
+            # "current transaction is aborted": every later statement returns
+            # that same error until someone rolls back. Without this line the
+            # own caller — ``cypher()`` right below — fails with a message
+            # about an aborted transaction instead of about AGE, and so does
+            # every unrelated query in the same unit of work.
+            #
+            # Verified on dms 2026-11-10. AGE 1.6 refuses LOAD for a
+            # non-superuser role ("access to library 'age' is not allowed"),
+            # so this path is the NORMAL one there, not an edge case:
+            #
+            #   LOAD 'age'                     -> ERROR (swallowed)
+            #   SET LOCAL search_path = ...    -> ERROR: transaction is aborted
+            #   ... every later statement      -> same
+            #   env.cr.commit()                -> "Failed to load registry"
+            #
+            # The whole database installation died on a missing rollback.
+            #
+            # The savepoint is what makes the rollback possible without
+            # discarding the caller's work: with it, only this statement is
+            # undone.
+            self.env.cr.rollback()
 
     @api.model
     def cypher(self, query, read_only=True, timeout=10):
@@ -423,6 +501,7 @@ class GraphExecutor(models.Model):
         try:
             # Use savepoint to avoid aborting the entire transaction on error
             self.env.cr.execute("SAVEPOINT graph_executor")
+            self._load_age_extension()
             # AGE:s operatorer (@>, som MERGE/SET/DELETE och
             # property-matchning använder) är OQUALIFICERADE inuti
             # Cypher-kroppen. Utan ag_catalog i search_path resolvas de
@@ -513,6 +592,7 @@ class GraphExecutor(models.Model):
             # (samma mönster som cypher() nedan).
             self.env.cr.execute("SAVEPOINT age_available")
             try:
+                self._load_age_extension()
                 self.env.cr.execute("""
                     SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$)
                     AS (x ag_catalog.agtype)

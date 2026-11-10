@@ -49,16 +49,19 @@ class TestBuzzWorkspace(TransactionCase):
         """Adding an agent to a buzz quest creates a partner."""
         self.assertFalse(self.agent.partner_id)
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         self.assertTrue(self.agent.partner_id)
-        self.assertEqual(self.agent.partner_id.name, self.agent.name)
+        # Partnernamnet bär en badge-prefix (🤖) med flit — se
+        # test_agent_partner_has_badge_prefix. Testet prövar att agentens
+        # namn finns i partnernamnet, inte att de är identiska.
+        self.assertIn(self.agent.name, self.agent.partner_id.name)
 
     def test_buzz_agent_joins_channel(self):
         """Agent partner becomes channel member in buzz mode."""
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         members = self.channel.channel_member_ids.mapped('partner_id')
@@ -68,7 +71,7 @@ class TestBuzzWorkspace(TransactionCase):
     def test_buzz_route_mention(self):
         """@mention routes to the right agent."""
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         msg = self.env['mail.message'].new({
@@ -83,7 +86,7 @@ class TestBuzzWorkspace(TransactionCase):
     def test_buzz_route_trigger_word(self):
         """Trigger word routes to the right agent."""
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         msg = self.env['mail.message'].new({
@@ -98,7 +101,7 @@ class TestBuzzWorkspace(TransactionCase):
     def test_remove_agent_leaves_channel(self):
         """Removing agent from quest removes channel membership."""
         rel = self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         self.assertTrue(self.agent.partner_id)
@@ -119,12 +122,12 @@ class TestBuzzWorkspace(TransactionCase):
             'channel_id': channel2.id,
         })
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         first_partner = self.agent.partner_id
         self.env['ai.coworker.agent'].create({
-            'quest_id': quest2.id,
+            'coworker_id': quest2.id,
             'agent_id': self.agent.id,
         })
         self.assertEqual(self.agent.partner_id, first_partner)
@@ -132,7 +135,7 @@ class TestBuzzWorkspace(TransactionCase):
     def test_agent_partner_has_badge_prefix(self):
         """Agent partner name gets robot emoji prefix."""
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         self.assertTrue(self.agent.partner_id.name.startswith('🤖'))
@@ -140,7 +143,7 @@ class TestBuzzWorkspace(TransactionCase):
     def test_agent_name_change_syncs_to_partner(self):
         """Changing agent name updates partner name."""
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         self.agent.name = 'Renamed Agent'
@@ -153,13 +156,19 @@ class TestBuzzWorkspace(TransactionCase):
         self.assertTrue(result.get('created'))
         new_agent = result.get('agent')
         self.assertTrue(new_agent)
-        self.assertIn(self.quest, new_agent.mapped('agent_ids.quest_id'))
+        # Kopplingen ligger på coworkern (ai.coworker.agent.coworker_id),
+        # inte som ett bakåt-fält på ai.agent. `mapped('agent_ids...')` på en
+        # ai.agent gav KeyError.
+        self.assertIn(
+            new_agent,
+            self.quest.agent_ids.mapped('agent_id'),
+            'Den auto-skapade agenten ska vara kopplad till coworkern')
         self.assertTrue(new_agent.partner_id)
 
     def test_dismiss_auto_agent(self):
         """Auto-created agent can be dismissed."""
         rel = self.env['ai.coworker.agent'].sudo().create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
             'is_auto_created': True,
         })
@@ -170,7 +179,7 @@ class TestBuzzWorkspace(TransactionCase):
     def test_channel_session_sync(self):
         """Channel message creates a shared web UI session line."""
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         self.assertFalse(self.quest.buzz_channel_session_id)
@@ -183,7 +192,7 @@ class TestBuzzWorkspace(TransactionCase):
     def test_avatar_generation_fallback(self):
         """Avatar generation falls back gracefully when no image model exists."""
         self.env['ai.coworker.agent'].create({
-            'quest_id': self.quest.id,
+            'coworker_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         result = self.agent._generate_avatar_image('A friendly robot')

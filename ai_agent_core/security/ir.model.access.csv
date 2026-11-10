@@ -95,3 +95,9 @@ access_ai_okf_tag_user,ai.okf.tag.user,model_ai_okf_tag,base.group_user,1,0,0,0
 access_ai_okf_tag_admin,ai.okf.tag.admin,model_ai_okf_tag,base.group_system,1,1,1,1
 access_ai_cost_period_user,ai.cost.period.line.user,model_ai_cost_period_line,base.group_user,1,0,0,0
 access_ai_cost_period_admin,ai.cost.period.line.admin,model_ai_cost_period_line,base.group_system,1,1,1,1
+access_ai_coworker_session_agent_run_user,ai.coworker.session.agent_run.user,model_ai_coworker_session_agent_run,base.group_user,1,0,0,0
+access_ai_coworker_session_agent_run_admin,ai.coworker.session.agent_run.admin,model_ai_coworker_session_agent_run,base.group_system,1,1,1,1
+access_ai_coworker_session_tool_call_user,ai.coworker.session.tool_call.user,model_ai_coworker_session_tool_call,base.group_user,1,0,0,0
+access_ai_coworker_session_tool_call_admin,ai.coworker.session.tool_call.admin,model_ai_coworker_session_tool_call,base.group_system,1,1,1,1
+access_ai_coworker_session_close_event_user,ai.coworker.session.close_event.user,model_ai_coworker_session_close_event,base.group_user,1,0,0,0
+access_ai_coworker_session_close_event_admin,ai.coworker.session.close_event.admin,model_ai_coworker_session_close_event,base.group_system,1,1,1,1

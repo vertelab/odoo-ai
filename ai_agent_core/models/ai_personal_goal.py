@@ -169,11 +169,41 @@ class AIPersonalGoal(models.Model):
         """Mark goal as completed."""
         self.ensure_one()
         self.write({'status': 'completed', 'progress': 100.0})
+        self._okf_deprecate_goal()
 
     def action_cancel(self):
         """Cancel a goal."""
         self.ensure_one()
         self.write({'status': 'cancelled', 'archived': True})
+        self._okf_deprecate_goal()
+
+    def _okf_deprecate_goal(self):
+        """Markera mål-konceptet i OKF som deprecated.
+
+        VARFÖR (companion-memory-completeness 4.6): L2-blocket väljer
+        `artifact_type='goal'` med `status not in ['deprecated']`. Utan den
+        här markeringen fångar filtret aldrig avslutade mål — de blir kvar i
+        L2 för evigt och konkurrerar med aktiva mål om budgeten.
+
+        ADD-only respekteras: konceptet skrivs inte över och raderas inte, det
+        får bara `status='deprecated'`. Idempotent och best-effort — en
+        misslyckad markering ska inte fälla mål-åtgärden.
+        """
+        Concept = self.env['ai.okf.concept'].sudo()
+        for goal in self:
+            try:
+                concepts = Concept.search([
+                    ('source_ref', '=', f'ai.personal.goal,{goal.id}'),
+                    ('status', '!=', 'deprecated'),
+                ])
+                if concepts:
+                    concepts.write({'status': 'deprecated'})
+                    _logger.info(
+                        'Goal %s closed — %s OKF concepts marked deprecated', goal.id, len(concepts))
+            except Exception as e:
+                _logger.warning(
+                    'Could not deprecate OKF concepts for goal %s: %s',
+                    goal.id, e)
 
     @api.model
     def search_for_user(self, user_id, status=None):
@@ -181,7 +211,11 @@ class AIPersonalGoal(models.Model):
         domain = [('user_id', '=', user_id), ('archived', '=', False)]
         if status:
             domain.append(('status', '=', status))
-        return self.search(domain, order='deadline, create_date')
+        # `deadline` finns inte — fältet heter `time_bound`. En sortering på
+        # ett okänt fält kastar ValueError, så search_for_user kraschade
+        # varje gång den anropades med ett mål i databasen. Hittat av
+        # test_memory_learning_nudging, som aldrig hade kört.
+        return self.search(domain, order='time_bound, create_date')
 
     @api.model
     def suggest_goals_from_evolution(self, user_id, signals):

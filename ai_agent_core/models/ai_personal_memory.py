@@ -135,9 +135,7 @@ class AIPersonalMemory(models.Model):
     # Odoo lämnar kolumnen orörd — precis som `ai.okf.concept` redan gör.
     embedding = PgVector(
         string='Vector Embedding', dimension=EMBEDDING_DIM,
-        help='pgvector(%d) embedding från AI-providern '
-             '(text-embedding-3-small, 1024 dimensioner). '
-             'Kolumnen är vector(%d)-typ.' % (EMBEDDING_DIM, EMBEDDING_DIM))
+        help='pgvector(%d) embedding from the AI provider (text-embedding-3-small, 1024 dimensions). The column is vector(%d) type.' % (EMBEDDING_DIM, EMBEDDING_DIM))
     # search_vector — GENERATED COLUMN via SQL migration:
     #   ALTER TABLE ai_personal_memory ADD COLUMN search_vector tsvector
     #     GENERATED ALWAYS AS (to_tsvector('swedish', content)) STORED;
@@ -307,14 +305,11 @@ class AIPersonalMemory(models.Model):
             is_vector = bool(row) and row[0] == 'vector'
         except Exception as e:
             _logger.warning(
-                'Kunde inte avgöra embedding-kolumnens typ: %s — '
-                'hoppar över semantisk signal', e)
+                'Could not determine the embedding column type: %s — skipping the semantic signal', e)
             is_vector = False
         if not is_vector:
             _logger.warning(
-                'ai_personal_memory.embedding är inte en vector-kolumn '
-                '(migration 18.0.2.0.23 har inte kört?) — semantisk '
-                'sökning hoppas över, BM25 bär resultatet')
+                'ai_personal_memory.embedding is not a vector column (has migration 18.0.2.0.23 not run?) — semantic search is skipped, BM25 carries the result')
         cls._embedding_is_vector_cache = is_vector
         return is_vector
 
@@ -405,8 +400,7 @@ class AIPersonalMemory(models.Model):
                     semantic_results = self.env.cr.dictfetchall()
             except Exception as e:
                 _logger.warning(
-                    'Semantic search failed (embedding-kolumnen är inte '
-                    'vector?): %s — fortsätter med BM25', e)
+                    'Semantic search failed (is the embedding column not vector?): %s — continuing with BM25', e)
                 semantic_results = []
 
         # ════════════════════════════════════════
@@ -716,7 +710,7 @@ class AIPersonalMemory(models.Model):
                 vectors = self.embed_batch(texts)
             except Exception as e:  # noqa: BLE001 — en batch får ej stoppa allt
                 _logger.warning(
-                    'Backfill: batch-embedding misslyckades för %s rader: %s',
+                    'Backfill: batch embedding failed for %s rows: %s',
                     len(chunk), e)
                 failed += len(chunk)
                 continue
@@ -733,7 +727,7 @@ class AIPersonalMemory(models.Model):
                     filled += 1
                 except Exception as e:  # noqa: BLE001
                     _logger.warning(
-                        'Backfill: kunde inte skriva vektor på minne %s: %s',
+                        'Backfill: could not write a vector on memory %s: %s',
                         rec.id, e, exc_info=True)
                     failed += 1
         _logger.info(
@@ -776,8 +770,7 @@ class AIPersonalMemory(models.Model):
         emb_provider = Provider._embedding_provider()
         if not emb_provider:
             _logger.warning(
-                'Embedding (batch): ingen provider som kan embedda — '
-                '%s texter lämnas utan vektor', len(truncated))
+                'Embedding (batch): no provider that can embed — %s texts are left without a vector', len(truncated))
             return [None] * len(truncated)
         # B11: modellen måste anges — annars faller batch-vägen tillbaka på
         # DEFAULT_EMBEDDING_MODEL, som Bifrost avvisar (401). Providerns
@@ -790,8 +783,7 @@ class AIPersonalMemory(models.Model):
         if embeddings and isinstance(embeddings, (list, tuple)):
             if all(emb is None for emb in embeddings):
                 _logger.warning(
-                    'Batch-embedding gav ingen vektor för %s texter — '
-                    'semantisk sökning blir tom', len(truncated))
+                    'Batch embedding gave no vector for %s texts — semantic search will be empty', len(truncated))
                 return [None] * len(truncated)
             return [
                 '[' + ','.join(str(v) for v in emb) + ']'
@@ -819,8 +811,7 @@ class AIPersonalMemory(models.Model):
         provider = self.env['ai.provider'].sudo()._embedding_provider()
         if not provider:
             _logger.warning(
-                'Embedding: ingen provider kan skapa vektorer — '
-                'texten lämnas utan vektor')
+                'Embedding: no provider can create vectors — the text is left without a vector')
             return None
 
         # B11 (ai-agent-core-fault-remediation): två fel här gjorde att
@@ -883,7 +874,7 @@ class AIPersonalMemory(models.Model):
         # Entity-typer med specifika svenska termer
         finance_terms = [
             'periodiseringsfond', 'avskrivning', 'moms', 'bokslut',
-            'resultaträkning', 'balansräkning', 'skatteverket',
+            'income statement', 'balance sheet', 'skatteverket',
             'f-skatt', 'egenavgift', 'K2', 'K3', 'BAS',
         ]
         for term in finance_terms:
@@ -995,7 +986,7 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
         # coworkern (→ agent → ai.model → ai.provider), annars default.
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                Message, ProviderFactory, _run_provider,
+                Message, ProviderFactory, Role, _run_provider,
                 get_default_provider, get_default_model_name)
 
             provider, model_rec = (
@@ -1005,7 +996,7 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                 provider, model_rec = get_default_provider(self.env)
             if not provider:
                 _logger.warning(
-                    'LLM extraction: ingen provider tillgänglig')
+                    'LLM extraction: no provider available')
                 return []
 
             model_name = (model_rec and model_rec._get_api_name()) \
@@ -1016,7 +1007,7 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
             result = _run_provider(
                 provider.chat(
                     model=model_name,
-                    messages=[Message(role='user', content=prompt)],
+                    messages=[Message(role=Role.USER, content=prompt)],
                     max_tokens=1500),
                 provider)
             response = (result.text or '').strip()
@@ -1142,12 +1133,12 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                 # av except) och 'gpt-4o-mini' finns inte i installationen.
                 # Använd samma provider-kedja som resten av systemet.
                 from odoo.addons.ai_agent_core.core.provider import (
-                    Message, ProviderFactory, _run_provider,
+                    Message, ProviderFactory, Role, _run_provider,
                     get_default_provider, get_default_model_name)
                 provider, model_rec = get_default_provider(self.env)
                 if not provider:
                     _logger.warning(
-                        'Discuss-extraction: ingen provider tillgänglig')
+                        'Discuss extraction: no provider available')
                     return total
                 # En enda provider-chat, ingen loop (samma skäl som
                 # _llm_extract_facts ovan).
@@ -1156,7 +1147,7 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                     provider.chat(
                         model=(model_rec and model_rec._get_api_name())
                         or get_default_model_name(),
-                        messages=[Message(role='user', content=prompt)],
+                        messages=[Message(role=Role.USER, content=prompt)],
                         max_tokens=1500),
                     provider)
                 response = (raw.text or '').strip()

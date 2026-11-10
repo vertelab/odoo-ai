@@ -357,14 +357,20 @@ class TestOkfClassifyCache(ConfigParamGuardedCase):
         cls.user = cls.env.ref('base.user_admin')
 
     def test_repeated_classification_is_cached(self):
-        """Andra anropet för samma (modell, användare) ska inte räkna om."""
+        """Andra anropet för samma (modell, användare) ska inte räkna om.
+
+        D4 (5.4): det som cachas är `kind`, inte `(kind, ids)`. Id-listan
+        för PARTIAL kan vara 50 000 element och ska inte ligga kvar i
+        workern — den byggs vid behov.
+        """
         first = self.Resolver._classify_source_model('res.company', self.user)
         cache = self.Resolver._classify_cache()
         key = ('res.company', self.user.id)
         self.assertIn(key, cache, 'klassningen cachades inte')
-        self.assertEqual(cache[key], first)
+        self.assertEqual(cache[key], first[0],
+                         'cachen ska bära kind, inte hela tuplen')
         second = self.Resolver._classify_source_model('res.company', self.user)
-        self.assertEqual(first, second)
+        self.assertEqual(first[0], second[0])
 
     def test_cache_is_keyed_per_model_and_user(self):
         """Olika modeller/användare får egna nycklar — ingen sammanblandning."""

@@ -44,9 +44,7 @@ Standalone AI agent engine for Odoo. Buzz-inspired architecture.
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │                 Taskless Layer (TASK-001..004)                │    │
-│  │  detect.py — scan environment before acting                   │    │
-│  │  route.py  — intelligent path: existing → local → remote      │    │
+│  │                 Taskless Layer (TASK-003..004)                │    │
 │  │  improve.py — structured feedback: guidance → iterate (max 3) │    │
 │  │  verify.py  — 3-layer validation: schema, reqs, tests         │    │
 │  │  eval.py    — per-agent statistics + trend analysis           │    │
@@ -66,8 +64,6 @@ ai_agent_core/
 │   ├── tools.py            # Tool + ToolRegistry + OdooModelTools + MCP (596 lines)
 │   ├── interrupt.py        # InterruptHandler ABC + Discuss/WebUI/Auto handlers (305 lines)
 │   ├── context.py          # Auto-summarize + token estimation (74 lines)
-│   ├── detect.py           # TASK-001: Environment scanning
-│   ├── route.py            # TASK-002: Intelligent path selection
 │   ├── improve.py          # TASK-003: Structured feedback loop
 │   ├── verify.py           # TASK-004: Three-layer output validation
 │   ├── budget.py           # BudgetState + BudgetExhaustedError (cap: ai.coworker.check_cap)
@@ -153,21 +149,10 @@ if coworker.budget_exhausted:
 loop = AgentLoop(provider=provider, tools=tools, config=config)
 ```
 
-### 4. With Taskless (detect → route → improve → verify)
+### 4. With Taskless (improve → verify)
 
 ```python
-from ai_agent_core.core.detect import EnvironmentDetector
-from ai_agent_core.core.route import IntelligentRouter
 from ai_agent_core.core.verify import OutputVerifier
-
-# Detect: scan environment
-detector = EnvironmentDetector()
-env = detector.scan()  # Quick scan (no Odoo needed)
-
-# Route: find best path
-router = IntelligentRouter()
-decision = router.route("List all customers", env_info=env)
-print(decision.destination)  # "local" — can use search_read directly
 
 # Verify: validate output
 verifier = OutputVerifier()
@@ -495,7 +480,7 @@ class AgentConfig:
 | **HITL** (HITL-001..010) | 70% | ✅ Handlers + Clarify + Approve |
 | **Identity** (ID-001..008) | 60% | ✅ SOUL + Compilation + Templates |
 | **Skills** (SHARE-001..008) | 50% | ✅ Model + Triggers + Recipes |
-| **Taskless** (TASK-001..008) | 50% | ✅ DETECT + ROUTE + IMPROVE + VERIFY |
+| **Taskless** (TASK-003..008) | 50% | ✅ IMPROVE + VERIFY |
 | **Budget + Evals** (PAPER-004,006) | 100% | ✅ Cap på coworkern + eval-pipeline |
 | **Supervisor** | 100% | ✅ Routing + Fan-out + Merge |
 | **Sessions** (SESS-001..004) | 100% | ✅ Model + Lifecycle + Persistence |
@@ -562,6 +547,57 @@ Nya tester för sessionsminne och write-verify:
 `test_session_memory.py`, `test_tool_errors.py`, `test_write_verify.py`,
 `test_tool_self_correction.py`, `test_document_page_acceptance.py`
 (körs med `-t`; acceptanstestet hoppas över om `document.page` saknas).
+
+## Språket i källan (core-english-and-sv-po)
+
+Källkoden talar **engelska**. Svenska hör hemma i `i18n/sv.po` som `msgstr`.
+Datakontrakt — fältnamn, xmlid, `selection`-nycklar, modellnamn — översätts
+aldrig.
+
+Regeln är grindad, inte bara dokumenterad. `StructuralGateLanguage` i
+`tests/test_structural_gates.py` fallerar på **tillväxt**:
+
+| Test | Vad det fångar |
+|---|---|
+| `test_no_new_swedish_string_literals` | en ny svensk strängliteral i ett `.py` |
+| `test_baseline_does_not_claim_more_than_reality` | ett tak som ligger över koden (döljer nästa ökning) |
+| `test_no_swedish_xml_ui_text` | svensk `string`/`help`/`placeholder`/`confirm` i en vy |
+| `test_xml_baseline_does_not_claim_more_than_reality` | samma ratchet för XML |
+| `test_language_exemptions_have_reasons` | ett undantag utan skrivet skäl |
+| `test_language_exemptions_match_something` | ett undantag som inte längre träffar något |
+| `test_language_data_literals_have_reasons` | en data-literal utan skäl |
+| `test_language_data_literals_match_something` | en föråldrad data-literal |
+
+Taket ligger i `tests/language_baseline.json` och **får bara sjunka**. Att
+sänka är en medveten commit; att höja är en regression.
+
+### Vad som är data, inte text
+
+`LANGUAGE_DATA_LITERALS` undantar literaler som *måste* vara svenska, med
+skrivet skäl per post:
+
+- translittereringstabellen `{'å': 'a', …}` för HTTP-headers
+- `beställare_ref` / `beställare_trust` — fältnamn i domäner och record-dicts
+- narrerings- och meta-not-regexer som matchar svenska LLM-svar
+  (`"bra fråga"`, `"låt mig"`, `"Notering:"`)
+- proper-noun-regexen `[A-ZÅÄÖ]` som fångar K2/K3/BAS
+- `_BRIDGE` i `core/tool_select.py` — svensk→engelsk tokenbrygga för den
+  lexikala fallback-scorern (verktygsbeskrivningarna är engelska, prompterna
+  ofta svenska)
+
+`migrations/` är undantagen helt: historisk kod som redan kört i drift, där
+literalerna är loggmeddelanden i engångsskript.
+
+### `sv.po` genereras, skrivs inte för hand
+
+```bash
+odoo -c /etc/odoo/odoo.conf -d <db> \
+    --i18n-export=i18n/sv.po --language=sv_SE --modules=ai_agent_core \
+    --stop-after-init
+```
+
+En handskriven `.po` utan `#: model:…`-referenser laddas men appliceras
+aldrig på fält. Grinden fallerar på poster som saknar `#:`-referens.
 
 ## Strukturella grindar (structural-discipline-gates)
 

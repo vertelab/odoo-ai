@@ -35,7 +35,7 @@
             <form string="AI Fel">
                 <header>
                     <button name="action_mark_resolved" type="object"
-                            string="Markera som löst" class="btn-primary"
+                            string="Mark as Resolved" class="btn-primary"
                             invisible="resolved"/>
                 </header>
                 <sheet>
@@ -57,7 +57,7 @@
                     <group string="Kontext" invisible="not context">
                         <field name="context" readonly="1"/>
                     </group>
-                    <group string="Lösning" invisible="not resolved">
+                    <group string="Resolution" invisible="not resolved">
                         <field name="resolution"/>
                     </group>
                 </sheet>

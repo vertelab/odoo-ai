@@ -15,7 +15,7 @@ class AIOrgTemplate(models.Model):
 
     name = fields.Char(required=True)
     industry = fields.Selection([
-        ('accounting', 'Redovisningsbyrå'),
+        ('accounting', 'Accounting Firm'),
         ('consulting', 'Konsultbolag'),
         ('ecommerce', 'E-handel'),
         ('manufacturing', 'Tillverkning'),

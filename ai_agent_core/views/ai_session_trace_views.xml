@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ═══════════════════════════════════════════════════════════════════
+         Sessionens spår (session-observability)
+
+         Konversationen bor i ai.coworker.session.line. Dessa tre modeller
+         bär UTFÖRANDET: vilken agent som körde, vilket verktyg som anropades
+         och var det kördes, och varför sessionen stängdes.
+
+         ⚠ De påverkar ingen budget. `agent_run`/`tool_call` är spår, inte
+         debiteringsunderlag — se modulens MODULE.md.
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Agentkörningar ─────────────────────────────────────────────── -->
+
+    <record id="view_ai_session_agent_run_list" model="ir.ui.view">
+        <field name="name">ai.coworker.session.agent_run.list</field>
+        <field name="model">ai.coworker.session.agent_run</field>
+        <field name="arch" type="xml">
+            <list string="Agent Runs" create="false" edit="false">
+                <field name="started_at"/>
+                <field name="session_id"/>
+                <field name="kind" widget="badge"
+                       decoration-info="kind=='pi_generation'"
+                       decoration-success="kind=='odoo_loop'"/>
+                <field name="agent_id"/>
+                <field name="model_requested" optional="show"/>
+                <field name="model_served" optional="show"/>
+                <field name="turn_index" optional="hide"/>
+                <field name="tokens_in" sum="1"/>
+                <field name="tokens_out" sum="1"/>
+                <field name="cost_usd" sum="1" optional="show"/>
+                <field name="tool_call_count"/>
+                <field name="finish_reason" widget="badge"
+                       decoration-danger="finish_reason in ('error','timeout','length')"/>
+                <field name="aborted" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_session_agent_run_form" model="ir.ui.view">
+        <field name="name">ai.coworker.session.agent_run.form</field>
+        <field name="model">ai.coworker.session.agent_run</field>
+        <field name="arch" type="xml">
+            <form string="Agent Run" create="false" edit="false">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="session_id"/>
+                            <field name="line_id"/>
+                            <field name="kind"/>
+                            <field name="agent_id"/>
+                            <field name="skill_ids" widget="many2many_tags"/>
+                        </group>
+                        <group>
+                            <field name="model_requested"/>
+                            <field name="model_served"/>
+                            <field name="turn_index"/>
+                            <field name="finish_reason"/>
+                            <field name="aborted"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Time">
+                            <field name="started_at"/>
+                            <field name="ended_at"/>
+                        </group>
+                        <group string="Usage (trace, not budget)">
+                            <field name="tokens_in"/>
+                            <field name="tokens_out"/>
+                            <field name="cost_usd"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Tool Calls" name="tool_calls"
+                              invisible="not tool_call_ids">
+                            <field name="tool_call_ids" readonly="1">
+                                <list>
+                                    <field name="tool_name"/>
+                                    <field name="executor" widget="badge"/>
+                                    <field name="tool_call_id"/>
+                                    <field name="parent_tool_call_id"
+                                           optional="hide"/>
+                                    <field name="is_error"/>
+                                    <field name="duration_ms" sum="1"/>
+                                    <field name="result_preview"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_session_agent_run_search" model="ir.ui.view">
+        <field name="name">ai.coworker.session.agent_run.search</field>
+        <field name="model">ai.coworker.session.agent_run</field>
+        <field name="arch" type="xml">
+            <search string="Agent Runs">
+                <field name="session_id"/>
+                <field name="agent_id"/>
+                <field name="model_requested"/>
+                <field name="model_served"/>
+                <separator/>
+                <filter name="aborted" string="Aborted"
+                        domain="[('aborted','=',True)]"/>
+                <filter name="errors" string="Errors"
+                        domain="[('finish_reason','in',['error','timeout'])]"/>
+                <separator/>
+                <group expand="1" string="Group By">
+                    <filter name="group_agent" string="Agent"
+                            context="{'group_by':'agent_id'}"/>
+                    <filter name="group_kind" string="Kind"
+                            context="{'group_by':'kind'}"/>
+                    <filter name="group_model" string="Model (served)"
+                            context="{'group_by':'model_served'}"/>
+                    <filter name="group_finish" string="Outcome"
+                            context="{'group_by':'finish_reason'}"/>
+                    <filter name="group_day" string="Day"
+                            context="{'group_by':'started_at:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_ai_session_agent_run_pivot" model="ir.ui.view">
+        <field name="name">ai.coworker.session.agent_run.pivot</field>
+        <field name="model">ai.coworker.session.agent_run</field>
+        <field name="arch" type="xml">
+            <pivot string="Agent Runs">
+                <field name="agent_id" type="row"/>
+                <field name="kind" type="col"/>
+                <field name="tokens_in" type="measure" sum="1"/>
+                <field name="tokens_out" type="measure" sum="1"/>
+                <field name="cost_usd" type="measure" sum="1"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_ai_session_agent_run" model="ir.actions.act_window">
+        <field name="name">Agent Runs</field>
+        <field name="res_model">ai.coworker.session.agent_run</field>
+        <field name="view_mode">list,pivot,form</field>
+    </record>
+
+    <!-- ── Verktygsanrop ──────────────────────────────────────────────── -->
+
+    <record id="view_ai_session_tool_call_list" model="ir.ui.view">
+        <field name="name">ai.coworker.session.tool_call.list</field>
+        <field name="model">ai.coworker.session.tool_call</field>
+        <field name="arch" type="xml">
+            <list string="Tool Calls" create="false" edit="false">
+                <field name="started_at"/>
+                <field name="session_id"/>
+                <field name="tool_name"/>
+                <field name="executor" widget="badge"
+                       decoration-info="executor=='pi_local'"
+                       decoration-success="executor=='odoo'"
+                       decoration-warning="executor=='nats'"/>
+                <field name="is_error"
+                       decoration-danger="is_error"/>
+                <field name="duration_ms" sum="1"/>
+                <field name="tool_call_id" optional="hide"/>
+                <field name="parent_tool_call_id" optional="hide"/>
+                <field name="result_preview" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_session_tool_call_form" model="ir.ui.view">
+        <field name="name">ai.coworker.session.tool_call.form</field>
+        <field name="model">ai.coworker.session.tool_call</field>
+        <field name="arch" type="xml">
+            <form string="Tool Calls" create="false" edit="false">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="session_id"/>
+                            <field name="agent_run_id"/>
+                            <field name="line_id"/>
+                            <field name="tool_name"/>
+                            <field name="executor"/>
+                        </group>
+                        <group>
+                            <field name="tool_call_id"/>
+                            <field name="parent_tool_call_id"/>
+                            <field name="is_error"/>
+                            <field name="duration_ms"/>
+                            <field name="started_at"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Arguments" name="args">
+                            <field name="args"/>
+                        </page>
+                        <page string="Result" name="result">
+                            <field name="result_preview"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_session_tool_call_search" model="ir.ui.view">
+        <field name="name">ai.coworker.session.tool_call.search</field>
+        <field name="model">ai.coworker.session.tool_call</field>
+        <field name="arch" type="xml">
+            <search string="Tool Calls">
+                <field name="tool_name"/>
+                <field name="session_id"/>
+                <field name="tool_call_id"/>
+                <field name="parent_tool_call_id"/>
+                <separator/>
+                <filter name="errors" string="Errors"
+                        domain="[('is_error','=',True)]"/>
+                <filter name="pi_local" string="Pi (local)"
+                        domain="[('executor','=','pi_local')]"/>
+                <filter name="odoo" string="Odoo"
+                        domain="[('executor','=','odoo')]"/>
+                <filter name="nats" string="NATS"
+                        domain="[('executor','=','nats')]"/>
+                <filter name="subagent" string="Nested (subagent)"
+                        domain="[('parent_tool_call_id','!=',False)]"/>
+                <separator/>
+                <group expand="1" string="Group By">
+                    <filter name="group_tool" string="Verktyg"
+                            context="{'group_by':'tool_name'}"/>
+                    <filter name="group_executor" string="Executor"
+                            context="{'group_by':'executor'}"/>
+                    <filter name="group_error" string="Errors"
+                            context="{'group_by':'is_error'}"/>
+                    <filter name="group_day" string="Day"
+                            context="{'group_by':'started_at:day'}"/>
+                    <filter name="group_session" string="Session"
+                            context="{'group_by':'session_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Pivot: felfrekvens per verktyg och körmiljö — frågan "vilka
+         verktyg används egentligen, och var?" som styr var agenterna ska
+         förbättras. -->
+    <record id="view_ai_session_tool_call_pivot" model="ir.ui.view">
+        <field name="name">ai.coworker.session.tool_call.pivot</field>
+        <field name="model">ai.coworker.session.tool_call</field>
+        <field name="arch" type="xml">
+            <pivot string="Tool Calls">
+                <field name="tool_name" type="row"/>
+                <field name="executor" type="col"/>
+                <field name="duration_ms" type="measure" sum="1"/>
+                <field name="id" type="measure" string="Anrop"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_ai_session_tool_call" model="ir.actions.act_window">
+        <field name="name">Tool Calls</field>
+        <field name="res_model">ai.coworker.session.tool_call</field>
+        <field name="view_mode">list,pivot,form</field>
+    </record>
+
+    <!-- ── Stängningshändelser ────────────────────────────────────────── -->
+
+    <record id="view_ai_session_close_event_list" model="ir.ui.view">
+        <field name="name">ai.coworker.session.close_event.list</field>
+        <field name="model">ai.coworker.session.close_event</field>
+        <field name="arch" type="xml">
+            <list string="Close Events" create="false" edit="false">
+                <field name="at"/>
+                <field name="session_id"/>
+                <field name="reason" widget="badge"
+                       decoration-success="reason in ('quit','reload')"
+                       decoration-warning="reason in ('idle','timeout')"
+                       decoration-danger="reason=='error'"/>
+                <field name="pi_session_id" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_session_close_event_search" model="ir.ui.view">
+        <field name="name">ai.coworker.session.close_event.search</field>
+        <field name="model">ai.coworker.session.close_event</field>
+        <field name="arch" type="xml">
+            <search string="Close Events">
+                <field name="session_id"/>
+                <field name="pi_session_id"/>
+                <separator/>
+                <filter name="quit" string="Finished"
+                        domain="[('reason','in',['quit','reload'])]"/>
+                <filter name="idle" string="Abandoned"
+                        domain="[('reason','=','idle')]"/>
+                <filter name="errors" string="Errors"
+                        domain="[('reason','in',['error','timeout'])]"/>
+                <separator/>
+                <group expand="1" string="Group By">
+                    <filter name="group_reason" string="Reason"
+                            context="{'group_by':'reason'}"/>
+                    <filter name="group_day" string="Day"
+                            context="{'group_by':'at:day'}"/>
+                    <filter name="group_session" string="Session"
+                            context="{'group_by':'session_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_ai_session_close_event_pivot" model="ir.ui.view">
+        <field name="name">ai.coworker.session.close_event.pivot</field>
+        <field name="model">ai.coworker.session.close_event</field>
+        <field name="arch" type="xml">
+            <pivot string="Close Events">
+                <field name="reason" type="row"/>
+                <field name="at" type="col" interval="day"/>
+                <field name="id" type="measure" string="Count"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_ai_session_close_event" model="ir.actions.act_window">
+        <field name="name">Close Events</field>
+        <field name="res_model">ai.coworker.session.close_event</field>
+        <field name="view_mode">list,pivot</field>
+    </record>
+</odoo>

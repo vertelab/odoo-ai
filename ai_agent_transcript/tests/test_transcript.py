@@ -53,17 +53,27 @@ class TestAIComposer(common.TransactionCase):
 
     def test_find_generic_fallback(self):
         """6.1b: composer med tom focused_models matchar alla modeller."""
+        # Data-XML:en lägger en composer på samma nyckel. Utan städningen
+        # vinner den (lägst id) och testet jämför fel post — det föll så
+        # snart data-composern fanns i databasen.
+        self.env['ai.composer'].search([
+            ('interface_key', '=', 'powerbox_chat'),
+        ])._force_unlink()
         comp = self._composer(interface_key='powerbox_chat')
         found = self.env['ai.composer'].find_composer(
             'powerbox_chat', 'res.partner')
         self.assertEqual(found, comp)
 
     def test_find_no_match(self):
-        """6.1c: ingen composer för en oanvänd interface_key → tom."""
+        """6.1c: ingen composer matchar modellen → tom."""
+        # Samma skäl som ovan: powerbox_channel har en data-composer, och
+        # den är generisk (tom focused_models) → den matchar res.partner.
+        # Testet vill pröva "ingen matchning", så nyckeln måste tömmas.
+        self.env['ai.composer'].search([
+            ('interface_key', '=', 'powerbox_channel'),
+        ])._force_unlink()
         found = self.env['ai.composer'].find_composer(
             'powerbox_channel', 'res.partner')
-        # powerbox_channel HAR composers (data) men ingen för res.partner
-        # och ingen generisk → tomt. Nyckeln är alltså inte "oanvänd".
         self.assertFalse(found)
 
     def test_find_no_model_match_returns_empty(self):
@@ -225,6 +235,96 @@ class _FakeLoop:
 
     async def run(self, prompt):
         return _FakeResponse()
+
+
+@tagged('post_install', '-at_install')
+class TestPowerboxLookupPrefersComposer(common.TransactionCase):
+    """4.4: composer-vägen vinner för sin modell, coworker-vägen för andra.
+
+    `_powerbox_composer_coworker()` (ai_agent_core/controllers/stream.py) slår
+    upp en `ai.composer` för interface-punkten `powerbox_chat`. Matchar den
+    returneras dess coworker som ENDA svar; annars används
+    coworker-fallbacken oförändrad.
+
+    Testet prövar funktionen direkt i stället för via HTTP-routen: routen
+    kräver en request-kontext och en inloggad användare, medan funktionen är
+    det som bär beslutet.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _powerbox_composer_coworker,
+        )
+        self._resolve = _powerbox_composer_coworker
+
+        self.composer_coworker = self.env['ai.coworker'].create({
+            'name': 'Composer Vinner',
+            'status': 'active',
+        })
+        self.fallback_coworker = self.env['ai.coworker'].create({
+            'name': 'Fallback Medarbetare',
+            'status': 'active',
+        })
+        self.env['ai.coworker.init_type'].create({
+            'coworker_id': self.fallback_coworker.id,
+            'init_type': 'powerbox',
+            'enabled': True,
+        })
+
+        # Rensa befintliga powerbox_chat-composers så testet äger nyckeln.
+        self.env['ai.composer'].search([
+            ('interface_key', '=', 'powerbox_chat'),
+        ])._force_unlink()
+
+        partner_model = self.env['ir.model'].search(
+            [('model', '=', 'res.partner')], limit=1)
+        self.composer = self.env['ai.composer'].create({
+            'name': 'Composer för partner',
+            'interface_key': 'powerbox_chat',
+            'coworker_id': self.composer_coworker.id,
+            'focused_models': [(6, 0, [partner_model.id])],
+        })
+
+    def test_composer_wins_for_its_model(self):
+        """(a) För modellen composern är bunden till vinner composern."""
+        found = self._resolve(self.env, 'res.partner')
+        self.assertEqual(
+            found, self.composer_coworker,
+            'Composer-vägen ska vinna för res.partner — inte fallbacken')
+
+    def test_coworker_fallback_for_other_models(self):
+        """(b) För andra modeller används coworker-vägen oförändrad."""
+        found = self._resolve(self.env, 'account.move')
+        self.assertFalse(
+            found,
+            'Composern är bunden till res.partner och får inte fånga '
+            'account.move — då vore den ett globalt fångstnät')
+
+    def test_no_composer_installed_skips_silently(self):
+        """(c) Utan ai.composer i registret hoppas vägen över utan fel."""
+        # Simulera frånvaro genom att tömma nyckeln: samma kodväg (tomt
+        # recordset från find_composer), men vi prövar också guard-raden.
+        self.composer.unlink()
+        found = self._resolve(self.env, 'res.partner')
+        self.assertFalse(found, 'Utan matchande composer → tomt recordset')
+
+    def test_inactive_coworker_is_not_returned(self):
+        """(d) En composer mot en inaktiv coworker väljs inte."""
+        self.composer_coworker.status = 'draft'
+        found = self._resolve(self.env, 'res.partner')
+        self.assertFalse(
+            found,
+            'En composer som pekar på en inaktiv coworker ska inte vinna — '
+            'den skulle faila i körningen i stället')
+
+    def test_empty_model_does_not_match_a_model_bound_composer(self):
+        """(e) Tom modell matchar inte en modellbunden composer."""
+        found = self._resolve(self.env, '')
+        self.assertFalse(
+            found,
+            'När frontend inte känner modellen får en modellbunden composer '
+            'inte väljas på måfå')
 
 
 @tagged('post_install', '-at_install')

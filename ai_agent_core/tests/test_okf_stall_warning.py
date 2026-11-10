@@ -113,7 +113,7 @@ class TestOkfStallWarning(common.TransactionCase):
             self.Memory._okf_check_stall(MODEL)
         self.assertTrue(warn.called)
         message = warn.call_args[0][0]
-        self.assertIn('stillestånd', message)
+        self.assertIn('standstill', message)
         self.assertIn(MODEL, warn.call_args[0])
 
     def test_warning_is_deduplicated_per_day(self):

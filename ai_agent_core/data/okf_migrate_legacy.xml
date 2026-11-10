@@ -9,7 +9,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_okf_migrate_legacy_once" model="cron.task">
-            <field name="name">OKF: Migrera legacy-data (engång)</field>
+            <field name="name">OKF: Migrate legacy data (one-off)</field>
             <field name="technical_name">ai_okf_migrate_legacy_once</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.okf.concept</field>

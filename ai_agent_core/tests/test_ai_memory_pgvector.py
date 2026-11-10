@@ -232,3 +232,80 @@ class TestAiMemoryPgvector(common.TransactionCase):
                 row[0], 'vector(1024)',
                 '%s.embedding ska vara vector(1024), fick %r'
                 % (table, row[0]))
+
+
+@tagged('post_install', '-at_install')
+class TestQuestMemoryErrorHandling(common.TransactionCase):
+    """Felhantering i `_get_quest_memories` (memory-recall-error-handling).
+
+    VARFÖR: `faiss_search` returnerade `[]` i tre veckor (2026-11-01 →
+    2026-11-02) utan att en enda request misslyckades, eftersom båda
+    varianterna av `_get_quest_memories` teg om felet. `ai_coworker`-varianten
+    hade dessutom inget skydd alls: ett fel i sökningen fällde hela turen.
+
+    Kontraktet som dessa tester låser:
+      1. ett fel i sökningen degraderar kontexten — den fäller aldrig
+      2. returvärdet är `''` vid fel, aldrig `None`
+      3. felet syns i loggen med sektionsnamn
+      4. en lyckad sökning är oförändrad
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Mem = cls.env['ai.memory']
+        cls.Coworker = cls.env['ai.coworker']
+
+    def _make_memory(self, name, body, coworker=None):
+        return self.Mem.create({
+            'name': name,
+            'memory_type': 'text',
+            'content': body,
+            'quest_id': coworker.id if coworker else False,
+        })
+
+    # ── 1.3: coworker-varianten saknade skydd ────────────────────────
+
+    def test_coworker_memories_survive_search_failure(self):
+        """Ett fel i faiss_search får inte fälla coworker-turen."""
+        coworker = self.Coworker.create({
+            'name': 'Felhanterings-test', 'status': 'active'})
+        mem = self._make_memory('trasig', 'Innehåll.', coworker=coworker)
+
+        with patch.object(type(mem), 'faiss_search',
+                          side_effect=RuntimeError('medvetet fel')):
+            result = coworker._get_quest_memories('fraga')
+
+        self.assertEqual(
+            result, '',
+            'ett trasigt minnessökning ska ge tom kontext, inte kasta')
+
+    def test_coworker_memories_log_the_failure(self):
+        """Felet ska synas i loggen med sektionsnamn."""
+        coworker = self.Coworker.create({
+            'name': 'Loggnings-test', 'status': 'active'})
+        mem = self._make_memory('trasig2', 'Innehåll.', coworker=coworker)
+
+        with patch.object(type(mem), 'faiss_search',
+                          side_effect=RuntimeError('medvetet fel')):
+            with self.assertLogs('odoo.addons.ai_agent_core.models.ai_coworker',
+                                 level='WARNING') as logs:
+                coworker._get_quest_memories('fraga')
+
+        joined = '\n'.join(logs.output)
+        self.assertIn('relevant memories', joined,
+                      'loggraden ska namnge sektionen: %r' % joined)
+
+    def test_coworker_memories_happy_path_unchanged(self):
+        """En lyckad sökning ger samma rubrik som före ändringen."""
+        coworker = self.Coworker.create({
+            'name': 'Fungerande-test', 'status': 'active'})
+        mem = self._make_memory('frisk', 'Avtalshantering.', coworker=coworker)
+
+        with patch.object(type(mem), 'faiss_search',
+                          return_value=['hittad chunk']):
+            result = coworker._get_quest_memories('avtal')
+
+        self.assertTrue(result.startswith('## Relevant memories'),
+                        'rubriken ska vara oförändrad, fick %r' % result[:40])
+        self.assertIn('hittad chunk', result)

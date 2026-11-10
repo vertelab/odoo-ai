@@ -10,6 +10,7 @@
                 <field name="coworker_id"/>
                 <field name="partner_id"/>
                 <field name="pi_session_id"/>
+                <field name="machine"/>
                 <separator/>
                 <filter name="my_sessions" string="Mina sessioner"
                         domain="[('user_id','=',uid)]"/>
@@ -28,9 +29,9 @@
                      borttagbar avgränsning, aldrig ett tak i domänen.
                      Namnet `this_month` MÅSTE matcha `search_default_this_month`
                      i action_get_sessions; ett stavfel ger tyst ofiltrerad lista. -->
-                <filter name="this_month" string="Denna månad"
+                <filter name="this_month" string="This Month"
                         domain="[('create_date','&gt;=', context_today() - relativedelta(day=1, hour=0, minute=0, second=0))]"/>
-                <filter name="last_month" string="Förra månaden"
+                <filter name="last_month" string="Last Month"
                         domain="[('create_date','&gt;=', context_today() - relativedelta(months=1, day=1, hour=0, minute=0, second=0)),('create_date','&lt;', context_today() - relativedelta(day=1, hour=0, minute=0, second=0))]"/>
                 <!-- OBS: använder INTE .weekday()/.replace() i domäner — de kraschar
                      i Odoo-webklientens domän-evaluator (fnValue is not a function).
@@ -47,16 +48,20 @@
                             context="{'group_by':'create_date'}"/>
                     <!-- Månadsgruppering: den billigaste vägen till "hur såg
                          augusti ut?" (coworker-session-smart-button D5). -->
-                    <filter name="group_by_month" string="Månad"
+                    <filter name="group_by_month" string="Month"
                             context="{'group_by':'create_date:month'}"/>
                     <filter name="group_status" string="Status"
                             context="{'group_by':'status'}"/>
                     <filter name="group_init_type" string="Start via"
                             context="{'group_by':'init_type'}"/>
+                    <!-- Körplatsen (session-machine): "vilka sessioner körde
+                         på luke?" går att ställa. `machine` är indexerat. -->
+                    <filter name="group_machine" string="Maskin"
+                            context="{'group_by':'machine'}"/>
                     <!-- Sessionens användare är grupperbar (sessions-specen):
                          en grupp per användare, användarlösa sessioner hamnar i
                          en synlig "(inget)"-grupp. user_id är indexerat. -->
-                    <filter name="group_user" string="Användare"
+                    <filter name="group_user" string="User"
                             context="{'group_by':'user_id'}"/>
                     <filter name="group_ended" string="Ended"
                             context="{'group_by':'end_date'}"/>
@@ -82,6 +87,7 @@
                        decoration-success="status=='done'"
                        decoration-warning="status=='active'"/>
                 <field name="init_type" optional="show"/>
+                <field name="machine" optional="show"/>
                 <field name="ai_record_model" optional="hide"/>
                 <field name="ai_record_count" optional="hide" sum="1"/>
                 <field name="user_rating" optional="hide"/>
@@ -141,15 +147,42 @@
                         <button name="action_abort_external" type="object"
                                 class="oe_stat_button" icon="fa-stop-circle"
                                 invisible="external_pid == 0"
-                                confirm="Avbryt den externa körningen (SIGTERM → SIGKILL)?">
+                                confirm="Abort the external run (SIGTERM → SIGKILL)?">
                             <div class="o_stat_info">
                                 <span class="o_stat_value">Avbryt</span>
-                                <span class="o_stat_text">extern körning</span>
+                                <span class="o_stat_text">external run</span>
+                            </div>
+                        </button>
+                        <!-- Spåret (session-observability): vad som GJORDES,
+                             inte bara vad som sades. Räknarna läser
+                             agent_run/tool_call — ingen budget påverkas. -->
+                        <button name="action_open_agent_runs" type="object"
+                                class="oe_stat_button" icon="fa-sitemap"
+                                invisible="agent_run_count == 0">
+                            <div class="o_stat_info">
+                                <field name="agent_run_count"
+                                       widget="statinfo" string="Runs"/>
+                            </div>
+                        </button>
+                        <button name="action_open_tool_calls" type="object"
+                                class="oe_stat_button" icon="fa-wrench"
+                                invisible="tool_call_count == 0">
+                            <div class="o_stat_info">
+                                <field name="tool_call_count"
+                                       widget="statinfo" string="Tools"/>
+                            </div>
+                        </button>
+                        <button name="action_open_close_events" type="object"
+                                class="oe_stat_button" icon="fa-flag-checkered"
+                                invisible="close_event_count == 0">
+                            <div class="o_stat_info">
+                                <field name="close_event_count"
+                                       widget="statinfo" string="Close Events"/>
                             </div>
                         </button>
                     </div>
                     <div class="oe_title">
-                        <h1><field name="name" placeholder="Trådnamn..."/></h1>
+                        <h1><field name="name" placeholder="Thread name..."/></h1>
                     </div>
                     <group>
                         <group>
@@ -157,9 +190,10 @@
                             <field name="identity_id" readonly="1"/>
                             <field name="user_id" readonly="1"/>
                             <field name="init_type" readonly="1"/>
+                            <field name="machine" readonly="1"/>
                             <field name="company_id" readonly="1"/>
                             <field name="ai_task_id" readonly="1"/>
-                            <field name="user_rating" placeholder="Bedöm svaret…"/>
+                            <field name="user_rating" placeholder="Rate the answer…"/>
                         </group>
                         <group>
                             <field name="create_date" readonly="1"/>
@@ -170,6 +204,26 @@
                             <field name="token_sys" readonly="1"/>
                             <field name="line_count" readonly="1"/>
                             <field name="resumable" readonly="1"/>
+                        </group>
+                    </group>
+                    <!-- Livscykel + spår-översikt (session-observability):
+                         en blick ska räcka för att se hur sessionen
+                         startade, slutade och vad den gjorde. -->
+                    <group>
+                        <group string="Lifecycle">
+                            <field name="start_reason" readonly="1"/>
+                            <field name="last_close_reason" readonly="1"
+                                   invisible="close_event_count == 0"/>
+                            <field name="last_close_at" readonly="1"
+                                   invisible="close_event_count == 0"/>
+                        </group>
+                        <group string="Trace (work, not budget)"
+                               invisible="agent_run_count == 0 and tool_call_count == 0">
+                            <field name="trace_agent_count" readonly="1"/>
+                            <field name="agent_run_count" readonly="1"/>
+                            <field name="tool_call_count" readonly="1"/>
+                            <field name="tool_error_count" readonly="1"
+                                   decoration-danger="tool_error_count &gt; 0"/>
                         </group>
                     </group>
                     <!-- Rekordkontext (ai-coworker-record-context): vilken
@@ -188,7 +242,7 @@
                     <!-- Extern körning (external-agent-runtime D10): mätpunkten.
                          Tröskeln för samtidighet är empirisk och sätts inte nu —
                          men profilen ska kunna avläsas när frågan uppstår. -->
-                    <group string="Extern körning" invisible="external_pid == 0">
+                    <group string="External Run" invisible="external_pid == 0">
                         <field name="external_pid" readonly="1"/>
                         <field name="external_port" readonly="1"/>
                         <field name="external_started_at" readonly="1"/>
@@ -245,13 +299,24 @@
                 <field name="role" widget="badge"
                        decoration-info="role=='assistant'"
                        decoration-muted="role=='user'"/>
-                <field name="content"/>
+                <!-- Förhandsvisning, inte hela texten (session-line-compact-list):
+                     `content` är Text och list-renderaren ger text-fält
+                     `white-space: pre-wrap`, så ett långt meddelande blev
+                     30-40 visuella rader och listan gick inte att överblicka.
+                     `content_preview` är första raden klippt till 120 tecken
+                     (klippt i Python, så det gäller även i export).
+                     SÖKNINGEN behåller `content` — se view_ai_session_line_search;
+                     en härledd förhandsvisning skulle ge falska negativ för
+                     text längre ned i meddelandet. Hela texten läses i
+                     formulärets Content-flik. -->
+                <field name="content_preview"/>
                 <field name="agent_id" optional="hide"/>
                 <field name="tool_id" optional="hide"/>
                 <field name="tool_name" optional="hide"/>
                 <field name="skill_id" optional="hide"/>
                 <field name="model_real" optional="hide"/>
                 <field name="reasoning" optional="hide"/>
+                <field name="rounds" optional="hide"/>
                 <field name="token_input" optional="show" sum="1"/>
                 <field name="token_output" optional="show" sum="1"/>
                 <field name="token_sys" optional="show" sum="1"/>
@@ -286,13 +351,44 @@
                             <field name="tool_name" readonly="1"/>
                             <field name="token_input" readonly="1"/>
                             <field name="token_output" readonly="1"/>
+                            <!-- Per-varv (webui-show-work-again 4.2):
+                                 `token_input` är summan över varven — en tur
+                                 med åtta verktygsrundor skickar hela
+                                 historiken igen varje gång. Utan dessa två
+                                 ser 104 437 ut som en enda enorm prompt. -->
+                            <field name="rounds" readonly="1"
+                                   invisible="not rounds"/>
+                            <field name="round_inputs" readonly="1"
+                                   invisible="not round_inputs"/>
+                            <!-- Tidsmätning per tur (kanalprestanda):
+                                 `invisible` när värdet är 0, så en synkron
+                                 kanal (0 = ej tillämpligt) inte visar tre
+                                 nollor som ser ut som en mätning. -->
+                            <field name="first_token_seconds" readonly="1"
+                                   invisible="not first_token_seconds"/>
+                            <field name="longest_gap_seconds" readonly="1"
+                                   invisible="not longest_gap_seconds"/>
+                            <field name="stream_seconds" readonly="1"
+                                   invisible="not stream_seconds"/>
+                        </group>
+                        <!-- Tidsmått per tur (kanalprestanda 1.2): 0,000 =
+                             ej tillämpligt (kanalen strömmar inte) eller ej
+                             mätt. Total väggklocka läses ur create_date-
+                             deltat mot föregående rad i sessionen. -->
+                        <group string="Timing" name="timing">
+                            <field name="first_token_seconds" readonly="1"
+                                   digits="[12,3]"/>
+                            <field name="longest_gap_seconds" readonly="1"
+                                   digits="[12,3]"/>
+                            <field name="stream_seconds" readonly="1"
+                                   digits="[12,3]"/>
                         </group>
                     </group>
                     <notebook>
-                        <page string="Innehåll" name="content">
+                        <page string="Content" name="content">
                             <field name="content" readonly="1"/>
                         </page>
-                        <page string="Tänkande (reasoning)" name="reasoning"
+                        <page string="Reasoning" name="reasoning"
                               invisible="not reasoning">
                             <field name="reasoning" readonly="1"/>
                         </page>
@@ -300,9 +396,90 @@
                               invisible="not debug_info">
                             <field name="debug_info" readonly="1"/>
                         </page>
-                        <page string="Källor" name="sources"
+                        <page string="Sources" name="sources"
                               invisible="not source_urls">
                             <field name="source_urls" readonly="1"/>
+                        </page>
+                        <!-- Verktygsanropet (webui-show-work-again 3.4):
+                             `tool_calls` fanns som fält men visades ingenstans,
+                             så en tool-rad gick inte att granska i backend —
+                             den sade att verktyget kördes men inte med vilka
+                             argument. Samma mönster som flikarna ovan:
+                             `invisible` när fältet är tomt, så en
+                             assistant-rad utan verktyg inte får en tom flik. -->
+                        <page string="Verktygsanrop" name="tool_calls"
+                              invisible="not tool_calls">
+                            <group>
+                                <field name="tool_name" readonly="1"/>
+                                <field name="tool_call_id" readonly="1"/>
+                            </group>
+                            <separator string="Argument"/>
+                            <field name="tool_calls" readonly="1"/>
+                            <separator string="Resultat"/>
+                            <field name="content" readonly="1"/>
+                        </page>
+                        <!-- ── Spåret (session-observability) ────────────────
+                             Konversationen säger VAD som sades; de här
+                             flikarna säger VAD SOM GJORDES. De läses via
+                             related-fält på raden så att detaljerna nås
+                             från meddelandet de hör till, utan att gå via
+                             sessionen. `invisible` när det inte finns något
+                             att visa — en tom flik är brus. -->
+                        <page string="Exekvering" name="agent_runs"
+                              invisible="not agent_run_ids">
+                            <field name="agent_run_ids" readonly="1">
+                                <list>
+                                    <field name="kind" widget="badge"/>
+                                    <field name="agent_id"/>
+                                    <field name="model_requested"/>
+                                    <field name="model_served"/>
+                                    <field name="turn_index"/>
+                                    <field name="tokens_in" sum="1"/>
+                                    <field name="tokens_out" sum="1"/>
+                                    <field name="cost_usd" sum="1"/>
+                                    <field name="finish_reason"
+                                           widget="badge"/>
+                                    <field name="aborted"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Verktyg" name="tool_calls_trace"
+                              invisible="not tool_call_ids">
+                            <field name="tool_call_ids" readonly="1">
+                                <list>
+                                    <field name="tool_name"/>
+                                    <field name="executor"
+                                           widget="badge"/>
+                                    <field name="tool_call_id"/>
+                                    <field name="parent_tool_call_id"
+                                           optional="hide"/>
+                                    <field name="is_error"/>
+                                    <field name="duration_ms" sum="1"/>
+                                    <field name="started_at"/>
+                                    <field name="result_preview"/>
+                                </list>
+                            </field>
+                        </page>
+                        <!-- Gateway-fliken visar sessionens gateway-mått
+                             (retries, fallbacks, faktisk kostnad). Fälten
+                             nås via `related` på raden, så de är alltid i
+                             synk med sessionen.
+                             ⚠ `bifrost_cost` är GATEWAYENS kostnad — den
+                             slås aldrig ihop med `cost_usd` (faktisk
+                             kostnad) eller `token_sys` (debiteringsgrund). -->
+                        <page string="Gateway" name="gateway"
+                              invisible="not bifrost_synced_at">
+                            <group>
+                                <field name="gateway_session_id"
+                                       readonly="1"/>
+                                <field name="bifrost_synced_at"
+                                       readonly="1"/>
+                            </group>
+                            <group>
+                                <field name="bifrost_cost" readonly="1"/>
+                                <field name="bifrost_retries" readonly="1"/>
+                                <field name="bifrost_fallbacks" readonly="1"/>
+                            </group>
                         </page>
                     </notebook>
                 </sheet>
@@ -331,7 +508,7 @@
                         domain="[('create_date','&gt;=',context_today())]"/>
                 <filter name="this_week" string="Denna vecka (7d)"
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=7))]"/>
-                <filter name="this_month" string="Denna månad (30d)"
+                <filter name="this_month" string="This Month (30d)"
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=30))]"/>
                 <separator/>
                 <group expand="0" string="Gruppera efter">
@@ -345,7 +522,7 @@
                             context="{'group_by':'model_real'}"/>
                     <filter name="group_tool" string="Verktyg"
                             context="{'group_by':'tool_id'}"/>
-                    <filter name="group_session" string="Tråd"
+                    <filter name="group_session" string="Thread"
                             context="{'group_by':'session_id'}"/>
                 </group>
             </search>
@@ -363,7 +540,7 @@
         <field name="context">{'search_default_my_sessions': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
-                Sessioner registreras automatiskt när AI-medarbetare samtalar.
+                Sessions are registered automatically when AI coworkers converse.
             </p>
         </field>
     </record>

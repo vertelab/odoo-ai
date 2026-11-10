@@ -17,6 +17,8 @@ from . import test_init_types_overhaul
 from . import test_okf_mixin
 from . import test_okf_memory
 from . import test_companion_memory
+from . import test_company_default_coworker
+from . import test_default_coworker_resolution
 from . import test_okf_fail_closed
 from . import test_okf_owner_scoping
 # Ägar-åtgärden bakom smartknapparna (okf-smart-buttons F2.2).
@@ -40,6 +42,10 @@ from . import test_okf_dirty_bridge
 from . import test_okf_dirty_self_reignite
 from . import test_okf_hybrid_search
 from . import test_okf_search_no_silent_fallback
+from . import test_injection_semantic
+from . import test_stream_teardown
+from . import test_planning_tools_state
+from . import test_classify_cache_weak
 from . import test_okf_visible_to
 from . import test_lineage
 from . import test_odoo_model_tools
@@ -67,6 +73,13 @@ from . import test_gateway_session_identity
 from . import test_gateway_catalog_breaker
 # pi-message-persist-dedup: samma Pi-post ger en rad, retry-anrop bevaras.
 from . import test_pi_message_dedup
+# session-observability: Pi:s `toolResult` normaliseras till `tool` i BÅDA
+# riktningarna (till providern och till databasen).
+from . import test_pi_role_normalization
+# session-observability: stängning är en händelse (close_event) och en stängd
+# session återöppnas när en ny tur kommer — annars fångar idle-cronen den
+# aldrig igen.
+from . import test_session_lifecycle
 # tools/run coworker-kontext (T/11533): steg 1-prioritering + de
 # separerade felmeddelandena (Unknown tool vs not available).
 from . import test_tools_run_coworker_context
@@ -93,6 +106,14 @@ from . import test_ssrf_guard
 from . import test_extract
 from . import test_content_verification
 from . import test_stream_turn_persist
+# Tidsmätning per tur (kanalprestanda): TTFT, längsta uppehåll,
+# strömningstid på assistentraden + aggregerbarhet per init_type.
+from . import test_channel_timing
+# Jämförelseverktyget tests/perf/measure_channels.py (kanalprestanda 5.1-5.5):
+# insamling, rapport och omätt-grind — annars är "reproducerbart" ett påstående.
+from . import test_measure_channels
+from . import test_message_role
+from . import test_tool_name_sanitization
 # WebUI:s token-/kostnadsvisning (restore-webui-token-usage 6.1-6.3).
 # usage-blocket i thread_get, bokföringen på assistant-raden och
 # dubbelbokningsskyddet i _save_client_response.
@@ -100,6 +121,8 @@ from . import test_webui_token_usage
 # SSE-generatorernas namnbindning (NameError i _cr_holder, 2026-10-11).
 # Filen MÅSTE importeras här — annars körs den aldrig. Det är samma fälla
 # som test_workspace och test_graph_executor ovan föll i.
+from . import test_context_limits_and_titles
+from . import test_stream_keepalive
 from . import test_stream_scope_bindings
 from . import test_explicit_agent_tools
 from . import test_builtin_fallback_removal
@@ -140,6 +163,10 @@ from . import test_coworker_counters
 # `_session_domain` är EN definition av månaden — delad av räknaren och
 # sökvyns `this_month`-filter — så att siffran och listan inte kan glida isär.
 from . import test_session_smart_button
+
+# session-machine-and-filter: sessionens körplats (`machine`). Satt vid
+# skapande — Pi:s hostname eller `Odoo` — och aldrig överskrivet av en resume.
+from . import test_session_machine
 
 # fix-personal-memory-budget-scope D5: stilleståndsvarningen och budget-scopet.
 # Filerna fanns men var inte importerade — samma fälla som test_okf_mixin och
@@ -201,3 +228,54 @@ from . import test_eval_pipeline
 # inte bara cron. Utan testerna är buggen osynlig — en regel som bara en av
 # fyra vägar ser ser ut att fungera.
 from . import test_standing_rules
+
+# test-suite-baseline 2.1/2.2: grinden som jämför en svitkörning mot
+# BASELINE.md. Utan den är baslinjen en påminnelse, inte en grind.
+from . import test_baseline
+# Verktyget push_notification (push-notification 1.1): mottagare,
+# negativa svar, ingen påhittad leverans.
+from . import test_push_notification_tool
+# Push vid tur-slut (push-notification 2.1-2.3): aktivitetsgrinden,
+# stream-finaliseringen och dubblettskyddet.
+from . import test_turn_end_push
+# Avisering när ett schemalagt jobb är klart (push-notification 3.1-3.3).
+from . import test_task_requester_notification
+# Grindens egen mekanism (test-baseline-determinism 4.1-4.5): stabilitet
+# ur flera loggar, vandrande fäller inte, befordran fäller.
+from . import test_baseline_gate
+
+# De två filerna nedan saknades här helt — verifierat med `git log -S`:
+# noll träffar i hela historiken, alltså hade de aldrig kört. Red-team-sviten
+# bevakar core/trust.py och struktur grindarna bevakar *var* kod får byggas.
+# Utan importen är båda dokumentation, inte tester.
+from . import test_trust_redteam
+from . import test_structural_gates
+
+# ── Importerade 2026-11-05 ────────────────────────────────────────────
+# Dessa 13 filer saknades helt i listan ovan. `git log -S` gav noll träffar
+# för var och en i hela historiken — de hade aldrig kört. Att de importeras
+# nu är inte samma sak som att de är gröna: de kan ha legat döda i månader.
+# Kör dem, rätta eller radera, en i taget.
+from . import test_budget_hard_cap
+from . import test_buzz_workspace
+from . import test_company_memory
+from . import test_core
+from . import test_loop_constructor_contract
+from . import test_memory_governance
+from . import test_memory_learning_nudging
+from . import test_openworker_gate
+from . import test_orchestration_types
+from . import test_personal_memory_sources
+from . import test_provider_resolution
+from . import test_session_accounting
+from . import test_tool_history_consumers
+
+# provider-transient-retry: klassificering + backoff + retry mitt i stream.
+# Utan dessa tester är retryn osynlig — den enda retry som fanns satt på
+# anslutningen och kunde inte se svarskroppen (se ändringens proposal).
+from . import test_provider_transient_retry
+
+# session-line-compact-list: listvyns förhandsvisning (`content_preview`).
+# Bevisar att en lång rad blir en visuell rad, att klippet sker i Python (så
+# det även gäller i export) och att sökningen fortfarande går mot `content`.
+from . import test_session_line_preview

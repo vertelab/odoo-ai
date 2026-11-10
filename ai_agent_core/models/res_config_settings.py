@@ -9,10 +9,10 @@ _logger = logging.getLogger(__name__)
 
 BG_CRON_NAMES = [
     ('memory_consolidation', 'AI: Daglig minneskonsolidering'),
-    ('monthly_summary', 'AI: Generera månadssammanställning'),
+    ('monthly_summary', 'AI: Generate monthly summary'),
     ('onboard', 'AI: ONBOARD — scanna efter quest-kandidater'),
     ('scheduled_coworkers', 'AI: Run Scheduled Coworkers'),
-    ('bifrost_sync', 'AI: Synca modeller från Bifrost'),
+    ('bifrost_sync', 'AI: Sync models from Bifrost'),
     ('kaizen', 'AI: Veckovis Kaizen-rapport'),
     ('website_rag', 'Website RAG Refresh'),
     ('graph_sync', 'Odoo Mind Graph Sync'),
@@ -22,7 +22,7 @@ BG_CRON_NAMES = [
 OKF_CRON_NAMES = [
     ('Company Memory Nightly Consolidation', 'Daglig konsolidering'),
     ('Company Memory Partner Customers', 'Kundindexerare'),
-    ('Company Memory Partner Suppliers', 'Leverantörsindexerare'),
+    ('Company Memory Partner Suppliers', 'Vendor Indexers'),
     ('Company Memory Knowledge Articles', 'Kunskapsindexerare'),
     ('Company Memory DMS Documents', 'DMS-indexerare'),
     ('Company Memory Website RAG', 'Webbindexerare'),
@@ -80,8 +80,7 @@ class ResConfigSettings(models.TransientModel):
         'Google API Key',
         config_parameter='ai_agent_core.google_api_key',
         password=True,
-        help='Google API-nyckel (AIza…). Används av YouTube-/Google-baserade '
-             'AI-verktyg. Tomt → fallback till GOOGLE_API_KEY-miljövariabeln.',
+        help='Google API key (AIza…). Used by YouTube/Google-based AI tools. Empty → falls back to the GOOGLE_API_KEY environment variable.',
         groups='base.group_system',
     )
 
@@ -92,15 +91,21 @@ class ResConfigSettings(models.TransientModel):
             'ai_agent_core.google_api_key', '')
         return val or os.environ.get('GOOGLE_API_KEY', '')
 
-    ai_api_default_provider_id = fields.Many2one(
-        'ai.provider', string='Default Provider',
-        config_parameter='ai_agent_core.default_provider_id',
-        help='Default AI provider for new agents.')
-
-    ai_api_default_model_id = fields.Many2one(
-        'ai.model', string='Default Model',
-        config_parameter='ai_agent_core.default_model_id',
-        help='Default AI model for new agents.')
+    # ── Default Provider / Default Model: BORTTAGNA ──
+    #
+    # `ai_api_default_provider_id` (ai_agent_core.default_provider_id) skrevs
+    # men lästes aldrig av någon kod — en död parameter i UI:t.
+    #
+    # `ai_api_default_model_id` var värre: den hette "Default Model" men var
+    # systemets GLOBALA LLM-fallback, och styrde därför AI-ikonen via en tyst
+    # marknadsplats-inställning i stället för via användarens medarbetarval.
+    #
+    # Defaulten är nu en MEDARBETARE: res.company.ai_default_coworker_id
+    # (fältet ai_default_coworker_id nedan). Parametern
+    # ai_agent_core.default_model_id finns KVAR som intern lagring — den ägs
+    # av Salt (ai_default_model i odoo.conf) och av
+    # _repair_missing_agent_models() — men den är inte längre en
+    # användarinställning och ska inte ha något fält här.
 
     # ─────────────────────────────────────────────
     # Tool Executor (NATS)
@@ -138,6 +143,14 @@ class ResConfigSettings(models.TransientModel):
         config_parameter='ai_agent_core.default_identity_id',
         help='Default identity template for new agents.')
 
+    # Default coworker är ett BOLAGSFÄLT (res.company), inte en
+    # config_parameter: en many2one mot ai.coworker ger referensintegritet
+    # och syns i bolagsformuläret. Fältet härleds därför till company_id.
+    ai_default_coworker_id = fields.Many2one(
+        'ai.coworker', string='Default AI Coworker',
+        related='company_id.ai_default_coworker_id', readonly=False,
+        help='The AI Coworker preselected in the web chat and used by onboarding when no other is chosen.')
+
     # ─────────────────────────────────────────────
     # Default Tools (explicit-agent-tools)
     # ─────────────────────────────────────────────
@@ -166,8 +179,7 @@ class ResConfigSettings(models.TransientModel):
         # existerande tabell → `relation "_unknown" does not exist`. Det
         # slog till först när parametern faktiskt hade ett värde, därför
         # grönt på tom DB och rött i produktion.
-        help='Vilka verktyg nya agenter får som default när de skapas utan '
-             'explicita verktyg. Builtin-verktyg syns här efter seeding.',
+        help='Which tools new agents get by default when created without explicit tools. Builtin tools appear here after seeding.',
     )
 
     # ─────────────────────────────────────────────
@@ -227,17 +239,12 @@ class ResConfigSettings(models.TransientModel):
     personal_memory_char_budget = fields.Integer(
         'Personligt minne: teckenbudget', default=2500000,
         config_parameter='odoomind.personal_memory.char_budget',
-        help='Max antal tecken för en användares personliga minne. En '
-             'skrivning som skulle överskrida taket vägras med ett '
-             'åtgärdbart fel i stället för att tyst trunkeras vid injektion. '
-             'Konsolidering sker genom arkivering eller sammanslagning '
-             '(ADD-only).')
+        help='Maximum characters for a user personal memory. A write that would exceed the cap is refused with an actionable error instead of being silently truncated at injection. Consolidation happens by archiving or merging (ADD-only).')
 
     personal_memory_warn_pct = fields.Integer(
         'Personligt minne: varningszon (%)', default=80,
         config_parameter='odoomind.personal_memory.warn_pct',
-        help='Vid denna andel av teckenbudgeten registreras en varning om '
-             'att konsolidering behövs. Skrivningen går fortfarande igenom.')
+        help='At this share of the character budget a warning is recorded that consolidation is needed. The write still goes through.')
 
     coworker_memory_retention = fields.Boolean(
         'Session Memory Retention', default=True,
@@ -271,19 +278,19 @@ class ResConfigSettings(models.TransientModel):
     health_heartbeat_stale_days = fields.Integer(
         'Heartbeat stale (dagar)', default=7,
         config_parameter='odoomind.okf.health_heartbeat_stale_days',
-        help='Heartbeat äldre än X dagar → misstänkt för avdelningshälsa.')
+        help='Heartbeat older than X days → suspect for department health.')
     health_active_ratio = fields.Integer(
         'Aktiv ratio (%)', default=50,
         config_parameter='odoomind.okf.health_active_ratio',
-        help='≥ X% av coworkers heartbeatar → grön.')
+        help='≥ X% of coworkers heartbeat → green.')
     health_no_session_days = fields.Integer(
         'Ingen session (dagar)', default=30,
         config_parameter='odoomind.okf.health_no_session_days',
-        help='Ingen session på X dagar → gul/röd.')
+        help='No session in X days → yellow/red.')
     health_zero_tokens_days = fields.Integer(
         'Noll tokens (dagar)', default=30,
         config_parameter='odoomind.okf.health_zero_tokens_days',
-        help='0 tokens på X dagar → röd.')
+        help='0 tokens in X days → red.')
 
     # ── Företagsidentitet (editable) ──
     company_website_url_edit = fields.Char(
@@ -311,19 +318,13 @@ class ResConfigSettings(models.TransientModel):
              'periodically to check for work.')
     heartbeat_interval = fields.Integer(
         'Heartbeat Interval (minutes)', default=5,
-        help='Hur ofta varje aktiv coworker vaknar för att checka budget, '
-             'tasks, mål och nudge-behov. OBS: väckaren körs nu av '
-             'schemaläggningsmotorn (cron.task, cadence min = 5 min) — '
-             'fältet är kvar för bakåtkompatibilitet.')
+        help='How often each active coworker wakes to check budget, tasks, goals and nudge needs. NOTE: the waker now runs on the scheduling engine (cron.task, cadence min = 5 min) — the field remains for backward compatibility.')
     heartbeat_max_tasks_per_tick = fields.Integer(
         'Max uppgifter per tick', default=20,
-        help='Antalstak för dispatchern: högst så här många uppgifter delas '
-             'ut per tick. Resten tas i nästa tick — ingen uppgift tappas.')
+        help='Count cap for the dispatcher: at most this many tasks are handed out per tick. The rest is taken in the next tick — no task is lost.')
     heartbeat_max_seconds_per_tick = fields.Integer(
         'Max sekunder per tick', default=300,
-        help='Tidsgräns för dispatchern: har så här många sekunder passerat '
-             'slutar den dela ut uppgifter så att cron-tråden frigörs. '
-             'Default 300 s = tickens 5-minutersfönster.')
+        help='Time limit for the dispatcher: once this many seconds have passed it stops handing out tasks so the cron thread is released. Default 300 s = the tick 5-minute window.')
 
     # ─────────────────────────────────────────────
     # Background Jobs — dynamic fields per cron
@@ -367,7 +368,7 @@ class ResConfigSettings(models.TransientModel):
             from odoo.addons.ai_agent_core.hooks import _ensure_graph_cron
             _ensure_graph_cron(self.env)
         except Exception as e:
-            _logger.warning('Kunde inte säkerställa graf-cronen: %s', e)
+            _logger.warning('Could not ensure the graph cron: %s', e)
 
         # Website URL from partner
         res['company_website_url_edit'] = company.partner_id.website or ''
@@ -552,12 +553,12 @@ class ResConfigSettings(models.TransientModel):
         if not company.website_rag_attachment_id:
             return self._notify(
                 'Ingen RAG',
-                'Indexera webbplatsen först innan du skapar förslag.',
+                'Index the website first before creating suggestions.',
                 'warning')
         company._suggest_identity()
         return self._notify(
             'Mission uppdaterad',
-            'Mission har uppdaterats baserat på webbplatsinnehållet.')
+            'The mission was updated based on the website content.')
 
     def action_suggest_values(self):
         """Suggest values only from website RAG."""
@@ -565,19 +566,19 @@ class ResConfigSettings(models.TransientModel):
         if not company.website_rag_attachment_id:
             return self._notify(
                 'Ingen RAG',
-                'Indexera webbplatsen först innan du skapar förslag.',
+                'Index the website first before creating suggestions.',
                 'warning')
         company._suggest_identity()
         return self._notify(
             'Values uppdaterade',
-            'Values har uppdaterats baserat på webbplatsinnehållet.')
+            'The values were updated based on the website content.')
 
     def action_index_website(self):
         company = self.env.company
         if not company.partner_id.website:
             return self._notify(
                 'Ingen webbplats',
-                'Företaget har ingen webbplats konfigurerad på partnern.',
+                'The company has no website configured on the partner.',
                 'warning')
         company._index_website()
         return self._notify(
@@ -598,7 +599,7 @@ class ResConfigSettings(models.TransientModel):
             result = self.env['ai.okf.concept']._index_all_personal_sources()
             return self._notify(
                 'Personliga minnen indexerade',
-                'Roller: %(roles)s · Mål: %(goals)s' % result)
+                'Roles: %(roles)s · Goals: %(goals)s' % result)
         except Exception as e:
             return self._notify(
                 'Indexering misslyckades', str(e), type_='danger')
@@ -691,10 +692,10 @@ class AiBgCronLine(models.TransientModel):
         ('hours', 'Timmar'),
         ('days', 'Dagar'),
         ('weeks', 'Veckor'),
-        ('months', 'Månader'),
+        ('months', 'Months'),
     ], string='Period', default='days')
     cron_lastcall = fields.Datetime(related='cron_id.lastcall',
-                                    string='Senaste körning', readonly=True)
+                                    string='Last Run', readonly=True)
     cron_failure_count = fields.Integer(related='cron_id.failure_count',
                                         string='Fel', readonly=True)
     cron_code = fields.Text(related='cron_id.code', string='Metod',
@@ -718,8 +719,8 @@ class AiBgCronLine(models.TransientModel):
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'title': 'Cron triggad',
-                'message': f'{self.cron_name} körs nu.',
+                'title': 'Cron Triggered',
+                'message': f'{self.cron_name} runs now.',
                 'type': 'success',
             }
         }

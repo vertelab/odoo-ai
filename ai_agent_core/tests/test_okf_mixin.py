@@ -25,13 +25,41 @@ from ._config_param_guard import ConfigParamGuardedCase
 
 
 class _OkfTestModel(common.TransactionCase):
-    """Bas: en modell som bär mixinen, med kända källor."""
+    """Bas: en modell som bär mixinen, med kända källor.
+
+    `_embedding_provider` mockas till None. Utan mocken letar
+    `_okf_embed_texts` upp Bifrost-providern i databasen och skickar en
+    riktig HTTP-förfrågan; testramverket blockerar den, anropet retryar
+    ("försök 1/3", "2/3") och körningen hänger tills Odoo-cronen dödar
+    processen. Mätt 2026-11-02: hela sviten dog på
+    `TestIndexableModels.test_batch_size_is_a_shared_cap` efter 4,5 min.
+
+    None är rätt värde: `_okf_upsert` markerar då konceptet som `pending`,
+    vilket är exakt det beteende testerna vill pröva — de mäter tak,
+    tidsbudget och fördelning, inte vektorer.
+
+    Mocken läggs i `setUp`, inte `setUpClass`: Odoos testramverk jämför
+    modellklassens attribut efter VARJE test och failar på nya
+    ("Found unexpected attributes on ai.provider: _embedding_provider").
+    Attributet måste därför vara borta igen innan testet räknas klart.
+    """
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.Mixin = cls.env['ai.okf.mixin']
         cls.Concept = cls.env['ai.okf.concept']
+
+    def setUp(self):
+        super().setUp()
+        self._embed_patch = patch.object(
+            type(self.env['ai.provider']), '_embedding_provider',
+            return_value=None)
+        self._embed_patch.start()
+
+    def tearDown(self):
+        self._embed_patch.stop()
+        super().tearDown()
 
 
 @tagged('okf', 'post_install', '-at_install')
@@ -212,7 +240,7 @@ class TestSummaryChain(_OkfTestModel):
                 summary, source = mem._okf_build_summary(text, 100)
         self.assertEqual(source, 'truncated')
         self.assertEqual(len(summary), 100)
-        self.assertTrue(any('trunkerar' in m for m in cm.output))
+        self.assertTrue(any('truncating at' in m for m in cm.output))
 
     def test_max_chars_comes_from_parameter(self):
         """F3.2: gränsen är en systemparameter, default 2000."""
@@ -296,7 +324,11 @@ class TestIndexableModels(_OkfTestModel):
         # `event.event` får förekomma när bryggan
         # `website_ai_event` registrerat den — det som
         # prövas är att KÄRNAN inte lägger till den själv.
-        extra = self.Mixin._okf_extra_indexable_models or []
+        # Registreringen bor i en modulglobal, inte i ett klassattribut —
+        # Odoo:s testramverk fäller nya klassattribut på modeller.
+        from odoo.addons.ai_agent_core.models.ai_okf_mixin import (
+            _OKF_EXTRA_INDEXABLE)
+        extra = list(_OKF_EXTRA_INDEXABLE)
         for name in ('event.event', 'crm.lead', 'project.task'):
             if name in models:
                 self.assertIn(
@@ -619,4 +651,4 @@ class TestQueueStats(_OkfTestModel):
             [('okf_dirty', '=', True)])._clear_okf_dirty()
         text = self.env['ai.okf.dashboard']._format_queue_status()
         self.assertIsInstance(text, str)
-        self.assertIn('tom', text)
+        self.assertIn('empty', text)

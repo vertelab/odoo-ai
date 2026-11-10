@@ -13,10 +13,10 @@ class AIOrgReview(models.Model):
     agent_id = fields.Many2one('ai.agent', string='Agent',
         required=True, index=True)
     reviewer_id = fields.Many2one('ai.agent', string='Reviewer (AI)',
-        help='AI-agenten som gör utvärderingen.')
+        help='The AI agent that performs the review.')
     human_reviewer_id = fields.Many2one('res.users',
         string='Reviewer (Human)',
-        help='Människan som gör/godkänner utvärderingen.')
+        help='The human who performs/approves the review.')
 
     period = fields.Selection([
         ('weekly', 'Weekly'),

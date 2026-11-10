@@ -40,6 +40,9 @@ class TestBudgetHardCap(common.TransactionCase):
         # compute ger token_sys = token_sys
         line = self.env['ai.coworker.session.line'].create({
             'session_id': session.id,
+            # Sekvensen måste sättas: default är 10 och UNIQUE(session_id,
+            # sequence) gör att en andra rad kolliderar.
+            'sequence': 1,
             'role': 'assistant',
             'content': 'test',
             'token_input': token_sys,
@@ -64,7 +67,7 @@ class TestBudgetHardCap(common.TransactionCase):
 
         # Förbruka 1.2M systemtokens
         self._mk_session_line(coworker, token_sys=1_200_000)
-        self.env['ai.coworker'].invalidate_cache(['session_line_count',
+        self.env['ai.coworker'].invalidate_model(['session_line_count',
                                                    'budget_exhausted',
                                                    'budget_warning'])
         coworker._compute_budget_state()
@@ -74,7 +77,7 @@ class TestBudgetHardCap(common.TransactionCase):
         """budget_warning vid 80%."""
         coworker = self._mk_coworker(cap_mtokens=1)
         self._mk_session_line(coworker, token_sys=850_000)
-        self.env['ai.coworker'].invalidate_cache(['session_line_count',
+        self.env['ai.coworker'].invalidate_model(['session_line_count',
                                                    'budget_exhausted',
                                                    'budget_warning'])
         coworker._compute_budget_state()
@@ -86,7 +89,7 @@ class TestBudgetHardCap(common.TransactionCase):
         coworker = self._mk_coworker(cap_mtokens=1)
         # Förbruka förra månaden (create_date flyttad 40 dagar bakåt)
         self._mk_session_line(coworker, token_sys=1_500_000, days_ago=40)
-        self.env['ai.coworker'].invalidate_cache(['session_line_count',
+        self.env['ai.coworker'].invalidate_model(['session_line_count',
                                                    'budget_exhausted'])
         coworker._compute_budget_state()
         self.assertFalse(coworker.budget_exhausted,
@@ -96,29 +99,29 @@ class TestBudgetHardCap(common.TransactionCase):
         """Höjd budget → budget öppnas auto (compute räknar om)."""
         coworker = self._mk_coworker(cap_mtokens=1)
         self._mk_session_line(coworker, token_sys=1_200_000)
-        self.env['ai.coworker'].invalidate_cache(['session_line_count',
+        self.env['ai.coworker'].invalidate_model(['session_line_count',
                                                    'budget_exhausted'])
         coworker._compute_budget_state()
         self.assertTrue(coworker.budget_exhausted)
 
         # Höj taket → auto-öppnas
         coworker.monthly_cap_mtokens = 2
-        self.env['ai.coworker'].invalidate_cache(['budget_exhausted'])
+        self.env['ai.coworker'].invalidate_model(['budget_exhausted'])
         coworker._compute_budget_state()
         self.assertFalse(coworker.budget_exhausted)
 
     # ── 7.2 Blockeringsmatris ──
 
     def test_run_returns_budget_message(self):
-        """run() returnerar 'Budget slut' utan att köra LLM."""
+        """run() returnerar 'Budget exhausted' utan att köra LLM."""
         coworker = self._mk_coworker(cap_mtokens=1)
         self._mk_session_line(coworker, token_sys=1_200_000)
-        self.env['ai.coworker'].invalidate_cache(['session_line_count',
+        self.env['ai.coworker'].invalidate_model(['session_line_count',
                                                    'budget_exhausted'])
         coworker._compute_budget_state()
 
         result = coworker.run(prompt='test prompt')
-        self.assertIn('Budget slut', result)
+        self.assertIn('Budget exhausted', result)
 
     # ── 7.3 mail.activity ──
 
@@ -126,7 +129,7 @@ class TestBudgetHardCap(common.TransactionCase):
         """mail.activity skapas en gång per månad."""
         coworker = self._mk_coworker(cap_mtokens=1)
         self._mk_session_line(coworker, token_sys=1_200_000)
-        self.env['ai.coworker'].invalidate_cache(['session_line_count',
+        self.env['ai.coworker'].invalidate_model(['session_line_count',
                                                    'budget_exhausted'])
         coworker._compute_budget_state()
 
@@ -145,7 +148,7 @@ class TestBudgetHardCap(common.TransactionCase):
         """Upplåsning stänger aktiviteten + nollställer notis-månad."""
         coworker = self._mk_coworker(cap_mtokens=1)
         self._mk_session_line(coworker, token_sys=1_200_000)
-        self.env['ai.coworker'].invalidate_cache(['session_line_count',
+        self.env['ai.coworker'].invalidate_model(['session_line_count',
                                                    'budget_exhausted'])
         coworker._compute_budget_state()
         coworker._notify_budget_once()
@@ -153,7 +156,7 @@ class TestBudgetHardCap(common.TransactionCase):
 
         # Höj taket + upplås
         coworker.monthly_cap_mtokens = 2
-        self.env['ai.coworker'].invalidate_cache(['budget_exhausted'])
+        self.env['ai.coworker'].invalidate_model(['budget_exhausted'])
         coworker._compute_budget_state()
         coworker._unlock_budget_activities()
 
@@ -207,9 +210,10 @@ class TestBudgetHardCap(common.TransactionCase):
             'user_id': self.user.id,
             'name': 'Session sys test',
         })
-        for ts in (100, 200, 500):
+        for seq, ts in enumerate((100, 200, 500), start=1):
             self.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
+                'sequence': seq,
                 'role': 'assistant',
                 'content': 'test',
                 'token_input': ts,

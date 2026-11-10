@@ -34,7 +34,6 @@ class TestSearchSettings(TransactionCase):
         # En medarbetare att hänga inställningarna på.
         cls.coworker = cls.Coworker.create({
             'name': 'Söktest-Medarbetare (fas 13)',
-            'is_default': True,
         })
 
     # ── 13.4: strategin mappar till tal ─────────────────────────────────
@@ -200,7 +199,7 @@ class TestSearchSettings(TransactionCase):
 
     def test_create_seeds_sources_from_profile(self):
         c = self.Coworker.create({
-            'name': 'Seedtest (fas 13)', 'is_default': True,
+            'name': 'Seedtest (fas 13)',
             'memory_profile': 'hermes'})
         self.assertTrue(c.search_sources,
                         'hermes ska seedas med källor vid skapande')
@@ -208,7 +207,7 @@ class TestSearchSettings(TransactionCase):
 
     def test_write_profile_reseeds(self):
         c = self.Coworker.create({
-            'name': 'Bytestest (fas 13)', 'is_default': True,
+            'name': 'Bytestest (fas 13)',
             'memory_profile': 'balanced'})
         c.write({'memory_profile': 'session_only'})
         self.assertFalse(c.search_sources,
@@ -219,7 +218,7 @@ class TestSearchSettings(TransactionCase):
 
     def test_no_sources_is_honestly_empty(self):
         c = self.Coworker.create({
-            'name': 'Tomtest (fas 13)', 'is_default': True,
+            'name': 'Tomtest (fas 13)',
             'memory_profile': 'session_only'})
         recs, diag = c._multi_source_recall('något', scope='company',
                                             owner_id=1)
@@ -261,7 +260,7 @@ class TestSearchSettings(TransactionCase):
             self.assertIn('okf_concept', diag['per_source'],
                           'den felande källan ska synas i diagnostiken')
             self.assertTrue(
-                any('misslyckades' in m for m in cm.output),
+                any('failed' in m for m in cm.output),
                 'felet ska loggas som warning, inte sväljas')
 
     def test_unwired_source_is_skipped_without_error(self):
@@ -328,7 +327,7 @@ class TestSearchSettings(TransactionCase):
     def test_graph_enrichment_disabled_writes_no_graph_block(self):
         """`graph_enrichment=False` ska ge en injektion utan GRAF-KONTEXT."""
         c = self.Coworker.create({
-            'name': 'Grafav (fas 13)', 'is_default': True,
+            'name': 'Grafav (fas 13)',
             'memory_profile': 'balanced'})
         c.graph_enrichment = False
         text = c._build_injection_prompt(prompt='roller')
@@ -376,7 +375,7 @@ class TestSearchSettings(TransactionCase):
         i oändlighet (se BASELINE.md). BM25-signalen är den som prövas här.
         """
         c = self.Coworker.create({
-            'name': 'Trogav (fas 13)', 'is_default': True,
+            'name': 'Trogav (fas 13)',
             'memory_profile': 'balanced'})
         self._mk_concept('trogav.test', 'kvantmekanik sällsynt ordet')
 

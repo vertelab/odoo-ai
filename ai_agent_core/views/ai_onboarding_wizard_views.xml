@@ -12,7 +12,7 @@
                 <!-- QUESTIONS STEP -->
                 <group invisible="state != 'questions'">
                     <group>
-                        <field name="question_index" string="Fråga"/>
+                        <field name="question_index" string="Question"/>
                         <field name="total_questions" string="Totalt"/>
                     </group>
                     <group>
@@ -36,7 +36,7 @@
                         <field name="answer" placeholder="Ditt svar..."
                             autofocus="1"/>
                         <button name="action_submit_answer" type="object"
-                            string="Nästa →" class="btn-primary mt-3"/>
+                            string="Next →" class="btn-primary mt-3"/>
                     </group>
                 </group>
 
@@ -61,7 +61,7 @@
                             🚀 Din AI-organisation är redo! Heartbeats startar.
                         </p>
                         <button name="action_close" type="object"
-                            string="Stäng" class="btn-primary"/>
+                            string="Close" class="btn-primary"/>
                     </group>
                 </group>
             </form>

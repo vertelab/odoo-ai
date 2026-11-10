@@ -14,8 +14,8 @@
                      båda ingångarna (Objects-knappen och sessionsformuläret)
                      delar exakt samma vy (Beslut 4). -->
                 <button name="action_open_target" type="object"
-                        string="Öppna objekt" icon="fa-external-link"
-                        help="Öppna det objekt raden pekar på"/>
+                        string="Open Object" icon="fa-external-link"
+                        help="Open the object the row points to"/>
                 <field name="datetime"/>
                 <field name="res_model"/>
                 <field name="res_id"/>

@@ -64,8 +64,7 @@ class WorkspaceParaContainer(models.Model):
         ('active', 'Active'),
         ('archived', 'Archived'),
     ], string='State', default='active',
-        help='suggested = AI-föreslagen (task 3.5), kräver HITL-godkännande '
-             'innan den blir aktiv.')
+        help='suggested = AI-proposed (task 3.5), requires HITL approval before it becomes active.')
 
     is_projection = fields.Boolean(
         'Projection', default=False,
@@ -213,7 +212,7 @@ class WorkspaceParaContainer(models.Model):
                     label = '%s,%s' % (ref.model, ref.res_id)
                 parts.append('- %s' % label)
             summary = (
-                f"Lessons learned från projektet \"{rec.name}\":\n"
+                f"Lessons learned from the project \"{rec.name}\":\n"
                 + '\n'.join(parts))
             concept = Concept._okf_upsert(
                 atype,
@@ -223,8 +222,7 @@ class WorkspaceParaContainer(models.Model):
                 owner_user_id=rec.user_id.id or self.env.uid,
                 generated_by='project_close', status='stable')
             concept.distill_l2_l3(
-                l2='Erfarenheter från %s sammanfattade från %d kopplade '
-                   'referenser.' % (rec.name, len(rec.ref_ids)),
+                l2='Experiences from %s summarised from %d linked references.' % (rec.name, len(rec.ref_ids)),
                 l3='Lessons learned: %s' % rec.name,
                 generated_by='project_close')
         return True

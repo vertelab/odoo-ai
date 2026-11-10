@@ -158,8 +158,9 @@ class TestWriteVerify(common.TransactionCase):
         self.assertEqual(outcomes[0]['tool'], 'with_contract_tool')
 
     def test_description_mentions_verifiable_outcome(self):
-        """Beskrivningsmallen nämner verifierbart utfall och felvägledning."""
+        """The description template names a verifiable outcome and error
+        guidance."""
         help_text = self.Tool._fields['description'].help or ''
-        self.assertIn('verifierbart utfall', help_text)
-        self.assertIn('felvägledning', help_text)
+        self.assertIn('verifiable outcome', help_text)
+        self.assertIn('error guidance', help_text)
         self.assertIn('guardrail', help_text)

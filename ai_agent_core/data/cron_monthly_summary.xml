@@ -8,7 +8,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_monthly_summary" model="cron.task">
-            <field name="name">AI: Generera månadssammanställning</field>
+            <field name="name">AI: Generate monthly summary</field>
             <field name="technical_name">ai_monthly_summary</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.coworker.monthly_summary</field>

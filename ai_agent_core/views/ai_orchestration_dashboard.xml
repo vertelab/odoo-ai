@@ -22,8 +22,8 @@
         ]"/>
         <field name="help" type="html">
             <p><strong>AI Orchestration Dashboard</strong></p>
-            <p>Här ser du hela din AI-organisation — avdelningar, AI-medarbetare, status och hälsa.</p>
-            <p>💡 Kugghjulet på varje kort: "🚀 Starta onboarding" bygger organisationen, "🔄 Starta om" kör om intervjun.</p>
+            <p>Here you see your whole AI organisation — departments, AI coworkers, status and health.</p>
+            <p>💡 The gear on each card: "🚀 Start onboarding" builds the organisation, "🔄 Restart" re-runs the interview.</p>
         </field>
     </record>
 

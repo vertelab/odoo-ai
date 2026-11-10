@@ -13,7 +13,7 @@
              "Record cannot be modified right now". cron.task har ingen
              sådan spärr, och motorn äger kadens, lås och körhistorik. -->
         <record id="cron_task_cron_watch_process" model="cron.task">
-            <field name="name">AI: Processera watch-kön</field>
+            <field name="name">AI: Process the watch queue</field>
             <field name="technical_name">ai_watch_process</field>
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.coworker.session</field>

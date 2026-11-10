@@ -99,7 +99,7 @@ class ConferenceLoop:
         total_in = sum(r.input_tokens for _, r in results)
         total_out = sum(r.output_tokens for _, r in results)
         return ChatResponse(
-            text=f"[Bästa svar från: {best_name}]\n\n{text}",
+            text=f"[Best answer from: {best_name}]\n\n{text}",
             input_tokens=total_in, output_tokens=total_out,
             finish_reason="stop",
             agent_usage=_usage_of(results),
@@ -141,7 +141,7 @@ class ConferenceLoop:
             winner_idx = counter.most_common(1)[0][0]
             winner_name, winner_text = candidates[winner_idx]
             votes_summary = ', '.join(
-                f"{n}: {v if 0 <= v < len(candidates) else 'avstår'}"
+                f"{n}: {v if 0 <= v < len(candidates) else 'abstains'}"
                 for n, v in votes.items())
         else:
             # Ingen giltig röst — fallback till confidence
@@ -149,7 +149,7 @@ class ConferenceLoop:
                 range(len(candidates)),
                 key=lambda i: self._extract_confidence(results[i][1]))
             winner_name, winner_text = candidates[winner_idx]
-            votes_summary = 'ingen giltig röst — confidence-fallback'
+            votes_summary = 'no valid vote — confidence fallback'
         total_in = sum(r.input_tokens for _, r in results)
         total_out = sum(r.output_tokens for _, r in results)
         return ChatResponse(

@@ -182,7 +182,7 @@ class TestDelegationDirection(DelegationTestBase):
     def test_upward_denied(self):
         ok, reason = self.support._delegation_target_allowed(self.chief)
         self.assertFalse(ok, 'uppåt ska nekas (eskalering)')
-        self.assertIn('riktning', reason.lower())
+        self.assertIn('delegation direction', reason.lower())
 
     def test_across_departments_denied(self):
         ok, _ = self.worker._delegation_target_allowed(self.accountant)
@@ -227,7 +227,7 @@ class TestDelegationCreate(DelegationTestBase):
         env2, _ = self._requester_env(self.worker, task=parent)
         with self.assertRaises(ValidationError) as cm:
             env2._delegate_task_to(self.chief, 'Steg 2')
-        self.assertIn('maxdjup', str(cm.exception))
+        self.assertIn('max depth', str(cm.exception))
 
     def test_quota_blocks(self):
         self.env['ir.config_parameter'].sudo().set_param(
@@ -236,7 +236,7 @@ class TestDelegationCreate(DelegationTestBase):
         env._delegate_task_to(self.worker, 'Första')
         with self.assertRaises(ValidationError) as cm:
             env._delegate_task_to(self.worker, 'Andra')
-        self.assertIn('kvot', str(cm.exception))
+        self.assertIn('daily quota', str(cm.exception))
 
     def test_empty_description_rejected(self):
         env, _ = self._requester_env(self.chief)
@@ -280,7 +280,7 @@ class TestReceptivity(DelegationTestBase):
         self.worker.last_successful_run = False
         ok, reason = self.worker._is_receptive()
         self.assertFalse(ok)
-        self.assertIn('livstecken', reason.lower())
+        self.assertIn('sign of life', reason.lower())
 
     def test_stale_liveness_not_receptive(self):
         from datetime import timedelta
@@ -294,7 +294,7 @@ class TestReceptivity(DelegationTestBase):
         env, _ = self._requester_env(self.chief)
         with self.assertRaises(ValidationError) as cm:
             env._delegate_task_to(self.worker, 'Kolla loggarna')
-        self.assertIn('livstecken', str(cm.exception).lower())
+        self.assertIn('sign of life', str(cm.exception).lower())
         # Ingen task skapad (inget ruttnande).
         self.assertEqual(self.Task.search_count([
             ('coworker_id', '=', self.worker.id),
