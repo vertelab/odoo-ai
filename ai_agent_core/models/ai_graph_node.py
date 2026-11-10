@@ -469,7 +469,22 @@ class GraphExecutor(models.Model):
             # The savepoint is what makes the rollback possible without
             # discarding the caller's work: with it, only this statement is
             # undone.
-            self.env.cr.rollback()
+            # FIXED 2026-11-10: this used to be a plain rollback(), which
+            # rolls back the WHOLE transaction — including the savepoint
+            # `cypher()` had already created. The next statement then said
+            #   UserError: Graph query failed: savepoint "graph_executor"
+            #   does not exist
+            # so every cypher() call failed for a second, unrelated reason.
+            #
+            # cypher() calls this method INSIDE `SAVEPOINT graph_executor`,
+            # so that is the level to roll back to. ROLLBACK TO SAVEPOINT
+            # undoes only the failed LOAD and leaves the savepoint usable.
+            # With no savepoint (a direct call) the plain rollback is the
+            # only option — hence the check.
+            try:
+                self.env.cr.execute("ROLLBACK TO SAVEPOINT graph_executor")
+            except Exception:
+                self.env.cr.rollback()
 
     @api.model
     def cypher(self, query, read_only=True, timeout=10):

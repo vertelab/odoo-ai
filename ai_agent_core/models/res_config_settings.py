@@ -200,9 +200,21 @@ class ResConfigSettings(models.TransientModel):
                 executor = self.env['graph.executor'].sudo()
                 result = executor.cypher(
                     "MATCH (n) RETURN count(n) AS cnt", read_only=True)
-                cnt = result[0][0] if result else '?'
+                # cypher() returns a FLAT list of cell values: [9], not
+                # [[9]]. result[0][0] raised TypeError('int' object is not
+                # subscriptable), which the caller swallowed and turned into
+                # 'N/A' — so the settings form showed N/A on a graph that
+                # answered fine. Verified on dms 2026-11-10: cypher() -> [9].
+                cnt = result[0] if result else '?'
                 r.graph_node_count = str(cnt)
             except Exception:
+                # ROLLBACK: a failed cypher() aborts the transaction, and
+                # every later query in this request then fails with
+                # "current transaction is aborted" instead of its own error.
+                # On the settings form that meant the NEXT line (an ir.cron
+                # search) crashed the whole RPC call. Verified on dms
+                # 2026-11-10.
+                self.env.cr.rollback()
                 r.graph_node_count = 'N/A'
 
     # ── Company / Personal / Coworker Memory settings ──
@@ -378,9 +390,24 @@ class ResConfigSettings(models.TransientModel):
             executor = self.env['graph.executor'].sudo()
             result = executor.cypher(
                 "MATCH (n) RETURN count(n) AS cnt", read_only=True)
-            cnt = result[0][0] if result else '?'
+            # cypher() returns a FLAT list of cell values: [9], not
+            # [[9]]. result[0][0] raised TypeError('int' object is not
+            # subscriptable), which the caller swallowed and turned into
+            # 'N/A' — so the settings form showed N/A on a graph that
+            # answered fine. Verified on dms 2026-11-10: cypher() -> [9].
+            cnt = result[0] if result else '?'
             res['graph_node_count'] = str(cnt)
         except Exception:
+            # ROLLBACK, or the settings form dies one line later.
+            #
+            # This is the failure reported from dms.azzar.org 2026-11-10:
+            #   res_config_settings.py:379  cypher() raises
+            #   res_config_settings.py:383  caught, no rollback
+            #   res_config_settings.py:390  ir.cron.search ->
+            #       InFailedSqlTransaction
+            # The traceback pointed at ir.cron and ir.rule, which had
+            # nothing to do with it.
+            self.env.cr.rollback()
             res['graph_node_count'] = 'N/A'
 
         # Background jobs status
