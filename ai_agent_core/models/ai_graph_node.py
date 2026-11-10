@@ -382,6 +382,21 @@ class GraphNodeDefinition(models.Model):
                     continue
                 defn._sync_batch(model)
             except Exception as e:
+                # ROLLBACK BEFORE TOUCHING THE ORM AGAIN.
+                #
+                # The failing statement (a cypher() call) leaves the
+                # transaction aborted. Reading `defn.graph_label` or
+                # writing `last_error` on an aborted transaction raises
+                # InFailedSqlTransaction — so the error handler itself
+                # crashed, and the log line meant to explain the failure
+                # became a second, unrelated traceback.
+                #
+                # Verified on dms 2026-11-10:
+                #   ai_graph_node.py:304  -> cypher failed
+                #   ai_graph_node.py:385  -> logging the failure crashed
+                #   cron_task.py:699      -> recording it crashed too
+                # Three tracebacks for one root cause, none naming it.
+                self.env.cr.rollback()
                 _logger.error("Sync failed for %s: %s", defn.graph_label, e)
                 defn.write({'last_error': str(e)})
 
@@ -417,10 +432,30 @@ class GraphExecutor(models.Model):
         try:
             self.env.cr.execute("LOAD 'age'")
         except Exception:
-            # best-effort: extensionen kan saknas i databasen. cypher()
-            # rapporterar det med ett tydligare fel; att kasta här skulle
-            # bara byta ut det mot ett sämre.
-            pass
+            # ROLLBACK IS MANDATORY, not defensive.
+            #
+            # A failed statement inside a transaction leaves PostgreSQL in
+            # "current transaction is aborted": every later statement returns
+            # that same error until someone rolls back. Without this line the
+            # own caller — ``cypher()`` right below — fails with a message
+            # about an aborted transaction instead of about AGE, and so does
+            # every unrelated query in the same unit of work.
+            #
+            # Verified on dms 2026-11-10. AGE 1.6 refuses LOAD for a
+            # non-superuser role ("access to library 'age' is not allowed"),
+            # so this path is the NORMAL one there, not an edge case:
+            #
+            #   LOAD 'age'                     -> ERROR (swallowed)
+            #   SET LOCAL search_path = ...    -> ERROR: transaction is aborted
+            #   ... every later statement      -> same
+            #   env.cr.commit()                -> "Failed to load registry"
+            #
+            # The whole database installation died on a missing rollback.
+            #
+            # The savepoint is what makes the rollback possible without
+            # discarding the caller's work: with it, only this statement is
+            # undone.
+            self.env.cr.rollback()
 
     @api.model
     def cypher(self, query, read_only=True, timeout=10):
