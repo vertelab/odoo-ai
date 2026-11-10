@@ -100,7 +100,12 @@ ipython
 python-docx
 openpyxl
 python-pptx
-PyPDF2
+# PyPDF2 3.0.0 REMOVED PdfFileReader.numPages/getPage(), which OCA sign_oca
+# (models/sign_oca_request.py) still calls. Without a cap repo_apply installed
+# 3.0.1 and every signature raised DeprecationError -> signing was dead.
+# 2.12.1 is the last release with the old API, and it still has
+# PdfReader().pages, which is all ai_agent_core uses. Verified 2026-11-10.
+PyPDF2>=2.12,<3
 
 # ── api_agent / MCP ──────────────────────────────────────────────────────
 # fastapi-mcp drar via mcp -> starlette -> pydantic. Taket hindrar att en ny
