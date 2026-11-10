@@ -166,6 +166,26 @@ class AIOkfConcept(models.Model):
     source_text = fields.Text(
         'Source Text',
         help='The source text the summary was derived from (okf-mixin D5). Stored as it is — the concept mirrors the source.')
+    # ── Länkar (okf-temporal-recall D9) ──
+    #
+    # KONCEPTET BÄR SINA EGNA LÄNKAR. De bodde tidigare bara på källposten
+    # (`ai.okf.mixin.okf_links`), vilket gjorde bakåtuppslaget omöjligt:
+    # "vilka koncept pekar på project.project,7" gick inte att ställa,
+    # eftersom konceptet inte hade något att fråga på. Att gå via
+    # källposterna hade krävt en fråga per modell och tappat kopplingen
+    # till konceptet (som är det som bär access-prövningen).
+    #
+    # Formen är typad: [{'ref': 'project.task,42', 'kind': 'project_task',
+    # 'date': '2026-11-12T00:00:00', 'basis': 'explicit'}]. En gammal naken
+    # sträng ('project.project,7') läses som kind=reference,
+    # basis=explicit — ingen datamigrering krävs (D9).
+    okf_links = fields.Json(
+        string='OKF Links', default=list,
+        help='Typed references to other records: ref, kind, date, basis. '
+             'basis distinguishes an established link (explicit) from a '
+             'suggestion made only because the target lies close in time '
+             '(temporal). Broken links are allowed — the target may not '
+             'have a concept yet.')
     source_ref = fields.Char(
         string='Source Ref',
         help='Primary source reference, t.ex. res.partner,42')
@@ -187,6 +207,31 @@ class AIOkfConcept(models.Model):
     ], string='Status', default='stable',
         help='Livscykel for konceptet. Ingen superseded: ett koncept per '
              'concept_key, alltid den aktuella speglingen av kallan.')
+
+    # ── Källdatum (okf-temporal-recall D1) ──
+    #
+    # TVÅ OLIKA AXLAR, samma distinktion som stale_after/retention_end:
+    #
+    #   create_date/write_date  NÄR KONCEPTET SKREVS   (indexeringstid)
+    #   source_date             NÄR POSTEN I KÄLLAN AVSES (frågetid)
+    #
+    # Ett mail som skrevs 2024 och indexerades i dag är inte "nytt". Utan
+    # source_date kunde sökningen bara filtrera på write_date, och
+    # `time_window` gjorde därför exakt det felet.
+    #
+    # Fältet fylls av bryggan via `_okf_source_date()`. Saknas det lämnas
+    # det TOMT — konceptet deltar då i sökningen precis som förut, utan
+    # tidsvikt. Ett tomt källdatum får aldrig utesluta en rad.
+    source_date = fields.Datetime(
+        string='Source Date', index=True,
+        help='The time the source record is about (a mail receipt, a meeting start) — not when the concept was indexed. Empty = unknown; the concept then ranks without a temporal weight.')
+    temporal_role = fields.Selection([
+        ('received', 'Received'),
+        ('event_start', 'Event Start'),
+        ('event_stop', 'Event Stop'),
+        ('modified', 'Modified'),
+    ], string='Temporal Role',
+        help='What the source date means. received = when it arrived, event_start/event_stop = when it begins/ends, modified = when it changed. Empty = no role.')
 
     # ── Livscykel ──
     stale_after = fields.Datetime(
@@ -1010,7 +1055,8 @@ class AIOkfConcept(models.Model):
                     status='stable', stale_after=None, entities=None,
                     embedding=None, search_vector=None, source_text=None,
                     force_new_version=False, okf_tags=None,
-                    source_user_id=None, **kwargs):
+                    source_user_id=None, source_date=None,
+                    temporal_role=None, okf_links=None, **kwargs):
         """Skapa eller UPPDATERA konceptet for (scope, agare, concept_key).
 
         ETT koncept per nyckel (beslut 2026-10-26). Modellen ar en spegel av
@@ -1080,6 +1126,9 @@ class AIOkfConcept(models.Model):
             'okf_tags': okf_tags or [],
             'attribution': attribution or [],
             'source_ref': source_ref,
+            'source_date': source_date,
+            'temporal_role': temporal_role,
+            'okf_links': okf_links or [],
             'sources': sources or [],
             'generated': {'by': generated_by,
                           'at': fields.Datetime.now().isoformat()},
@@ -1254,6 +1303,12 @@ class AIOkfConcept(models.Model):
         """
         user = user or self.env.user
 
+        # Tidsdiagnostiken från den senaste körningen (task 4.6). Läses av
+        # `_tool_okf_search` och av loggen. En klassinstans kan inte bära
+        # den — Odoo:s testramverk fäller nya klassattribut — så den landar
+        # på context, som redan används för att bära körningens metadata.
+        self._okf_record_temporal_diag(None)  # nollställ före körningen
+
         # ── ÄGARKONTROLL (odoo-mind-memory-scope-isolation) ──────────
         # Sökningen får ALDRIG bredda till andra ägare än den som
         # efterfrågas. Tidigare filtrerades bara `scope`, så ett
@@ -1302,7 +1357,12 @@ class AIOkfConcept(models.Model):
         if artifact_type_ids:
             domain.append(('artifact_type_id', 'in', artifact_type_ids))
         if time_window:
-            domain.append(('write_date', '>=', time_window))
+            # okf-temporal-recall (task 4.1): `time_window` jämförs mot
+            # KÄLLDATUMET, inte mot `write_date`. Indexeringstid är inte
+            # frågetid — ett gammalt mail som indexerades i dag är inte
+            # "nytt". Den som uttryckligen vill filtrera på
+            # indexeringstid använder `write_date` i ett eget villkor.
+            domain.append(('source_date', '>=', time_window))
 
         # Hybrid kräver en fråga. Utan fråga är "senaste" ett ärligt svar.
         if not hybrid or not query or not query.strip():
@@ -1350,6 +1410,61 @@ class AIOkfConcept(models.Model):
         w = max(0.0, min(1.0, w))
         if not embedding:
             w = 0.0
+
+        # 2b. TIDSVIKTEN (okf-temporal-recall D2, task 4.2–4.4).
+        #
+        # ADDITIV term i `score` — aldrig ett `WHERE`. Skälet är samma som
+        # för `min_score`-filtret: ett hårt tidsfilter gör sökningen TYST
+        # TOM, och det var precis den fällan som gjorde att trösklarna fick
+        # varsin signal. `@@`-grinden är fortfarande den enda relevansgrind
+        # vi litar på; tiden får bara flytta rader inom urvalet.
+        #
+        # Vikten är LÅG (0.2): en svagare närtidsträff får gå före en
+        # starkare gammal, men bara när de ligger nära varandra i relevans.
+        # Konfigurerbar per medarbetare via `temporal_default_enabled`.
+        temporal_boost_sql = '0'
+        temporal_diag = {'from': None, 'to': None, 'direction': None,
+                         'source': 'none', 'unmatched': None}
+        w_time = 0.0
+        # Tolkningen sker ÄVEN när tidsvikten är avstängd: diagnostiken ska
+        # kunna förklara varför inget fönster användes, och ett uttryck vi
+        # inte förstår ska namnges oavsett (task 4.6). Vikten sätts sedan
+        # bara när den är påslagen.
+        from ..core import okf_temporal
+        tz_name = (user.tz if user and user.tz else None)
+        explicit = kw.get('temporal_window')
+        if explicit is None and query and query.strip():
+            resolved = okf_temporal.resolve(query, tz_name=tz_name)
+            if resolved['date_from'] is not None:
+                explicit = (resolved['date_from'], resolved['date_to'])
+                temporal_diag.update({
+                    'from': resolved['date_from'],
+                    'to': resolved['date_to'],
+                    'direction': resolved['direction'],
+                    'source': 'explicit',
+                })
+            elif resolved['unmatched']:
+                temporal_diag['unmatched'] = resolved['unmatched']
+        if kw.get('temporal', True):
+            if explicit is not None:
+                temporal_boost_sql, tw_params = okf_temporal.build_boost_sql(
+                    {}, explicit_window=explicit)
+                params_extra = tw_params
+            else:
+                defaults = kw.get('temporal_defaults')
+                if defaults is None:
+                    defaults = self.env['ai.okf.mixin'] \
+                        ._okf_temporal_defaults()
+                temporal_boost_sql, params_extra = \
+                    okf_temporal.build_boost_sql(
+                        defaults, now=None, tz_name=tz_name)
+                if temporal_boost_sql != '0':
+                    temporal_diag['source'] = 'default'
+            if temporal_boost_sql != '0':
+                w_time = float(kw.get('temporal_weight', 0.2))
+        else:
+            params_extra = {}
+        self._okf_record_temporal_diag(temporal_diag)
 
         # 3. EN fråga. ALL dedup sker i SQL — det var just frånvaron av
         #    dedup här som gjorde att pgvector-vägen returnerade 110 rader.
@@ -1436,6 +1551,7 @@ class AIOkfConcept(models.Model):
                 (
                     COALESCE(1 - (embedding <=> %(qvec)s::vector), 0) * %(w)s
                   + ts_rank_cd(search_vector, __TSQUERY__, 32) * (1 - %(w)s)
+                  + (__TEMPORAL_BOOST__) * %(w_time)s
                 ) AS score__COVERAGE__
             FROM ai_okf_concept
             WHERE archived = false
@@ -1443,8 +1559,21 @@ class AIOkfConcept(models.Model):
                    OR (embedding IS NOT NULL AND %(has_qvec)s))
         """.replace('__TSQUERY__', tsquery).replace('__COVERAGE__', _cov)
 
-        sql = _build_sql(tsquery_and)
+        # Tidsvikten är ett SQL-UTTRYCK, inte ett värde. Det interpoleras
+        # därför som text — inte som en bunden parameter (då hade psycopg2
+        # citerat hela CASE-satsen som en sträng, och PostgreSQL svarat
+        # "invalid input syntax for type numeric"). Uttrycket byggs enbart
+        # ur kodbundna konstanter och bundna fönstergränser; ingen
+        # användardata når strängen.
+        #
+        # Substitutionen sker i `_build_sql()` och inte efteråt: `sql`
+        # kopieras in i `_with_dedup()` nedan, och en replace på den
+        # yttre strängen hade aldrig nått det inre lagret (mätt
+        # 2026-11-10: "column __temporal_boost__ does not exist").
+        sql = _build_sql(tsquery_and).replace(
+            '__TEMPORAL_BOOST__', temporal_boost_sql)
         params = {'q': query, 'w': w,
+                  'w_time': w_time,
                   # D2: vektorgrenen i kandidatfiltret är bara öppen när vi
                   # faktiskt HAR en frågevektor. Utan den är
                   # `embedding IS NOT NULL` sant för varje rad med vektor —
@@ -1456,6 +1585,8 @@ class AIOkfConcept(models.Model):
                 else '[%s]' % ','.join(str(x) for x in embedding)
         else:
             params['qvec'] = None
+        # Tidsviktens parametrar (fönstergränser per artefakttyp).
+        params.update(params_extra or {})
 
         if scope:
             sql += ' AND scope = %(scope)s'
@@ -1474,7 +1605,8 @@ class AIOkfConcept(models.Model):
             sql += ' AND artifact_type_id = ANY(%(atypes)s)'
             params['atypes'] = list(artifact_type_ids)
         if time_window:
-            sql += ' AND write_date >= %(tw)s'
+            # Task 4.1 — samma axelbyte som domain-vägen ovan.
+            sql += ' AND source_date >= %(tw)s'
             params['tw'] = time_window
 
         # ── ACCESS IN I URVALET (okf-owner-and-access-scoping D3) ──────
@@ -1716,7 +1848,8 @@ class AIOkfConcept(models.Model):
         # AND gav noll. `inner_sql` är dedup-omslaget runt AND-formen; OR-
         # passet bygger en egen variant ur samma mall (med `coverage`).
         inner_sql_or = _with_dedup(
-            _build_sql(tsquery_or, coverage=True), coverage=True)
+            _build_sql(tsquery_or, coverage=True).replace(
+                '__TEMPORAL_BOOST__', temporal_boost_sql), coverage=True)
 
         try:
             params['limit'] = limit
@@ -2243,7 +2376,123 @@ class AIOkfConcept(models.Model):
     # ════════════════════════════════════════════
     # Access-resolver (sektion 4)
     # ════════════════════════════════════════════
+    #: Nyckel för tidsdiagnostiken i `env.context`. Context är rätt plats:
+    #: den följer anropet, krockar inte mellan samtidiga sökningar, och
+    #: Odoo:s testramverk fäller inte ett context-värde som det fäller ett
+    #: nytt klassattribut.
+    TEMPORAL_DIAG_KEY = 'ai_okf_temporal_diag'
+
+    def _okf_record_temporal_diag(self, diag):
+        """Spara/läs tidsdiagnostiken för den senaste sökningen."""
+        if diag is None:
+            self.env.context = dict(self.env.context)
+            self.env.context.pop(self.TEMPORAL_DIAG_KEY, None)
+            return None
+        ctx = dict(self.env.context)
+        ctx[self.TEMPORAL_DIAG_KEY] = diag
+        self.env.context = ctx
+        return diag
+
     @api.model
+    def _okf_normalize_links(self, links):
+        """Läs `okf_links` oavsett form (okf-temporal-recall D9).
+
+        Bakåtkompatibilitet utan datamigrering: en NAKEN sträng
+        (`'project.project,7'`) läses som
+
+            {'ref': s, 'kind': 'reference', 'date': None,
+             'basis': 'explicit'}
+
+        Skrivaren skriver alltid den nya formen; läsaren accepterar båda.
+        Utan detta hade varje befintligt koncept tappat sina länkar i samma
+        stund som indexet byggdes.
+        """
+        out = []
+        for entry in links or []:
+            if isinstance(entry, str):
+                if ',' not in entry:
+                    continue
+                out.append({'ref': entry, 'kind': 'reference',
+                            'date': None, 'basis': 'explicit'})
+            elif isinstance(entry, dict):
+                ref = entry.get('ref')
+                if not ref:
+                    continue
+                out.append({
+                    'ref': ref,
+                    'kind': entry.get('kind') or 'reference',
+                    'date': entry.get('date'),
+                    'basis': entry.get('basis') or 'explicit',
+                    'role': entry.get('role'),
+                })
+        return out
+
+    @api.model
+    def _okf_concepts_pointing_to(self, model, res_id, limit=20,
+                                  user=None):
+        """Vilka koncept pekar på `(model, res_id)`? (task 9.5)
+
+        BAKÅTuppslaget som `okf_links` saknade: fältet går att läsa framåt
+        (koncept → dess länkar), men utan index blir den omvända frågan en
+        full tabellskanning — och halva frågan ("vilka mail hör till det
+        här projektet?") går då inte att svara på.
+
+        Använder GIN-indexet från migration 18.0.2.0.60:
+        `okf_links::jsonb @> '[{"ref": "..."}]'`.
+
+        Access-prövningen är densamma som sökningens: en rad användaren
+        inte får läsa utesluts INNAN `limit` tillämpas, så en osynlig rad
+        inte konsumerar en plats (samma asymmetriska klassning).
+        """
+        ref = '%s,%s' % (model, res_id)
+        user = user or self.env.user
+        sql = (
+            'SELECT id FROM ai_okf_concept '
+            'WHERE archived = false '
+            # TVÅ FORMER, en fråga (D9). Nya länkar är objekt
+            # (`{"ref": "..."}`), gamla är nakna strängar
+            # (`"project.project,9"`). `@>` mot objektformen matchar inte
+            # en sträng, så båda prövas — annars tappade bakåtuppslaget
+            # varje koncept som indexerats före ändringen.
+            #
+            # Kasta FÖRST, sedan coalesce: `coalesce(json, jsonb)` kan inte
+            # typas (json och jsonb är olika typer).
+            "  AND (coalesce(okf_links::jsonb, '[]'::jsonb)"
+            "       @> %(needle)s::jsonb"
+            "    OR coalesce(okf_links::jsonb, '[]'::jsonb)"
+            "       @> %(needle_str)s::jsonb)")
+        params = {
+            'needle': json.dumps([{'ref': ref}]),
+            'needle_str': json.dumps([ref]),
+        }
+
+        condition, cond_params = \
+            self.env['ai.access.resolver']._source_ref_condition(
+                user, self._okf_source_models())
+        if condition is None:
+            return self.browse()
+        if condition:
+            sql += ' AND ' + condition
+            params.update(cond_params)
+
+        sql += ' ORDER BY source_date DESC NULLS LAST, id DESC LIMIT %(lim)s'
+        params['lim'] = limit
+        try:
+            self.env.cr.execute(sql, params)
+            ids = [r[0] for r in self.env.cr.fetchall()]
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                'OKF backwards link lookup failed (%s): %s', ref, e,
+                exc_info=True)
+            return self.browse()
+        return self.browse(ids)
+
+    def _okf_temporal_diag(self):
+        """Vilket tidsfönster användes, och varför? (task 4.6)"""
+        return self.env.context.get(self.TEMPORAL_DIAG_KEY) or {
+            'from': None, 'to': None, 'direction': None,
+            'source': 'none', 'unmatched': None}
+
     @api.model
     def _okf_source_models(self):
         """Källmodeller som faktiskt förekommer i koncepten (D3).
