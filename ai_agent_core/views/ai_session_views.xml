@@ -358,7 +358,7 @@
                              ej tillämpligt (kanalen strömmar inte) eller ej
                              mätt. Total väggklocka läses ur create_date-
                              deltat mot föregående rad i sessionen. -->
-                        <group string="Tidsmått" name="timing">
+                        <group string="Timing" name="timing">
                             <field name="first_token_seconds" readonly="1"
                                    digits="[12,3]"/>
                             <field name="longest_gap_seconds" readonly="1"
