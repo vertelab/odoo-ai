@@ -1191,6 +1191,17 @@ class AIStreamController(http.Controller):
                                 # Modellens reasoning — sänd som egen SSE-händelse
                                 # så web-UI:t kan visa en hopfällbar tänksektion.
                                 data["token"] = event.token
+                                # Samla ÄVEN på serversidan (punkt 3,
+                                # 2026-11-10). Tidigare nådde resonemanget
+                                # bara klienten: kopplade den ner (eller
+                                # dog strömmen) fanns det ingenstans —
+                                # `reasoning` på raden skrevs från
+                                # `loop_obj.reasoning_log`, som är tom när
+                                # loopen aldrig hann avsluta. Nu bär
+                                # `state` det som faktiskt strömmades.
+                                if event.token:
+                                    state.setdefault('thinking_text', []).append(
+                                        event.token)
                             elif event.type in ("debug", "source", "tool_progress"):
                                 data["token"] = event.token
                                 # Samla på serversidan så raden får dem även
@@ -1535,16 +1546,44 @@ class AIStreamController(http.Controller):
                 # "rate limit, 3 försök" går att skilja från "modellen finns
                 # inte".
                 from odoo.addons.ai_agent_core.core.provider import (
-                    ProviderRetriesExhausted)
+                    ProviderRetriesExhausted, GatewayRejection)
                 if isinstance(e, ProviderRetriesExhausted):
                     _logger.warning(
                         'provider gave up after %s attempts (%s) — the stream ends with an error', e.attempts, e.last_reason)
+                    # Begripligt meddelande i stället för klassnamnet
+                    # (punkt 3, 2026-11-10). Utan detta visade web-UI:t
+                    # "Anslutningen till AI-servern bröts" för en uttömd
+                    # kvot — användaren fick leta i loggen för att förstå
+                    # att det var rate limit. Orsaken översätts här, en
+                    # gång, för alla kanaler.
+                    _msg = _humanize_provider_error(e)
+                elif isinstance(e, GatewayRejection):
+                    _logger.warning(
+                        'gateway rejected model %s: %s', e.model, e.reason)
+                    _msg = _humanize_provider_error(e)
                 else:
                     _logger.error("SSE stream error: %s", e, exc_info=True)
+                    _msg = str(e)
                 # Terminal-händelse skickad — garantin ska inte lägga till
                 # ett syntetiskt done ovanpå felet.
                 _terminal_sent['value'] = True
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                # Spara felet i state så att finaliseringen skriver det på
+                # sessionen (error_detail) — annars går en misslyckad tur
+                # inte att granska i efterhand.
+                state['error'] = _msg
+                if not state.get('finish_reason'):
+                    state['finish_reason'] = 'error'
+                try:
+                    yield f"data: {json.dumps({'type': 'error', 'message': _msg})}\n\n"
+                except (BrokenPipeError, GeneratorExit):
+                    # Klienten har redan kopplat ner. Vi kan inte skicka
+                    # något — men felet är redan sparat i `state`, och
+                    # finally persisterar det. Att kasta vidare här hade
+                    # blivit 'generator ignored GeneratorExit'.
+                    _logger.info(
+                        'stream: client gone before the error event could '
+                        'be sent (%s) — persisting it on the session instead',
+                        _msg[:120])
 
         return request.make_response(
             generate(),
@@ -3120,6 +3159,66 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
 _NO_ANSWER_MARKER = '(inget svar)'
 
 
+def _humanize_provider_error(exc):
+    """Översätt ett provider-/gatewayfel till en mening användaren förstår.
+
+    VARFÖR (punkt 3, 2026-11-10): web-UI:t visade "Anslutningen till
+    AI-servern bröts" för en uttömd token-kvot. Det är ett felmeddelande som
+    pekar på nätverket medan felet sitter i kvoten — användaren letar i
+    fel ände. Klassnamnet (`ProviderRetriesExhausted`) är inte heller något
+    en människa kan agera på.
+
+    Mappningen sker på `last_reason`/`reason` (providerns egen
+    klassificering), aldrig på fri text — samma princip som
+    `map_gateway_rejection`.
+
+    Returnerar en sträng som är meningsfull att visa. Okända fel får sitt
+    ursprungliga meddelande, aldrig en påhittad orsak.
+    """
+    from odoo.addons.ai_agent_core.core.provider import (
+        ProviderRetriesExhausted, GatewayRejection)
+
+    if isinstance(exc, ProviderRetriesExhausted):
+        reason = (exc.last_reason or '').lower()
+        attempts = exc.attempts or 1
+        if 'rate_limit' in reason or 'token_limit' in reason:
+            return (
+                'AI-tjänsten svarade "för många anrop" (rate limit) efter '
+                '%d försök. Det betyder oftast att token-kvoten är tillfälligt '
+                'slut — den återställs automatiskt. Försök igen om en stund, '
+                'eller byt modell för medarbetaren.' % attempts)
+        if 'timeout' in reason:
+            return (
+                'AI-tjänsten svarade inte i tid efter %d försök. '
+                'Försök igen.' % attempts)
+        if 'overloaded' in reason or 'unavailable' in reason:
+            return (
+                'AI-tjänsten är överbelastad just nu (%d försök). '
+                'Försök igen om en stund.' % attempts)
+        return (
+            'AI-tjänsten gav upp efter %d försök (%s).'
+            % (attempts, exc.last_reason or 'okänd orsak'))
+
+    if isinstance(exc, GatewayRejection):
+        if exc.reason == 'combo_forbidden':
+            return (
+                "Modellen '%s' är inte tillgänglig för den här nyckeln. "
+                'Kontrollera att modellnamnet finns i gatewayens katalog och '
+                'att nyckeln har rättighet till det.' % exc.model)
+        if exc.reason in ('model_not_found', 'not_found'):
+            return (
+                "Modellen '%s' finns inte hos leverantören." % exc.model)
+        if exc.reason in ('rate_limited', 'token_limited'):
+            return (
+                'AI-tjänsten svarade "för många anrop" (rate limit) för '
+                'modellen %s. Token-kvoten är tillfälligt slut — den '
+                'återställs automatiskt. Försök igen om en stund.' % exc.model)
+        return ('Gatewayen avvisade modellen %s (%s).'
+                % (exc.model, exc.reason))
+
+    return str(exc)
+
+
 def _tool_calls_json(loop_obj):
     """Verktygsanropen för en tur som OpenAI-format JSON (webui-show-work-again 5.1).
 
@@ -3152,6 +3251,25 @@ def _tool_calls_json(loop_obj):
             'function': {'name': name, 'arguments': args},
         })
     return json.dumps(out, ensure_ascii=False) if out else ''
+
+
+def _turn_reasoning(state):
+    """Turens resonemang — från loopen, med det strömmade som fallback.
+
+    VARFÖR (punkt 3, 2026-11-10): `loop_obj.reasoning_log` fylls av loopen
+    när den AVSLUTAR normalt. Dör strömmen mitt i (klienten kopplar ner,
+    kvoten tar slut) är loggen tom — och då skrevs `reasoning` som tom
+    sträng trots att hundratals thinking-tokens faktiskt hade strömmats.
+    `state['thinking_text']` samlar dem i sändningsvägen, så det som
+    användaren SÅG också går att granska i efterhand.
+
+    Loopen har företräde: den är den kanoniska, kompletta sekvensen.
+    """
+    loop_reasoning = ''.join(
+        getattr(state.get('loop_obj'), 'reasoning_log', None) or [])
+    if loop_reasoning:
+        return loop_reasoning
+    return ''.join(state.get('thinking_text') or [])
 
 
 def _persist_stream_answer(env, session_id, answer, reasoning='',
@@ -3193,8 +3311,14 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
             return 0
         content = (answer or '').strip()
         if not content:
-            content = (reasoning or '').strip()
-        if not content:
+            # VARFÖR INTE reasoning som svar (punkt 3, 2026-11-10):
+            # Tidigare föll `content` tillbaka på `reasoning`, vilket gjorde
+            # att en tur som dog mitt i skrev sin NARRERING som svar —
+            # session 28076 fick raden "The user asks: 'lista de 5
+            # viktigaste…'" som om det vore ett svar. Det är inte ett svar,
+            # det är modellens tanke, och den hör i `reasoning`-fältet.
+            # Nu skrivs markören, som är avsiktligt synlig: motsatsen (tyst
+            # bortfall) är själva buggen.
             content = _NO_ANSWER_MARKER
         seq = _next_session_sequence(env, session.id)
         # ── Boka turens VERKLIGA usage på raden (3.2) ──────────────────
@@ -3374,9 +3498,7 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
                     # modellens egna styckbrytningar (\n\n) bevarades. Det
                     # såg ut som ett trasigt svar men var en trasig join.
                     # Samma separator som full_response: ''.
-                    reasoning=''.join(
-                        getattr(state.get('loop_obj'),
-                                'reasoning_log', None) or []),
+                    reasoning=_turn_reasoning(state),
                     finish_reason=state.get('finish_reason', ''),
                     error=state.get('error', ''),
                     # Verklig usage (3.3) — annars skrevs raden med 0/0 och

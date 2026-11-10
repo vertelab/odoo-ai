@@ -1225,7 +1225,24 @@ function startStream(prompt){
     else if(contextResId)url+='&context_res_id='+encodeURIComponent(contextResId);
     currentEventSource=new EventSource(url);
     currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};
-    currentEventSource.onerror=function(){if(streaming){currentEventSource.close();showChatError('Anslutningen till AI-servern bröts — försök igen.')}}
+    // Nätverksfel / tyst stängning (punkt 3, 2026-11-10).
+    //
+    // TIDIGARE: showChatError() anropades och ingenting mer — så
+    // finishStream() kördes aldrig. Följden var att resonemanget,
+    // källistan och verktygskorten SOM REDAN HADE STRÖMMATS tappades:
+    // finishStream() är den enda vägen som sparar dem (POST:en till
+    // /respond) och rensar spinner/kort. Användaren satt kvar med en
+    // felruta och inget arbete att granska.
+    //
+    // Nu: visa felet, stäng strömmen, och låt finishStream() göra sitt —
+    // den bevarar det som hann komma och sparar det på sessionen.
+    currentEventSource.onerror=function(){
+        if(streaming){
+            currentEventSource.close();
+            showChatError('Anslutningen till AI-servern bröts — försök igen.');
+            finishStream();
+        }
+    }
 }
 function cancelStream(){if(currentEventSource){currentEventSource.close()}finishStream()}
 function handleStreamEvent(e){
@@ -1289,7 +1306,11 @@ function finishStream(){
         // debug-panelen och visas inte i svaret till användaren.
         var txt=streamText.trim();
         var answerEl=currentAnswerEl||currentAiMessage;
-        if(!txt&&!currentAiMessage.textContent.trim()&&!currentDebugText){
+        // Har vi redan visat ett fel (showChatError) ska den rutan stå kvar.
+        // Utan den här kontrollen skrev "(inget svar)" över felmeddelandet
+        // när finishStream() nu även körs från onerror (punkt 3).
+        var hasError=!!currentAiMessage.querySelector('[style*="--danger"]');
+        if(!txt&&!currentDebugText&&!hasError&&!currentAiMessage.textContent.trim()){
             currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'
         }else{
             // Rensa progress-kort (🔧 Kör…) — ersätts av svaret
