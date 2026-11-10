@@ -2455,11 +2455,26 @@ class AIOkfConcept(models.Model):
             # en sträng, så båda prövas — annars tappade bakåtuppslaget
             # varje koncept som indexerats före ändringen.
             #
-            # Kasta FÖRST, sedan coalesce: `coalesce(json, jsonb)` kan inte
-            # typas (json och jsonb är olika typer).
-            "  AND (coalesce(okf_links::jsonb, '[]'::jsonb)"
+            # UTTRYCKSINDEX, inte kolumnindex (mätt 2026-11-10).
+            # `coalesce` behövs: kolumnen är NULL på alla 76 757 befintliga
+            # rader (Odoo sätter inget DB-default för fields.Json — varken
+            # `attribution`, `sources` eller `okf_links` har det).
+            #
+            # Ett RAKT kolumnindex på `okf_links` kan därför inte användas:
+            # `NULL @> '[...]'` ger NULL, inte false, så GIN-indexet måste
+            # hantera NULL-sidan — det gör det inte, och planeraren faller
+            # tillbaka på Seq Scan.
+            #
+            # Uttrycksindexet `(coalesce(okf_links, '[]'))` matchar frågan
+            # exakt och ger Bitmap Index Scan även med NULL-rader:
+            #
+            #   coalesce(okf_links,'[]') @> ...  -> Bitmap Index Scan
+            #   okf_links @> ... (NULL-rader)    -> Seq Scan
+            #
+            # Migration 18.0.2.0.61 skapar uttrycksindexet.
+            "  AND (coalesce(okf_links, '[]'::jsonb)"
             "       @> %(needle)s::jsonb"
-            "    OR coalesce(okf_links::jsonb, '[]'::jsonb)"
+            "    OR coalesce(okf_links, '[]'::jsonb)"
             "       @> %(needle_str)s::jsonb)")
         params = {
             'needle': json.dumps([{'ref': ref}]),
