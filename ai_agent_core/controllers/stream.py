@@ -996,6 +996,11 @@ class AIStreamController(http.Controller):
             # `_cr_holder['cr'] = gen_cr` som körs i generate() längre ned
             # (rad ~761). Python löser då _cr_holder som en global i
             # generate() → NameError vid varje streaming-anrop.
+            # Terminal-garantin (punkt 5): sätts när ett done/error faktiskt
+            # skickats till klienten, så vi inte skickar ett syntetiskt done
+            # efter ett riktigt. Initieras här i generate()-scopet —
+            # `_stream()` är nästlad och en tilldelning där hade blivit lokal.
+            _terminal_sent = {'value': False}
             _cr_holder = {'cr': None}
             # Loopen skapas inuti try; initiera till None så att finally kan
             # guarda (ett fel i new_event_loop gav annars NameError i finally).
@@ -1221,6 +1226,10 @@ class AIStreamController(http.Controller):
                                 data["attempt"] = getattr(event, 'attempt', 0)
                                 data["reason"] = getattr(event, 'reason', '')
                             elif event.type in ("done", "error"):
+                                # Terminal-händelse från loopen: klienten får
+                                # sitt avslut, så garantin nedan ska inte
+                                # lägga till ett syntetiskt done efteråt.
+                                _terminal_sent['value'] = True
                                 data["finish_reason"] = event.finish_reason
                                 if event.type == "done":
                                     # Verklig token-usage från loopen —
@@ -1391,6 +1400,43 @@ class AIStreamController(http.Controller):
                             if not state.get('finish_reason'):
                                 state['finish_reason'] = 'error'
 
+                        # ── TERMINAL-GARANTI (punkt 5, 2026-11-10) ──────
+                        # Här har kön tömts och tråden är klar. Har INGET
+                        # done/error sänts till klienten vet den inte att
+                        # turen är slut — och `EventSource` ger upp med
+                        # "Anslutningen till AI-servern bröts". Det var
+                        # precis vad som hände session 28076 (2026-11-10
+                        # 13:27): AgentLoop brände `max_rounds`, det sista
+                        # sammanfattningsanropet tog 12 s extra, och när
+                        # generatorn stängdes efter sista `yield` fanns
+                        # ingen terminal-händelse kvar. Användaren fick ett
+                        # felmeddelande om nätverket — för en tidsgräns i
+                        # modellen.
+                        #
+                        # Vi skickar ett syntetiskt `done` med den
+                        # finish_reason vi har. Klienten stänger strömmen
+                        # själv på done, visar det som redan streamats och
+                        # slipper felrutan. `state` bär redan det som ska
+                        # persisteras — det här eventet är det sista
+                        # användaren ser, inte det sista vi sparar.
+                        if not _terminal_sent['value']:
+                            _reason = state.get('finish_reason') or 'done'
+                            _payload = {
+                                'type': 'done',
+                                'finish_reason': _reason,
+                                'input_tokens': state.get('input_tokens', 0) or 0,
+                                'output_tokens': state.get('output_tokens', 0) or 0,
+                                'rounds': state.get('rounds', 0) or 0,
+                            }
+                            if state.get('error'):
+                                _payload['error'] = state['error']
+                            _terminal_sent['value'] = True
+                            _logger.info(
+                                'stream: emitting synthetic done (%s) — the '
+                                'loop ended without a terminal event '
+                                '(session %s)', _reason, session_id)
+                            yield f"data: {json.dumps(_payload)}\n\n"
+
                         # Efter streamen: persistera turen (verktygsrader +
                         # avslutande assistantsvar). Servern är garanten (2.1).
                         #
@@ -1495,6 +1541,9 @@ class AIStreamController(http.Controller):
                         'provider gave up after %s attempts (%s) — the stream ends with an error', e.attempts, e.last_reason)
                 else:
                     _logger.error("SSE stream error: %s", e, exc_info=True)
+                # Terminal-händelse skickad — garantin ska inte lägga till
+                # ett syntetiskt done ovanpå felet.
+                _terminal_sent['value'] = True
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
         return request.make_response(

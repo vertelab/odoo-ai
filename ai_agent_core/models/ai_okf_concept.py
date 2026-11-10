@@ -1373,25 +1373,77 @@ class AIOkfConcept(models.Model):
         #    tabellen igenom med en omätbar poäng — exakt samma tysta
         #    icke-tomma fallback som skulle bort. Filtret och @@-villkoret
         #    hör ihop; det ena utan det andra är en lögn.
-        sql = """
+        # ── TSQUERY: AND först, OR som brett omtag ──────────────────────
+        # `plainto_tsquery` binder ALLA lexem med AND. Det är rätt för en
+        # kort, precis fråga ("caddy 502") men fel för en naturlig mening:
+        # "lista de 5 viktigaste / senaste mailen" blir
+        # `'list' & '5' & 'vikt' & 'sen' & 'mail'`, och eftersom koncept-
+        # sammanfattningarna är korta ("RE: Odoo SFA Sweden från …") matchar
+        # de aldrig alla fem. Resultatet blev 0 träffar på en fråga som har
+        # 248 relevanta rader i samma scope (mätt 2026-11-10, session 28076:
+        # personal/140, 0 → 248).
+        #
+        # Därför TVÅ PASS: AND först (precisionen orörd — en fråga som
+        # fungerar idag får exakt samma svar), och bara när det ger NOLL
+        # rader görs ett omtag med OR mellan lexemen. OR:en kan inte
+        # försämra ett befintligt resultat, för den körs aldrig när AND
+        # gav träffar.
+        #
+        # Lexemen hämtas ur `to_tsvector` — samma normalisering som
+        # `search_vector` byggdes med — så OR-formen matchar exakt de former
+        # som finns i indexet. `quote_literal` escapas av PostgreSQL själv
+        # (apostrof, backslash, @ i e-postadresser).
+        #
+        # RENA SIFFROR OCH ENSTAKA TECKEN UTESLUTS ur OR-formen: i "5
+        # viktigaste" bär `5` ingen söksignal men matchar varenda rad med
+        # ett årtal eller ett artikelnummer — mätt: `5` förekom i topp-3
+        # för varje träff och tryckte bort de relevanta. Ett lexem på en
+        # tecken är på samma sätt alltid brus i svensk text.
+        tsquery_and = "plainto_tsquery('swedish', %(q)s)"
+        tsquery_or = (
+            "(SELECT to_tsquery('swedish', string_agg(quote_literal(lex), ' | '))"
+            " FROM unnest(tsvector_to_array(to_tsvector('swedish', %(q)s))) AS lex"
+            " WHERE lex !~ '^[0-9]+$' AND length(lex) > 1)"
+        )
+
+        def _build_sql(tsquery, coverage=False):
+            # `coverage` lägger till antalet delade lexem (samma filter som
+            # i tsquery_or: rena siffror och enstaka tecken räknas inte).
+            # Bara OR-passet använder den — som TIE-BREAKER, inte som
+            # huvudnyckel. Se sorteringskommentaren nedan.
+            #
+            # `ts_rank_cd(..., 32)` i stället för `ts_rank`: normalisering 32
+            # delar ranken med (rank+1), vilket gör att ett KORT dokument
+            # som matchar ett ord kan slå ett LÅNGT som matchar samma ord.
+            # Utan det straffades mejlsammanfattningar (korta) mot
+            # projektdokument (långa) — mätt 2026-11-10: en mejlfråga gav
+            # bara projektdokument i topp. `ts_rank_cd` tar dessutom hänsyn
+            # till närhet mellan termerna.
+            _cov = (
+                ", (SELECT count(*) FROM unnest("
+                "tsvector_to_array(to_tsvector('swedish', %(q)s))) AS lex"
+                " WHERE lex !~ '^[0-9]+$' AND length(lex) > 1"
+                "   AND lex = ANY(tsvector_to_array(search_vector))) AS coverage"
+                if coverage else ''
+            )
+            return """
             SELECT id, scope, concept_key,
                 owner_company_id, owner_user_id, owner_coworker_id,
                 COALESCE(1 - (embedding <=> %(qvec)s::vector), NULL)
                     AS cosine,
-                ts_rank(search_vector,
-                        plainto_tsquery('swedish', %(q)s)) AS ts_rank,
-                (search_vector @@ plainto_tsquery('swedish', %(q)s))
-                    AS text_hit,
+                ts_rank_cd(search_vector, __TSQUERY__, 32) AS ts_rank,
+                (search_vector @@ __TSQUERY__) AS text_hit,
                 (
                     COALESCE(1 - (embedding <=> %(qvec)s::vector), 0) * %(w)s
-                  + ts_rank(search_vector,
-                            plainto_tsquery('swedish', %(q)s)) * (1 - %(w)s)
-                ) AS score
+                  + ts_rank_cd(search_vector, __TSQUERY__, 32) * (1 - %(w)s)
+                ) AS score__COVERAGE__
             FROM ai_okf_concept
             WHERE archived = false
-              AND (search_vector @@ plainto_tsquery('swedish', %(q)s)
+              AND (search_vector @@ __TSQUERY__
                    OR (embedding IS NOT NULL AND %(has_qvec)s))
-        """
+        """.replace('__TSQUERY__', tsquery).replace('__COVERAGE__', _cov)
+
+        sql = _build_sql(tsquery_and)
         params = {'q': query, 'w': w,
                   # D2: vektorgrenen i kandidatfiltret är bara öppen när vi
                   # faktiskt HAR en frågevektor. Utan den är
@@ -1459,21 +1511,32 @@ class AIOkfConcept(models.Model):
         # (Skriv dem INTE i den här kommentaren — den ligger utanför
         # strängen men inuti metodkroppen, och en platshållare här skulle
         # räknas som en saknad parameter.)
-        inner_sql = sql
-        sql = """
+
+        def _with_dedup(inner, coverage=False):
+            """Lägg dedup-CTE:n runt ett sökpass.
+
+            `coverage` måste projiceras genom BÅDA lagren när det finns —
+            samma lärdom som `score` (se kommentaren nedan): en kolumn som
+            bara finns i det inre lagret går inte att sortera på i det
+            yttre.
+            """
+            _cov = ', coverage' if coverage else ''
+            return """
             WITH ranked AS (
                 __INNER__
             ),
             deduped AS (
                 SELECT DISTINCT ON (scope, owner_company_id, owner_user_id,
                                     owner_coworker_id, concept_key)
-                    id, cosine, ts_rank, score, text_hit
+                    id, cosine, ts_rank, score, text_hit__COV__
                 FROM ranked
                 ORDER BY scope, owner_company_id, owner_user_id,
                          owner_coworker_id, concept_key
             )
-            SELECT id, cosine, ts_rank, score, text_hit FROM deduped
-        """.replace('__INNER__', inner_sql)
+            SELECT id, cosine, ts_rank, score, text_hit__COV__ FROM deduped
+        """.replace('__INNER__', inner).replace('__COV__', _cov)
+
+        inner_sql = _with_dedup(sql)
 
         # DISTINCT ON kräver att ORDER BY börjar med nycklarna — sorteringen
         # på score sker därför i ett yttre lager.
@@ -1639,14 +1702,59 @@ class AIOkfConcept(models.Model):
             params['min_cosine'] = float(min_cosine)
         gate = (' WHERE (' + ' OR '.join(having) + ')') if having else ''
 
-        sql = (
-            'SELECT id FROM (' + sql + ') latest' + gate +
-            ' ORDER BY score DESC LIMIT %(limit)s')
+        def _run_search(inner, tsquery, order_by='score DESC'):
+            """Kör ett sökpass. Returnerar rad-id:n (tom lista vid fel)."""
+            _inner = inner.replace('__TSQUERY__', tsquery) \
+                if '__TSQUERY__' in inner else inner
+            _sql = (
+                'SELECT id FROM (' + _inner + ') latest' + gate +
+                ' ORDER BY ' + order_by + ' LIMIT %(limit)s')
+            self.env.cr.execute(_sql, params)
+            return [r[0] for r in self.env.cr.fetchall()]
+
+        # Tvåpass (se tsquery-kommentaren ovan): AND först, OR bara om
+        # AND gav noll. `inner_sql` är dedup-omslaget runt AND-formen; OR-
+        # passet bygger en egen variant ur samma mall (med `coverage`).
+        inner_sql_or = _with_dedup(
+            _build_sql(tsquery_or, coverage=True), coverage=True)
 
         try:
             params['limit'] = limit
-            self.env.cr.execute(sql, params)
-            rows = [r[0] for r in self.env.cr.fetchall()]
+            rows = _run_search(inner_sql, tsquery_and)
+            if not rows:
+                # ── BRETT OMTAG ────────────────────────────────────────
+                # AND gav noll. Det betyder inte att korpusen är tom på
+                # relevant innehåll — bara att ingen enskild rad innehöll
+                # ALLA frågans ord. OR mellan lexemen hittar de rader som
+                # delar något, och `score` rangordnar dem fortfarande (en
+                # rad som delar fler lexem får högre ts_rank).
+                #
+                # Bara när frågan har fler än ETT lexem: en enlexemfråga
+                # har redan prövat exakt samma villkor i AND-passet, så
+                # ett omtag vore en identisk, dyrbar andra körning.
+                self.env.cr.execute(
+                    "SELECT cardinality(tsvector_to_array("
+                    "to_tsvector('swedish', %(q)s)))", {'q': query})
+                _lex_count = (self.env.cr.fetchone() or [0])[0] or 0
+                if _lex_count > 1:
+                    # Sortering: `score` först (den viktade summan av
+                    # ts_rank_cd och ev. cosinus) — den är IDR-viktad och
+                    # straffar vanliga ord som "sen". `coverage` bara som
+                    # tie-breaker: när två rader har samma score vinner den
+                    # som delar fler av frågans ord.
+                    #
+                    # Mätt 2026-11-10: coverage som HUVUDnyckel gjorde att
+                    # dokument med "vikt"/"sen" slog dokument med "mail" —
+                    # fel, för coverage räknar ord utan att veta hur vanliga
+                    # de är.
+                    rows = _run_search(
+                        inner_sql_or, tsquery_or,
+                        order_by='score DESC, coverage DESC NULLS LAST')
+                    if rows:
+                        _logger.info(
+                            'OKF search: AND gave 0 hits, the OR retake '
+                            'gave %d (query=%.60s, %d lexemes)',
+                            len(rows), query, _lex_count)
 
             # ── UNDANTAGET: korpusen saknar text-signal ────────────────
             # `@@` är ett krav ovan. Men om INGEN rad matchar frågan i
