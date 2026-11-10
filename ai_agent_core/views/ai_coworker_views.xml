@@ -161,15 +161,17 @@
                             <field name="agent_count" widget="statinfo"/>
                         </button>
                         <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered"
-                                help="Number of sessions started this month. A click opens all sessions — the month sits as a filter you can remove.">
+                                help="Sessions started in the current calendar month (see the filter for which month). A click opens all sessions — the month sits as a filter you can remove.">
+                            <!-- Två barn, inte tre: `o_stat_info` är flex-column
+                                 och `oe_stat_button` har fast höjd, så en tredje
+                                 rad (månadsetiketten) gjorde knappen tvåradig
+                                 och sprängde knappraden
+                                 (session-machine-and-filter D1). Månaden bor
+                                 nu i hjälptexten; siffran mäter fortfarande
+                                 innevarande kalendermånad. -->
                             <div class="o_stat_info">
-                                <!-- Etiketten namnger månaden: "Sessions (okt)".
-                                     Utan månaden läses siffran som ett totalantal,
-                                     vilket var hela buggen
-                                     (coworker-session-smart-button D4). -->
                                 <span class="o_stat_text">Sessions</span>
                                 <span class="o_stat_value"><field name="session_count" widget="statinfo"/></span>
-                                <span class="o_stat_text"><field name="session_count_label"/></span>
                             </div>
                         </button>
                         <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money"

@@ -7,10 +7,20 @@ Each line represents one message in a conversation thread.
 from odoo import models, fields, api
 from datetime import timedelta
 
+#: Teckentak för listvyns förhandsvisning (`content_preview`).
+#: 120 valdes för att rymmas i en normal listcell — CSS:ens egen
+#: `text-truncate` ger annars en andra klippunkt, och två olika
+#: klippunkter ser ut som en bugg.
+PREVIEW_LENGTH = 120
+
 
 class AICoworkerSessionLine(models.Model):
     _name = 'ai.coworker.session.line'
     _description = 'Session Message Line'
+
+    # Teckentaket för listvyns förhandsvisning ligger som modulkonstant
+    # (PREVIEW_LENGTH nedanför importen), inte som klassattribut: `%`-formen i
+    # fältets `help` och compute-metodens kropp läser namnet vid modulnivå.
     _order = 'session_id, sequence asc'
 
     # Index som Odoo inte kan deklarera på ett fält (sammansatta eller
@@ -102,6 +112,19 @@ class AICoworkerSessionLine(models.Model):
         help='md5 of role|tool_call_id|content. Used to dedupe Pi posts — the '
              'same post must yield only one line per session.')
     content = fields.Text('Message Content')
+    # Förhandsvisning för LISTVYN (session-line-compact-list):
+    # `content` är Text, och Odoo 18:s list-renderare ger text-fält
+    # `white-space: pre-wrap` — en rad med 2 000 tecken blir 30-40 visuella
+    # rader. Cellens `text-truncate()` biter inte mot `pre-wrap`, så
+    # klippningen måste ske i värdet. Första raden, klippt till
+    # PREVIEW_LENGTH tecken. Icke-lagrat: `content` är append-only och
+    # ändras aldrig, så ett lagrat värde hade bara krävt en migrering.
+    # Hela texten finns kvar i `content` och visas i formuläret.
+    content_preview = fields.Char(
+        'Preview', compute='_compute_content_preview', store=False,
+        help='First line of the message, cut at %d characters with an '
+             'ellipsis. A list-view projection only — the full text is in '
+             '`Message Content` and in the form view.' % PREVIEW_LENGTH)
     reasoning = fields.Text('Reasoning',
         help='The model reasoning text (reasoning_content/reasoning) produced '
              'before this message; kept for review without being shown in '
@@ -216,6 +239,25 @@ class AICoworkerSessionLine(models.Model):
         help='Actual cost in USD: (in - cached)/1000 x cost_input_1k '
              '+ out/1000 x cost_output_1k. Unmeasured (0) when '
              'usage_reported=False.')
+
+    def _compute_content_preview(self):
+        """Första raden av `content`, klippt till PREVIEW_LENGTH tecken.
+
+        Ordningen är viktig: FÖRST första raden, SEDAN teckentaket. Ett
+        flerradigt meddelande ska inte bli "första 120 tecken inklusive
+        radbrytningar" — det läses som en mening som slutar mitt i.
+
+        En rad som bara innehåller blanksteg ger tom sträng: ett tomt
+        meddelande ska se tomt ut, inte som ett mellanslag. Aldrig ett
+        undantag — en listcell får inte fälla vyn.
+        """
+        for r in self:
+            text = (r.content or '').strip()
+            first_line = text.split('\n', 1)[0].strip()
+            if len(first_line) > PREVIEW_LENGTH:
+                r.content_preview = first_line[:PREVIEW_LENGTH - 1] + '…'
+            else:
+                r.content_preview = first_line
 
     @api.depends('token_input', 'token_output', 'cached_tokens',
                  'cost_input_1k', 'cost_output_1k', 'usage_reported')

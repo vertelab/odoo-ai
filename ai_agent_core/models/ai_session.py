@@ -142,6 +142,18 @@ class AICoworkerSession(models.Model):
         help='Why this session was created. Distinct from init_type, which '
              'says which surface started it.')
 
+    # Sessionens körplats (session-machine): namnet på den maskin som ägde
+    # körningen. Två källor och ingen gissning — Pi-vägen skickar Pi-processens
+    # hostname i request-body:n (`machine`), lokala vägar (web_ui, cron, mail,
+    # watch …) sätter `Odoo` eftersom sessionen skapades inuti Odoo.
+    # Indexerat: grupperingen "per maskin" ska vara billig. Sätts vid skapande
+    # och skrivs aldrig över av en resume — en handover rör inte ursprunget.
+    machine = fields.Char(
+        'Machine', index=True, readonly=True, copy=False,
+        help='Where the session ran: the Pi host name when Pi owns the run, '
+             'otherwise "Odoo" (created inside Odoo). Empty on sessions '
+             'created before the field existed — never guessed.')
+
     close_event_ids = fields.One2many(
         'ai.coworker.session.close_event', 'session_id',
         string='Close Events',
@@ -344,6 +356,11 @@ class AICoworkerSession(models.Model):
     # 0 för modulen), så etiketten blev "Oct" i svensk UI. Ett
     # `Selection`-fält översätts via fältets jsonb-värde, som laddas av
     # moduluppgraderingen och bevisligen fungerar i drift.
+    #
+    # Fältet är KVAR sedan `_month_label()` togs bort
+    # (session-machine-and-filter 1.3): det är det enda som bär den fungerande
+    # fältöversättningen av månadsnamnen. `sv.po` har posterna, och en
+    # borttagning hade tyst tappat dem.
     month_label = fields.Selection([
         ('Jan', 'Jan'), ('Feb', 'Feb'), ('Mar', 'Mar'), ('Apr', 'Apr'),
         ('May', 'May'), ('Jun', 'Jun'), ('Jul', 'Jul'), ('Aug', 'Aug'),
@@ -356,19 +373,6 @@ class AICoworkerSession(models.Model):
         value = key if key in valid else False
         for r in self:
             r.month_label = value
-
-    @api.model
-    def _month_label(self):
-        """Aktuellt månadsnamn för knappetiketten, t.ex. "okt".
-
-        Serverns tidszon (samma månad som `_session_period_start`
-        beräknar). Översättningen hämtas ur `month_label`-fältets
-        `Selection` — fältöversättning fungerar i drift där kodtermer inte
-        gör det (se kommentaren ovan).
-        """
-        key = date.today().strftime('%b')
-        field = self._fields['month_label']
-        return dict(field._description_selection(self.env)).get(key, key)
 
     @api.model
     def _session_domain(self, coworker_id, period='all'):
@@ -846,7 +850,8 @@ class AICoworkerSession(models.Model):
     @api.model
     def _lookup_or_create_pi_session(self, pi_session_id,
                                      copy_from_pi_session_id='',
-                                     prompt='', start_reason=''):
+                                     prompt='', start_reason='',
+                                     machine=''):
         """Find-or-create session via pi_session_id (session-cost-context).
 
         Används av POST /ai/v1/sessions/lookup och openai_api-vägen.
@@ -861,9 +866,15 @@ class AICoworkerSession(models.Model):
         Pi:s /resume-lista. Saknas prompt faller vi tillbaka på det gamla
         beteendet — en session utan namn är bättre än en krasch.
 
+        `machine` är sessionens körplats (session-machine): Pi-processens
+        hostname när Pi äger körningen, annars `Odoo`. Sätts vid skapande och
+        fyller bara ett TOMT fält vid resume — en handover rör inte
+        ursprunget.
+
         Returnerar (session, created: bool).
         """
         pi_session_id = (pi_session_id or '').strip().lower()
+        machine = (machine or '').strip()[:64] or 'Odoo'
         session = self.search(
             [('pi_session_id', '=', pi_session_id)], limit=1)
         if session:
@@ -876,12 +887,16 @@ class AICoworkerSession(models.Model):
             # ser den ut att vara avslutad samtidigt som den tar emot turer
             # (session-observability).
             session._reopen_if_closed(reason='resume')
+            # Äldre session utan maskin får den av en ny tur — men ett satt
+            # värde skrivs aldrig över (resume/handover bevarar ursprunget).
+            session._fill_machine(machine)
             return session, False
         title = self._clean_title(prompt) if prompt else ''
         vals = {
             'pi_session_id': pi_session_id,
             'status': 'active',
             'init_type': 'openai_api',
+            'machine': machine,
             # Klientens `session_start.reason` (session-observability).
             # Default `api`: vägen hit är alltid ett API-anrop, och `fork`
             # sätts av anroparen när kontexten kopieras.
@@ -1298,7 +1313,8 @@ class AICoworkerSession(models.Model):
     @api.model
     def _find_or_create_coworker_session(self, coworker_id, user_id,
                                          pi_session_id='', session_id=0,
-                                         prompt='', idle_minutes=20):
+                                         prompt='', idle_minutes=20,
+                                         machine=''):
         """Find-or-create en coworker-session (1:1 mot Pi-sessionen).
 
         Prioritet:
@@ -1318,8 +1334,14 @@ class AICoworkerSession(models.Model):
         1:1-kopplingen). Fallbacken är alltså reserverad för klienter som
         inte har något Pi-id alls.
 
+        `machine` är sessionens körplats (session-machine): Pi-processens
+        hostname när Pi äger körningen, `Odoo` när sessionen skapas inuti
+        Odoo. Sätts vid skapande och fyller bara ett TOMT fält vid
+        återupptagning.
+
         Returnerar (session, created: bool).
         """
+        machine = (machine or '').strip()[:64] or 'Odoo'
         session = self.browse(0)
         if session_id:
             session = self.browse(int(session_id))
@@ -1343,6 +1365,7 @@ class AICoworkerSession(models.Model):
                 # backfill förblir sessionen permanent kontextlös och
                 # kostnadskontexten kan aldrig härledas.
                 session._backfill_coworker(coworker_id)
+                session._fill_machine(machine)
                 return session, False
             # pi_session_id skickat men okänt → NY session (ingen fallback).
             return self.create({
@@ -1353,6 +1376,7 @@ class AICoworkerSession(models.Model):
                 'name': (prompt or 'API')[:80],
                 'user_id': int(user_id or 0),
                 'pi_session_id': pi_session_id,
+                'machine': machine,
             }), True
         if not session and coworker_id:
             # Fallback (endast utan pi_session_id): fortsätt närmast nyligen
@@ -1367,6 +1391,7 @@ class AICoworkerSession(models.Model):
             ], limit=1, order='write_date desc')
         if session:
             session._backfill_coworker(coworker_id)
+            session._fill_machine(machine)
             return session, False
         return self.create({
             'coworker_id': coworker_id,
@@ -1375,7 +1400,31 @@ class AICoworkerSession(models.Model):
             'start_reason': 'api',
             'name': (prompt or 'API')[:80],
             'user_id': int(user_id or 0),
+            'machine': machine,
         }), True
+
+    def _fill_machine(self, machine):
+        """Sätt `machine` på en återfunnen session som saknar det.
+
+        Maskinen sätts vid skapande och skrivs aldrig över: en resume från
+        samma Pi behåller sitt värde och en handover till en annan maskin rör
+        inte ursprunget. Ett TOMT fält får däremot fyllas — en session skapad
+        före fältet fanns ska bli läsbar så snart en tur bär en maskin
+        (session-machine).
+
+        Skriver ENDAST när fältet är tomt. Tyst no-op vid fel — får aldrig
+        fälla en körning (samma mönster som `_backfill_coworker`).
+        """
+        self.ensure_one()
+        machine = (machine or '').strip()[:64]
+        if not machine or self.machine:
+            return self
+        try:
+            self.sudo().write({'machine': machine})
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte sätta machine: %s', self.id, e)
+        return self
 
     def _backfill_coworker(self, coworker_id):
         """Sätt coworker_id på en återfunnen session som saknar det.

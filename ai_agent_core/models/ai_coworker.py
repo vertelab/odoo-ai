@@ -798,13 +798,6 @@ class AICoworker(models.Model):
     use_core_loop = fields.Boolean('Use Core Loop', default=False)
 
     session_count = fields.Integer(compute='_compute_session_count')
-    # Etiketten på smartknappen: "Sessions (okt)". Månadsnamnet kommer ur
-    # serverns tidszon (samma som räknaren) och översätts — annars läses
-    # siffran som ett totalantal, vilket var hela buggen
-    # (coworker-session-smart-button D4). Icke-lagrad: ett månadsskifte är
-    # ingen skrivning.
-    session_count_label = fields.Char(
-        compute='_compute_session_count_label', store=False)
     session_ids = fields.One2many('ai.coworker.session', 'coworker_id')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
 
@@ -2035,17 +2028,6 @@ class AICoworker(models.Model):
         for r in self:
             r.session_count = Session.search_count(
                 Session._session_domain(r.id, 'this_month'))
-
-    def _compute_session_count_label(self):
-        """"Sessions (okt)" — månaden i etiketten, inte bara i hjälptexten.
-
-        Månadsnamnet hämtas ur `_month_label()` (serverns tidszon, samma
-        månad som räknaren mäter) och går genom `_()` så att svensk UI visar
-        svenskt månadsnamn. Etiketten är icke-lagrad, precis som räknaren.
-        """
-        label = self.env['ai.coworker.session']._month_label()
-        for r in self:
-            r.session_count_label = label
 
     @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date')
     def _compute_session_line_count(self):

@@ -164,6 +164,10 @@ from . import test_coworker_counters
 # sökvyns `this_month`-filter — så att siffran och listan inte kan glida isär.
 from . import test_session_smart_button
 
+# session-machine-and-filter: sessionens körplats (`machine`). Satt vid
+# skapande — Pi:s hostname eller `Odoo` — och aldrig överskrivet av en resume.
+from . import test_session_machine
+
 # fix-personal-memory-budget-scope D5: stilleståndsvarningen och budget-scopet.
 # Filerna fanns men var inte importerade — samma fälla som test_okf_mixin och
 # test_workspace: testerna körs aldrig, vilket är varför varningen kunde sakna
@@ -270,3 +274,8 @@ from . import test_tool_history_consumers
 # Utan dessa tester är retryn osynlig — den enda retry som fanns satt på
 # anslutningen och kunde inte se svarskroppen (se ändringens proposal).
 from . import test_provider_transient_retry
+
+# session-line-compact-list: listvyns förhandsvisning (`content_preview`).
+# Bevisar att en lång rad blir en visuell rad, att klippet sker i Python (så
+# det även gäller i export) och att sökningen fortfarande går mot `content`.
+from . import test_session_line_preview

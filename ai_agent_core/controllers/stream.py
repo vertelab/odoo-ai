@@ -254,6 +254,26 @@ def _clean_user_message(text):
     t = re.sub(r'^\s*\[\s*User\s*\]\s*:?\s*', '', t, flags=re.IGNORECASE)
     return t.strip()
 
+
+def _clean_machine(value):
+    """Normalisera klientens `machine` (session-machine).
+
+    Pi skickar Pi-processens hostname i request-body:n. Värdet trimmas,
+    lowercasas och kapas till 64 tecken — samma normalisering i båda
+    routes (`sessions/lookup` och `chat/completions`). Ett värde som inte
+    är en sträng IGNORERAS med en varning: fältet får aldrig fälla en
+    request (samma tolerans som `pi_trace`). Tomt värde → `''`, och
+    modellen sätter då `Odoo`.
+    """
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        _logger.warning('machine is not a string (%s) — ignored',
+                        type(value).__name__)
+        return ''
+    return value.strip().lower()[:64]
+
+
 # ---------------------------------------------------------------------------
 # SSE Controller
 # ---------------------------------------------------------------------------
@@ -4213,11 +4233,14 @@ class AIOpenAIAPI(http.Controller):
             'webhook', 'heartbeat', 'manual'}
         if start_reason not in valid_reasons:
             start_reason = ''
+        # Körplats (session-machine): Pi-processens hostname. Valfritt —
+        # en äldre klient utan fältet får `Odoo`, aldrig ett fel.
+        machine = _clean_machine(body.get('machine'))
 
         Session = request.env['ai.coworker.session'].sudo()
         session, _created = Session._lookup_or_create_pi_session(
             pi_session_id, copy_from_pi_session_id=copy_from,
-            prompt=prompt, start_reason=start_reason)
+            prompt=prompt, start_reason=start_reason, machine=machine)
 
         def _field_id(name):
             return (session[name].id
@@ -4231,6 +4254,9 @@ class AIOpenAIAPI(http.Controller):
             'task_id': _field_id('task_id'),
             'partner_id': session.partner_id.id if session.partner_id else None,
             'cost_context_confirmed': session.cost_context_confirmed,
+            # Körplatsen (session-machine): Pi kan logga vilken maskin Odoo
+            # kopplade sessionen till.
+            'machine': session.machine or '',
         }), content_type='application/json')
 
     @http.route('/ai/v1/sessions/close', type='http', auth='public',
@@ -4711,6 +4737,11 @@ class AIOpenAIAPI(http.Controller):
                 'pi_trace is not an object (%s) — ignored',
                 type(_raw_trace).__name__)
 
+        # Körplats (session-machine): Pi-processens hostname. Valfritt —
+        # ett chat-anrop utan föregående lookup ska också få rätt maskin,
+        # och en äldre klient utan fältet får `Odoo`, aldrig ett fel.
+        machine = _clean_machine(body.get('machine'))
+
         return self._run_coworker_chat(
             quest, messages, body.get('model', coworker), stream,
             pi_session_id=pi_session_id,
@@ -4719,6 +4750,7 @@ class AIOpenAIAPI(http.Controller):
             temperature=body.get('temperature', 0.7),
             max_tokens=body.get('max_tokens', 0),
             pi_trace=pi_trace,
+            machine=machine,
         )
 
     # ── Coworker helpers ──────────────────────────────────────────────
@@ -4937,7 +4969,8 @@ class AIOpenAIAPI(http.Controller):
 
     def _run_coworker_chat(self, quest, messages, model_ref, stream,
                            pi_session_id='', session_id=0, tools=None,
-                           temperature=0.7, max_tokens=0, pi_trace=None):
+                           temperature=0.7, max_tokens=0, pi_trace=None,
+                           machine=''):
         """Execute a chat completion through a coworker as Pi's LLM backend.
 
         HYBRID (pi+odoo, 2026-08): istället för att köra Odoos egen AgentLoop
@@ -5041,7 +5074,7 @@ class AIOpenAIAPI(http.Controller):
                     ._find_or_create_coworker_session(
                         quest.id, env.user.id,
                         pi_session_id=pi_session_id, session_id=session_id,
-                        prompt=prompt)
+                        prompt=prompt, machine=machine)
                 return sess
             except Exception as e:
                 _logger.warning(

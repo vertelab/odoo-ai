@@ -10,6 +10,7 @@
                 <field name="coworker_id"/>
                 <field name="partner_id"/>
                 <field name="pi_session_id"/>
+                <field name="machine"/>
                 <separator/>
                 <filter name="my_sessions" string="Mina sessioner"
                         domain="[('user_id','=',uid)]"/>
@@ -53,6 +54,10 @@
                             context="{'group_by':'status'}"/>
                     <filter name="group_init_type" string="Start via"
                             context="{'group_by':'init_type'}"/>
+                    <!-- Körplatsen (session-machine): "vilka sessioner körde
+                         på luke?" går att ställa. `machine` är indexerat. -->
+                    <filter name="group_machine" string="Maskin"
+                            context="{'group_by':'machine'}"/>
                     <!-- Sessionens användare är grupperbar (sessions-specen):
                          en grupp per användare, användarlösa sessioner hamnar i
                          en synlig "(inget)"-grupp. user_id är indexerat. -->
@@ -82,6 +87,7 @@
                        decoration-success="status=='done'"
                        decoration-warning="status=='active'"/>
                 <field name="init_type" optional="show"/>
+                <field name="machine" optional="show"/>
                 <field name="ai_record_model" optional="hide"/>
                 <field name="ai_record_count" optional="hide" sum="1"/>
                 <field name="user_rating" optional="hide"/>
@@ -184,6 +190,7 @@
                             <field name="identity_id" readonly="1"/>
                             <field name="user_id" readonly="1"/>
                             <field name="init_type" readonly="1"/>
+                            <field name="machine" readonly="1"/>
                             <field name="company_id" readonly="1"/>
                             <field name="ai_task_id" readonly="1"/>
                             <field name="user_rating" placeholder="Rate the answer…"/>
@@ -292,7 +299,17 @@
                 <field name="role" widget="badge"
                        decoration-info="role=='assistant'"
                        decoration-muted="role=='user'"/>
-                <field name="content"/>
+                <!-- Förhandsvisning, inte hela texten (session-line-compact-list):
+                     `content` är Text och list-renderaren ger text-fält
+                     `white-space: pre-wrap`, så ett långt meddelande blev
+                     30-40 visuella rader och listan gick inte att överblicka.
+                     `content_preview` är första raden klippt till 120 tecken
+                     (klippt i Python, så det gäller även i export).
+                     SÖKNINGEN behåller `content` — se view_ai_session_line_search;
+                     en härledd förhandsvisning skulle ge falska negativ för
+                     text längre ned i meddelandet. Hela texten läses i
+                     formulärets Content-flik. -->
+                <field name="content_preview"/>
                 <field name="agent_id" optional="hide"/>
                 <field name="tool_id" optional="hide"/>
                 <field name="tool_name" optional="hide"/>

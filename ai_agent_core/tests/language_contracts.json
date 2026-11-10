@@ -1690,7 +1690,6 @@
    "server_action_model_name",
    "server_action_use_wizard",
    "session_count",
-   "session_count_label",
    "session_graph_enabled",
    "session_ids",
    "session_line_count",

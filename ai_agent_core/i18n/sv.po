@@ -7296,6 +7296,11 @@ msgid "MIT"
 msgstr "MIT"
 
 #. module: ai_agent_core
+#: model:ir.model.fields,field_description:ai_agent_core.field_ai_coworker_session__machine
+msgid "Machine"
+msgstr "Maskin"
+
+#. module: ai_agent_core
 #: model:ir.model.fields,field_description:ai_agent_core.field_ai_coworker__mail_action
 #: model:ir.model.fields,field_description:ai_agent_core.field_ai_coworker_init_type__mail_action
 msgid "Mail Action"
@@ -7430,6 +7435,11 @@ msgstr "Marketing"
 #: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_company_memory__category__marketing
 msgid "Marketing & Brand"
 msgstr "Marketing & Brand"
+
+#. module: ai_agent_core
+#: model_terms:ir.ui.view,arch_db:ai_agent_core.view_ai_session_search
+msgid "Maskin"
+msgstr "Maskin"
 
 #. module: ai_agent_core
 #: model:ir.ui.menu,name:ai_agent_core.menu_ai_config_masterdata
@@ -11013,11 +11023,6 @@ msgstr "Session"
 #: model:ir.model.fields,field_description:ai_agent_core.field_ai_coworker__session_count
 msgid "Session Count"
 msgstr "Session Antal"
-
-#. module: ai_agent_core
-#: model:ir.model.fields,field_description:ai_agent_core.field_ai_coworker__session_count_label
-msgid "Session Count Label"
-msgstr "Session Antal Label"
 
 #. module: ai_agent_core
 #: model:ir.model.fields,field_description:ai_agent_core.field_ai_agent__session_line_count

@@ -15,6 +15,10 @@ import time
 from odoo import http, fields
 from odoo.http import request, Response
 
+# `machine`-normaliseringen (session-machine) bor i stream.py — samma
+# funktion i båda /ai/v1-routes, ingen andra definition att hålla i takt.
+from odoo.addons.ai_agent_core.controllers.stream import _clean_machine
+
 _logger = logging.getLogger(__name__)
 
 
@@ -160,6 +164,9 @@ class AIOpenAPIController(http.Controller):
         # gäller uppdraget? Valfritt — utan fältet är beteendet
         # oförändrat (coworkerns union av kopplade agenter).
         agent_ref = (body.get('agent') or '').strip()
+        # Körplats (session-machine): Pi-processens hostname. Valfritt —
+        # utan fältet sätter modellen `Odoo`.
+        machine = _clean_machine(body.get('machine'))
 
         # Transport C-fallback: plocka Pi-sessions-UUID ur `{pi session: …}`-
         # markör i system-/user-meddelanden om body-fältet saknas.
@@ -225,14 +232,14 @@ class AIOpenAPIController(http.Controller):
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
-                messages=messages, force_agent=force_agent,
+                messages=messages, force_agent=force_agent, machine=machine,
             )
         else:
             return self._handle_sync(
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
-                messages=messages, force_agent=force_agent,
+                messages=messages, force_agent=force_agent, machine=machine,
             )
 
     def _resolve_agent(self, coworker, agent_ref):
@@ -281,15 +288,18 @@ class AIOpenAPIController(http.Controller):
             % (agent_ref, coworker.name, available))
 
     def _find_or_create_session(self, coworker, prompt, pi_session_id='',
-                                session_id=0):
+                                session_id=0, machine=''):
         """Hitta/skapa session via pi_session_id (Pi) eller återanvänd
         session_id (session-cost-context 3.1). Sätter context-nycklarna så
-        verktyg (cost_context_get/set) når sessionen."""
+        verktyg (cost_context_get/set) når sessionen.
+
+        `machine` är sessionens körplats (session-machine); tomt värde ger
+        `Odoo` i modellen."""
         Sess = coworker.env['ai.coworker.session']
         sess, _created = Sess._find_or_create_coworker_session(
             coworker.id, coworker.env.user.id,
             pi_session_id=pi_session_id, session_id=session_id,
-            prompt=prompt)
+            prompt=prompt, machine=machine)
         # Domän-ren hook: bryggor fångar domänkontext
         try:
             sess._session_capture_context()
@@ -367,7 +377,7 @@ class AIOpenAPIController(http.Controller):
     def _handle_sync(self, coworker, prompt, system_prompt, model,
                      temperature, max_tokens, tools, estimated_tokens,
                      pi_session_id='', session_id=0, messages=None,
-                     force_agent=None):
+                     force_agent=None, machine=''):
         """Handle non-streaming request — run AgentLoop and return JSON."""
         from odoo.addons.ai_agent_core.core.interrupt import (
             AgentLoopPaused, OpenAIInterruptHandler)
@@ -376,7 +386,7 @@ class AIOpenAPIController(http.Controller):
             # user so session.user_id is correct (not SUPERUSER).
             _session = self._find_or_create_session(
                 coworker, prompt, pi_session_id=pi_session_id,
-                session_id=session_id)
+                session_id=session_id, machine=machine)
             coworker = self._session_context_env(coworker, _session)
             system_prompt = (system_prompt or '') + \
                 self._cost_context_prompt_block(coworker, _session)
@@ -484,13 +494,13 @@ class AIOpenAPIController(http.Controller):
     def _handle_stream(self, coworker, prompt, system_prompt, model,
                        temperature, max_tokens, tools, estimated_tokens,
                        pi_session_id='', session_id=0, messages=None,
-                       force_agent=None):
+                       force_agent=None, machine=''):
         """Handle streaming request — SSE response."""
         response_id = f'chatcmpl-{coworker.id}-{int(time.time())}'
         created = int(time.time())
         _session = self._find_or_create_session(
             coworker, prompt, pi_session_id=pi_session_id,
-            session_id=session_id)
+            session_id=session_id, machine=machine)
         coworker = self._session_context_env(coworker, _session)
         system_prompt = (system_prompt or '') + \
             self._cost_context_prompt_block(coworker, _session)
