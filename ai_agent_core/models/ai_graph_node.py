@@ -296,6 +296,20 @@ class GraphNodeDefinition(models.Model):
                     self._create_edges(rec)
                     synced += 1
                 except Exception as e:
+                    # ROLLBACK PER RECORD, or one bad record poisons the batch.
+                    #
+                    # A failed cypher() leaves the transaction aborted; the
+                    # next record's query then fails with "current
+                    # transaction is aborted" rather than its own error, and
+                    # so does every record after it. The batch reports N
+                    # failures where the true number is 1, and first_error
+                    # describes the consequence instead of the cause.
+                    #
+                    # Verified on dms 2026-11-10: after the first cypher
+                    # failure every remaining record logged "current
+                    # transaction is aborted", and _sync_all's handler then
+                    # crashed reading defn.graph_label.
+                    self.env.cr.rollback()
                     failed += 1
                     if first_error is None:
                         first_error = str(e)
