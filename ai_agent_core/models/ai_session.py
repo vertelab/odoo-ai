@@ -3595,7 +3595,19 @@ class AICoworkerSession(models.Model):
         return partner
 
     def _attachment_text(self, msg_dict, max_chars=12000):
-        """Extrahera text ur mail-bilagor (PDF → text, eller råtext)."""
+        """Extrahera text ur mail-bilagor (PDF → text, eller råtext).
+
+        Två vägar för PDF: den inbäddade texten först (pypdf), sedan OCR
+        som fallback. En skannad faktura är en bild — pypdf returnerar
+        tomma strängar för varje sida, och utan OCR blev hela bilagan
+        osynlig för modellen, som då svarade att mejlet saknade
+        fakturaspecifikation. OCR:en kostar ~1 s/sida, så den körs bara
+        när textsidan är tom.
+
+        OCR är best-effort: saknas pytesseract, fitz eller tesseract-binären
+        loggas en varning och flödet fortsätter som förut. En trasig
+        OCR får aldrig fälla mejlflödet.
+        """
         text_parts = []
         att_ids = msg_dict.get('attachment_ids') or []
         for att_id in att_ids:
@@ -3604,17 +3616,80 @@ class AICoworkerSession(models.Model):
                 if att.mimetype == 'application/pdf':
                     import io
                     from pypdf import PdfReader
-                    reader = PdfReader(io.BytesIO(att.raw))
+                    raw = att.raw
+                    reader = PdfReader(io.BytesIO(raw))
                     page_text = '\n'.join(
                         (p.extract_text() or '') for p in reader.pages)
                     if page_text.strip():
                         text_parts.append(page_text.strip())
+                    else:
+                        ocr_text = self._pdf_ocr_text(raw)
+                        if ocr_text.strip():
+                            _logger.info(
+                                'Attachment %s (%s): no embedded text, used '
+                                'OCR (%d chars)',
+                                att_id, att.name, len(ocr_text))
+                            text_parts.append(ocr_text.strip())
+                        else:
+                            _logger.warning(
+                                'Attachment %s (%s): no embedded text and '
+                                'OCR produced nothing — the model sees no '
+                                'bill content', att_id, att.name)
                 elif att.mimetype and att.mimetype.startswith('text/'):
                     text_parts.append(
                         att.raw.decode('utf-8', errors='replace'))
             except Exception as e:
                 _logger.warning('Could not read attachment %s: %s', att_id, e)
         return '\n\n---\n\n'.join(text_parts)[:max_chars]
+
+    @api.model
+    def _pdf_ocr_text(self, raw, max_pages=10, dpi=200, langs=None):
+        """OCR:a en PDF som saknar inbäddad text.
+
+        Renderar varje sida med PyMuPDF och läser den med Tesseract.
+        Standard är svenska + engelska: en svensk leverantörsfaktura har
+        svenska beloppsrubriker, enirländsk/europeisk har engelska, och
+        Tesseract klarar båda i samma körning. `swe` finns i
+        tesseract-ocr-swe; saknas den faller vi tillbaka på `eng`.
+
+        `max_pages` skyddar mot en 100-sidig bilaga — en faktura är 1–3
+        sidor, och OCR:en är den dyra delen av flödet.
+        """
+        try:
+            import fitz  # PyMuPDF
+            import pytesseract
+            from PIL import Image
+        except ImportError as e:
+            _logger.warning('PDF OCR unavailable (%s) — install pytesseract, '
+                            'Pillow and PyMuPDF', e)
+            return ''
+
+        if langs is None:
+            try:
+                available = set(pytesseract.get_languages(config=''))
+            except Exception:
+                available = set()
+            wanted = [lg for lg in ('swe', 'eng') if lg in available]
+            langs = '+'.join(wanted) or 'eng'
+
+        try:
+            doc = fitz.open(stream=raw, filetype='pdf')
+        except Exception as e:
+            _logger.warning('PDF OCR: could not open document: %s', e)
+            return ''
+
+        out = []
+        try:
+            for page in doc[:max_pages]:
+                pixmap = page.get_pixmap(dpi=dpi)
+                img = Image.frombytes(
+                    'RGB', (pixmap.width, pixmap.height), pixmap.samples)
+                out.append(pytesseract.image_to_string(img, lang=langs))
+        except Exception as e:
+            _logger.warning('PDF OCR failed: %s', e)
+        finally:
+            doc.close()
+        return '\n'.join(out)
 
     def resume_session(self):
         """Create a new session that continues from this interrupted one.
