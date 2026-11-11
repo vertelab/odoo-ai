@@ -27,7 +27,7 @@ class TestSessionMemory(common.TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env.create_user(name='Session Memory User', login='session_memory@example.com', email='session_memory@example.com')
+        cls.user = create_user(cls.env, name='Session Memory User', login='session_memory@example.com', email='session_memory@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Session Memory Coworker',
             'description': 'Session memory test',

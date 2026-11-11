@@ -16,7 +16,7 @@ class TestPersonalMemory(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         # Skapa testanvändare
-        cls.user = cls.env.create_user(name='Test User', login='test_personal_memory@example.com', email='test_personal_memory@example.com')
+        cls.user = create_user(cls.env, name='Test User', login='test_personal_memory@example.com', email='test_personal_memory@example.com')
         cls.company = cls.env.ref('base.main_company')
 
     # ════════════════════════════════════════════
@@ -110,7 +110,7 @@ class TestPersonalMemory(common.TransactionCase):
 
     def test_search_excludes_other_users(self):
         """En användares minnen syns inte för en annan användare."""
-        user2 = self.env.create_user(name='User 2', login='user2@test.com')
+        user2 = create_user(self.env, name='User 2', login='user2@test.com')
         self.env['ai.personal.memory'].add_memory(
             user_id=self.user.id, content='User 1 memory', category='fact')
         self.env['ai.personal.memory'].add_memory(
@@ -353,7 +353,7 @@ class TestDiscussLearning(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Memory = cls.env['ai.personal.memory']
-        cls.user = cls.env.create_user(name='Discuss Learner', login='discuss_learner@example.com', email='discuss_learner@example.com', learn_from_discuss=True)
+        cls.user = create_user(cls.env, name='Discuss Learner', login='discuss_learner@example.com', email='discuss_learner@example.com', learn_from_discuss=True)
 
     def _channel_with_messages(self, count=3):
         channel = self.env['discuss.channel'].create({
@@ -398,7 +398,7 @@ class TestDiscussLearning(common.TransactionCase):
 
     def test_gate_is_user_scoped(self):
         """Grinden är per användare — samma meddelande, olika användare."""
-        other = self.env.create_user(name='Other Learner', login='other_learner@example.com', email='other_learner@example.com')
+        other = create_user(self.env, name='Other Learner', login='other_learner@example.com', email='other_learner@example.com')
         ref = 'discuss,999999'
         self.Memory.add_memory(
             user_id=self.user.id, content='Användare A',

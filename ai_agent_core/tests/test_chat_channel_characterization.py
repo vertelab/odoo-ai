@@ -48,7 +48,7 @@ class ChatChannelCharacterization(TransactionCase):
                 'name': 'Karaktäriseringskanal',
                 'channel_type': 'channel',
             })
-        self.bot_user = self.env.create_user(name='Karaktäriseringsbot', login='karaktarisering_bot_%s' % self.env.uid, groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.bot_user = create_user(self.env, name='Karaktäriseringsbot', login='karaktarisering_bot_%s' % self.env.uid, groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
         self.message = self.env['mail.message'].create({
             'model': 'discuss.channel',
             'res_id': self.channel.id,

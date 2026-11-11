@@ -23,7 +23,7 @@ class TestExternalDispatch(TransactionCase):
         super().setUp()
         self.Agent = self.env['ai.agent']
         self.Coworker = self.env['ai.coworker']
-        self.user = self.env.create_user(name='Dispatch Test User', login='dispatch_test_user', email='dispatch_test@example.com')
+        self.user = create_user(self.env, name='Dispatch Test User', login='dispatch_test_user', email='dispatch_test@example.com')
         self.coworker = self.Coworker.create({'name': 'Dispatch-test-coworker'})
 
     def _external_agent(self, **kw):
@@ -135,8 +135,8 @@ class TestDispatchUserResolution(TransactionCase):
     def setUp(self):
         super().setUp()
         self.Coworker = self.env['ai.coworker']
-        self.operator = self.env.create_user(name='Operator User', login='dispatch_operator', email='operator@example.com')
-        self.configured = self.env.create_user(name='Configured Cron User', login='dispatch_cron_user', email='cron@example.com')
+        self.operator = create_user(self.env, name='Operator User', login='dispatch_operator', email='operator@example.com')
+        self.configured = create_user(self.env, name='Configured Cron User', login='dispatch_cron_user', email='cron@example.com')
 
     def test_interactive_uses_env_uid(self):
         """Knapp/server action → den som tryckte (env.uid)."""

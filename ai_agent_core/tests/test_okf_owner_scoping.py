@@ -47,9 +47,9 @@ class _MultiOwnerMemory(common.TransactionCase):
         if not cls.atype:
             cls.atype = cls.env['ai.artifact.type'].create({
                 'name': 'learning', 'kind': 'memory'})
-        cls.user_a = cls.env.create_user(name='ZZ OKF Owner A', login='zz_okf_owner_a')
-        cls.user_b = cls.env.create_user(name='ZZ OKF Owner B', login='zz_okf_owner_b')
-        cls.user_c = cls.env.create_user(name='ZZ OKF Owner C', login='zz_okf_owner_c')
+        cls.user_a = create_user(cls.env, name='ZZ OKF Owner A', login='zz_okf_owner_a')
+        cls.user_b = create_user(cls.env, name='ZZ OKF Owner B', login='zz_okf_owner_b')
+        cls.user_c = create_user(cls.env, name='ZZ OKF Owner C', login='zz_okf_owner_c')
 
 
 @tagged('okf', 'post_install', '-at_install')

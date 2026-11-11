@@ -32,7 +32,7 @@ class TestSessionLifecycle(TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.CloseEvent = cls.env['ai.coworker.session.close_event']
-        cls.user = cls.env.create_user(name='Lifecycle User', login='lifecycle@example.com', email='lifecycle@example.com')
+        cls.user = create_user(cls.env, name='Lifecycle User', login='lifecycle@example.com', email='lifecycle@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Lifecycle Coworker',
             'description': 'lifecycle test',

@@ -23,7 +23,7 @@ class TestSessionAccounting(common.TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env.create_user(name='Session Audit User', login='session_audit@example.com', email='session_audit@example.com')
+        cls.user = create_user(cls.env, name='Session Audit User', login='session_audit@example.com', email='session_audit@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Session Audit Coworker',
             'description': 'Session accounting test',

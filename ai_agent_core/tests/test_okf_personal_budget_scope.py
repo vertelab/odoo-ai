@@ -38,8 +38,8 @@ class TestPersonalMemoryBudgetScope(common.TransactionCase):
         cls.AType = cls.env['ai.artifact.type']
         cls.memory_type = cls._ensure_type('zz-budget-memory', 'memory')
         cls.knowledge_type = cls._ensure_type('zz-budget-knowledge', 'knowledge')
-        cls.user = cls.env.create_user(name='ZZ Budget User', login='zz_budget_user')
-        cls.other = cls.env.create_user(name='ZZ Budget Other', login='zz_budget_other')
+        cls.user = create_user(cls.env, name='ZZ Budget User', login='zz_budget_user')
+        cls.other = create_user(cls.env, name='ZZ Budget Other', login='zz_budget_other')
 
     @classmethod
     def _ensure_type(cls, name, kind):

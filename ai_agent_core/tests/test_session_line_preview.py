@@ -30,7 +30,7 @@ class TestSessionLinePreview(common.TransactionCase):
         super().setUpClass()
         cls.Line = cls.env['ai.coworker.session.line']
         cls.Session = cls.env['ai.coworker.session']
-        cls.user = cls.env.create_user(name='Line Preview User', login='line_preview@example.com', email='line_preview@example.com')
+        cls.user = create_user(cls.env, name='Line Preview User', login='line_preview@example.com', email='line_preview@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Line Preview Coworker',
             'status': 'active',

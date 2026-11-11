@@ -168,7 +168,7 @@ class TestCompanionWriteBudget(TransactionCase):
             type(self.env['ai.provider']), '_embedding_provider',
             return_value=self.env['ai.provider'])
         self._embed_patch.start()
-        self.user = self.env.create_user(name='Budget-testare', login='budget_user_%s' % self.env['res.users'].search_count([]), password='budget-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.user = create_user(self.env, name='Budget-testare', login='budget_user_%s' % self.env['res.users'].search_count([]), password='budget-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
         self.Okf = self.env['ai.okf.concept']
 
     def tearDown(self):
@@ -255,7 +255,7 @@ class TestCompanionQuality(TransactionCase):
             'hitl_threshold': 'high_risk',
             'memory_learning_direct': True,
         })
-        self.user = self.env.create_user(name='Kvalitets-användare', login='kvalitet_%s' % self.env['res.users'].search_count([]), password='kvalitet-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.user = create_user(self.env, name='Kvalitets-användare', login='kvalitet_%s' % self.env['res.users'].search_count([]), password='kvalitet-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
         self.Okf = self.env['ai.okf.concept']
 
     # ── 4.1 negativ listan ────────────────────────────────────────────

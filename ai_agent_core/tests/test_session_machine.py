@@ -30,7 +30,7 @@ class TestSessionMachine(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
-        cls.user = cls.env.create_user(name='Session Machine User', login='session_machine@example.com', email='session_machine@example.com')
+        cls.user = create_user(cls.env, name='Session Machine User', login='session_machine@example.com', email='session_machine@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Session Machine Coworker',
             'status': 'active',

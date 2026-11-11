@@ -71,7 +71,7 @@ class TestToolsRunCoworkerContext(common.TransactionCase):
         cls.Session = cls.env['ai.coworker.session']
         cls.Coworker = cls.env['ai.coworker']
         cls.Tool = cls.env['ai.tool']
-        cls.user = cls.env.create_user(name='Tools Run User', login='tools_run@example.com', email='tools_run@example.com')
+        cls.user = create_user(cls.env, name='Tools Run User', login='tools_run@example.com', email='tools_run@example.com')
         cls.coworker_a = cls.Coworker.create({
             'name': 'Tools Run A',
             'description': 'T/11533 coworker A',

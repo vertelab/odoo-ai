@@ -31,7 +31,7 @@ class TestSessionDomain(TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Coworker = cls.env['ai.coworker']
-        cls.user = cls.env.create_user(name='Smart Button User', login='smartbutton@example.com', email='smartbutton@example.com')
+        cls.user = create_user(cls.env, name='Smart Button User', login='smartbutton@example.com', email='smartbutton@example.com')
         cls.coworker = cls.Coworker.create({
             'name': 'Smart Button Coworker',
             'status': 'active',

@@ -32,7 +32,7 @@ class TestTokenTotals(TransactionCase):
         cls.Coworker = cls.env['ai.coworker']
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env.create_user(name='Token Totals User', login='token_totals@example.com', email='token_totals@example.com')
+        cls.user = create_user(cls.env, name='Token Totals User', login='token_totals@example.com', email='token_totals@example.com')
         cls.coworker = cls.Coworker.create({
             'name': 'Token Totals Coworker',
             'status': 'active',

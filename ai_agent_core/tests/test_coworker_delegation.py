@@ -34,7 +34,7 @@ class DelegationTestBase(TransactionCase):
 
         # Användare för uppmärksamhet.
         n = self.env['res.users'].search_count([])
-        self.owner = self.env.create_user(name='Delegation Owner %s', login='deleg_owner_%s' % n, password='x', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.owner = create_user(self.env, name='Delegation Owner %s', login='deleg_owner_%s' % n, password='x', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
 
         # Coworkers.
         # chat_user_id krävs för att mottagaren ska vara heartbeat-operativ

@@ -70,7 +70,7 @@ class RetentionBase(ConfigParamGuardedCase):
         cls.company = cls.env.ref('base.main_company')
         cls.Concept = cls.env['ai.okf.concept']
         cls.ArtifactType = cls.env['ai.artifact.type']
-        cls.owner = cls.env.create_user(name='Retention Owner', login='retention_owner', email='retention.owner@example.com', groups_id=[(6, 0, [cls.env.ref('base.group_user').id])])
+        cls.owner = create_user(cls.env, name='Retention Owner', login='retention_owner', email='retention.owner@example.com', groups_id=[(6, 0, [cls.env.ref('base.group_user').id])])
         cls.atype_long = cls.ArtifactType.create({
             'name': 'retention-test-long',
             'kind': 'knowledge',

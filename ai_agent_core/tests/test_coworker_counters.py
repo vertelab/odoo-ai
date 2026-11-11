@@ -34,7 +34,7 @@ class TestCoworkerCounters(TransactionCase):
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
         cls.Concept = cls.env['ai.okf.concept']
-        cls.user = cls.env.create_user(name='Counters User', login='counters@example.com', email='counters@example.com')
+        cls.user = create_user(cls.env, name='Counters User', login='counters@example.com', email='counters@example.com')
         cls.coworker = cls.Coworker.create({
             'name': 'Counters Coworker',
             'status': 'active',

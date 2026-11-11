@@ -29,7 +29,7 @@ class TestPersonalMemorySources(common.TransactionCase):
             create=True)
         cls._embed_patch.start()
         cls.addClassCleanup(cls._embed_patch.stop)
-        cls.user = cls.env.create_user(name='Mitchell Test', login='mitchell_test@example.com', email='mitchell_test@example.com')
+        cls.user = create_user(cls.env, name='Mitchell Test', login='mitchell_test@example.com', email='mitchell_test@example.com')
         cls.company = cls.env.ref('base.main_company')
         cls.Concept = cls.env['ai.okf.concept']
         cls.ArtifactType = cls.env['ai.artifact.type']

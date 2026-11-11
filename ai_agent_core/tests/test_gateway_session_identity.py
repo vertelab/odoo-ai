@@ -28,7 +28,7 @@ class TestGatewaySessionIdentity(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
-        cls.user = cls.env.create_user(name='GW Identity User', login='gw_identity@example.com', email='gw_identity@example.com')
+        cls.user = create_user(cls.env, name='GW Identity User', login='gw_identity@example.com', email='gw_identity@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'GW Identity Coworker',
             'description': 'Gateway identity test',

@@ -31,7 +31,7 @@ class HeartbeatBase(ConfigParamGuardedCase):
         self.Session = self.env['ai.coworker.session']
 
         n = self.env['res.users'].search_count([])
-        self.owner = self.env.create_user(name='HB Owner %s', login='hb_owner_%s' % n, password='x', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.owner = create_user(self.env, name='HB Owner %s', login='hb_owner_%s' % n, password='x', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
         self.provider = self.env['ai.provider'].create({
             'name': 'HB Provider %s' % n, 'provider_type': 'custom',
             'status': 'confirmed'})

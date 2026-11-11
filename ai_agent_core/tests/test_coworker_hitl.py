@@ -18,8 +18,8 @@ class TestCoworkerHITL(TransactionCase):
             'orchestration_mode': 'single',
             'status': 'active',
         })
-        self.approver = self.env.create_user(name='HITL Godkännare', login='hitl_approver_%s' % self.env['res.users'].search_count([]), password='approver-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
-        self.stranger = self.env.create_user(name='HITL Främling', login='hitl_stranger_%s' % self.env['res.users'].search_count([]), password='stranger-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.approver = create_user(self.env, name='HITL Godkännare', login='hitl_approver_%s' % self.env['res.users'].search_count([]), password='approver-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.stranger = create_user(self.env, name='HITL Främling', login='hitl_stranger_%s' % self.env['res.users'].search_count([]), password='stranger-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
 
     def _session(self, user=None):
         """En körningssession — HITL kräver en (design D7)."""

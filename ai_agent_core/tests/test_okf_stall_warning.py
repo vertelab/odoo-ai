@@ -46,7 +46,7 @@ class TestOkfStallWarning(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Memory = cls.env[MODEL]
-        cls.user = cls.env.create_user(name='ZZ Stall User', login='zz_stall_user')
+        cls.user = create_user(cls.env, name='ZZ Stall User', login='zz_stall_user')
         cls.params = cls.env['ir.config_parameter'].sudo()
 
     def setUp(self):

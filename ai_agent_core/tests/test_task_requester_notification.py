@@ -30,7 +30,7 @@ class TestTaskRequesterNotification(TransactionCase):
         icp = cls.env['ir.config_parameter'].sudo()
         icp.set_param('mail.web_push_vapid_private_key', 'priv')
         icp.set_param('mail.web_push_vapid_public_key', 'pub')
-        cls.requester = cls.env.create_user(name='Requester User', login='requester_user_%s' % (cls.env.uid,))
+        cls.requester = create_user(cls.env, name='Requester User', login='requester_user_%s' % (cls.env.uid,))
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Requester Coworker %s' % cls.env.uid,
         })

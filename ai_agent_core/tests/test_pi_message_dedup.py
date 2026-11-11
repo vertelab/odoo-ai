@@ -28,7 +28,7 @@ class TestPiMessageDedup(TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env.create_user(name='Dedup User', login='dedup@example.com', email='dedup@example.com')
+        cls.user = create_user(cls.env, name='Dedup User', login='dedup@example.com', email='dedup@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Dedup Coworker',
             'status': 'active',

@@ -15,7 +15,7 @@ class TestBudgetHardCap(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Concept = cls.env['ai.okf.concept']
-        cls.user = cls.env.create_user(name='Budget Test User', login='budget_test@example.com', email='budget_test@example.com')
+        cls.user = create_user(cls.env, name='Budget Test User', login='budget_test@example.com', email='budget_test@example.com')
 
     def _mk_coworker(self, cap_mtokens=0, **kw):
         vals = {

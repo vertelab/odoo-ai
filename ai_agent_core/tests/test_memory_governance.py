@@ -15,8 +15,8 @@ class TestMemoryGovernance(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.company = cls.env.ref('base.main_company')
-        cls.user_mitchell = cls.env.create_user(name='Mitchell', login='mitchell_gov@example.com', email='mitchell_gov@example.com')
-        cls.user_marc = cls.env.create_user(name='Marc', login='marc_gov@example.com', email='marc_gov@example.com')
+        cls.user_mitchell = create_user(cls.env, name='Mitchell', login='mitchell_gov@example.com', email='mitchell_gov@example.com')
+        cls.user_marc = create_user(cls.env, name='Marc', login='marc_gov@example.com', email='marc_gov@example.com')
 
         # Setup scope codes
         cls.Scope = cls.env['ai.memory.scope']

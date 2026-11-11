@@ -29,7 +29,7 @@ class TestTurnEndPush(TransactionCase):
         icp = cls.env['ir.config_parameter'].sudo()
         icp.set_param('mail.web_push_vapid_private_key', 'priv')
         icp.set_param('mail.web_push_vapid_public_key', 'pub')
-        cls.user = cls.env.create_user(name='Turn Push User', login='turn_push_user_%s' % (cls.env.uid,))
+        cls.user = create_user(cls.env, name='Turn Push User', login='turn_push_user_%s' % (cls.env.uid,))
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Turn Push Coworker %s' % cls.env.uid,
         })
