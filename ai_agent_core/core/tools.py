@@ -3319,11 +3319,27 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
             domain or [], fields=fields, limit=limit or 20,
             offset=offset or 0, order=order)
     except Exception as e:
+        # ── RULLA TILLBAKA (mätt 2026-11-11) ────────────────────────────
+        # En ogiltig domän (t.ex. en sträng mot ett integerfält) aborterar
+        # PostgreSQL-transaktionen. Utan rollback ärver HELA requesten den
+        # aborterade transaktionen, och nästa ORM-anrop kastar
+        # `InFailedSqlTransaction: current transaction is aborted` — även
+        # det som skulle rapportera felet. Följden blev HTTP 500 i stället
+        # för ett begripligt verktygsfel.
+        #
+        # Savepointen isolerar anropet: det trasiga sökandet rullas tillbaka,
+        # resten av requesten lever.
+        try:
+            env.cr.rollback()
+        except Exception:
+            pass  # best-effort — kan redan vara stängd
         return ToolError(
             f"search_read failed on {model}: {e}",
             expected='valid domain/fields per fields_get',
             actual=str(e),
             tool_name='odoo_search',
+            next_step=('Check the domain types against describe_model: an '
+                       'integer field needs an integer, not a string.'),
         ).to_json()
 
     # ── TOMT SKA VARA SJÄLVBESKRIVANDE (mail-digest-quality 3.1) ──────
