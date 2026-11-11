@@ -3342,17 +3342,36 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
     # blir synlig — och den senare är den vanliga.
     if not records:
         total = 0
+        total_error = ''
         try:
             total = Model.search_count([])
-        except Exception:
-            pass  # best-effort: tyst fallback — se etiketteringsregeln
+        except Exception as e:
+            # VARFÖR INTE `except: pass` (mätt 2026-11-11): den tysta
+            # fallbacken gjorde `total = 0` även när räkningen KRASCHADE,
+            # och då påstod svaret "This is a real empty table" om en tabell
+            # med 109 887 rader. Ett fel som ser ut som ett svar är exakt
+            # den bugg fixen skulle bota — den får inte återinföras i sin
+            # egen felhantering.
+            #
+            # Räkningen är ett BEKVÄMLIGHETSFÄLT: kan vi inte räkna ska det
+            # sägas, inte gissas. `None` = okänt, aldrig 0.
+            total = None
+            total_error = '%s: %s' % (type(e).__name__, e)
+            _logger.warning(
+                'odoo_search: could not count %s (%s) — reporting the total '
+                'as unknown, not as zero', model, total_error)
         empty = {
             'rows': [],
             'model': model,
             'domain': domain or [],
             'total_rows_in_model': total,
         }
-        if total == 0:
+        if total is None:
+            empty['note'] = (
+                'The domain matched no rows. The total row count could not '
+                'be determined (%s) — do NOT conclude the table is empty.'
+                % total_error)
+        elif total == 0:
             empty['note'] = (
                 'The model exists but has no rows at all. This is a real '
                 'empty table, not a bad query.')
