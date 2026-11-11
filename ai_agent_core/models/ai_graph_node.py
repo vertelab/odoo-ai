@@ -539,6 +539,8 @@ class GraphExecutor(models.Model):
         if read_only:
             self._validate_read_only(query)
 
+        self._refuse_unlabelled_match(query)
+
         # Escape single quotes for Cypher
         # Use dollar-quoting with a unique tag to avoid collisions
         import uuid
@@ -597,6 +599,45 @@ class GraphExecutor(models.Model):
         except Exception as e:
             _logger.error("Cypher query failed: %s\nQuery: %s", e, query[:200])
             raise UserError(_("Graph query failed: %s") % str(e))
+
+    def _refuse_unlabelled_match(self, query):
+        """Neka `MATCH (n)` utan label — den kraschar PostgreSQL.
+
+        FYND 2026-11-11 (luke18):
+
+            SELECT * FROM ag_catalog.cypher('odoo_mind',
+                $$ MATCH (n) RETURN count(n) AS cnt $$)
+
+        dödade servern med **signal 11 (segmentation fault)**. Fem gånger
+        på en timme, varje gång med samma fråga i DETAIL-raden. Varje
+        krasch tog 4–8 minuters recovery för 22 GB databas.
+
+        En label-lös MATCH tvingar AGE att skanna hela grafen utan index.
+        Med 4338 noder i `odoo_mind` faller den i C-lagret — inte som ett
+        SQL-fel, utan som en processdöd. Det går inte att fånga med
+        try/except; servern är borta innan Python ser svaret.
+
+        Därför nekas frågan HÄR, före `cr.execute`. Ett felmeddelande i
+        Odoo är oändligt mycket billigare än en kraschad databas.
+
+        Rätt fråga är label-bunden:
+            MATCH (n:OdooPartner) RETURN count(n)
+        """
+        import re as _re
+        # MATCH följt av en nod utan kolon-typ: (n) eller (n {prop: 1})
+        for m in _re.finditer(r'\bMATCH\b(.*?)(?=\bRETURN\b|\bWHERE\b|\bSET\b|\bDELETE\b|\bCREATE\b|$)',
+                              query, _re.I | _re.S):
+            body = m.group(1)
+            for node in _re.finditer(r'\(\s*(\w+)?\s*([^)]*)\)', body):
+                var, rest = node.group(1) or '', node.group(2)
+                if ':' in rest.split('{')[0]:
+                    continue  # har label — ok
+                if not var and not rest.strip():
+                    continue  # () — anonym, men inte vårt mönster
+                raise UserError(_(
+                    "Cypher-frågan matchar noder utan label, vilket "
+                    "kraschar databasen (Apache AGE segfault). "
+                    "Ange en label, t.ex. MATCH (n:OdooPartner)."))
 
     @api.model
     def cypher_write(self, query):

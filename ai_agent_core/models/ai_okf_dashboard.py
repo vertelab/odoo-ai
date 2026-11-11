@@ -287,7 +287,7 @@ class AIOkfDashboard(models.TransientModel):
             try:
                 executor = self.env['graph.executor'].sudo()
                 result = executor.cypher(
-                    "MATCH (n) RETURN count(n) AS cnt", read_only=True)
+                    "MATCH (n:OdooPartner) RETURN count(n) AS cnt", read_only=True)
                 cnt = result[0][0] if result else '?'
                 rec.graph_status = '✅ Aktiv'
                 rec.graph_version = 'AGE %s' % cnt

@@ -207,7 +207,7 @@ class ResConfigSettings(models.TransientModel):
                 with self.env.cr.savepoint():
                     executor = self.env['graph.executor'].sudo()
                     result = executor.cypher(
-                        "MATCH (n) RETURN count(n) AS cnt", read_only=True)
+                        "MATCH (n:OdooPartner) RETURN count(n) AS cnt", read_only=True)
                     # cypher() returns a FLAT list of cell values: [9], not
                     # [[9]]. result[0][0] raised TypeError('int' object is
                     # not subscriptable), which the caller swallowed and
@@ -412,7 +412,7 @@ class ResConfigSettings(models.TransientModel):
             with self.env.cr.savepoint():
                 executor = self.env['graph.executor'].sudo()
                 result = executor.cypher(
-                    "MATCH (n) RETURN count(n) AS cnt", read_only=True)
+                    "MATCH (n:OdooPartner) RETURN count(n) AS cnt", read_only=True)
                 # cypher() returns a FLAT list of cell values: [9], not
                 # [[9]]. result[0][0] raised TypeError('int' object is not
                 # subscriptable), which the caller swallowed and turned into

@@ -430,3 +430,63 @@ class TestCypherValueEscaping(TransactionCase):
         self.assertEqual(res, [val],
                          'värdet ska läsas tillbaka exakt som det skrevs')
         Ex.cypher_write("MATCH (n:QuoteEscape {id: 1}) DETACH DELETE n")
+
+
+class TestUnlabelledMatchGuard(TransactionCase):
+    """En label-lös MATCH får ALDRIG nå PostgreSQL.
+
+    FYND 2026-11-11 (luke18): `MATCH (n) RETURN count(n)` dödade servern
+    med signal 11 (segmentation fault) — fem gånger på en timme, varje
+    gång med 4–8 minuters recovery för en 22 GB databas. Apache AGE
+    skannar hela grafen utan index och faller i C-lagret. Det går inte
+    att fånga med try/except: servern är borta innan Python ser svaret.
+
+    Vakten nekar frågan före `cr.execute`. Dessa tester bevisar att den
+    gör det — och att den inte nekar de frågor som faktiskt fungerar.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.executor = self.env['graph.executor']
+
+    def test_bare_match_is_refused(self):
+        """Den exakta frågan som kraschade servern."""
+        with self.assertRaises(UserError) as ctx:
+            self.executor._refuse_unlabelled_match(
+                "MATCH (n) RETURN count(n) AS cnt")
+        self.assertIn('label', str(ctx.exception).lower())
+
+    def test_bare_match_with_property_is_refused(self):
+        """Properties ersätter inte en label — samma fullskanning."""
+        with self.assertRaises(UserError):
+            self.executor._refuse_unlabelled_match(
+                "MATCH (n {name: 'x'}) RETURN n")
+
+    def test_unlabelled_relationship_is_refused(self):
+        """En label-lös nod i en relation är samma fara."""
+        with self.assertRaises(UserError):
+            self.executor._refuse_unlabelled_match(
+                "MATCH (a)-[:R]->(b) RETURN a")
+
+    def test_labelled_match_passes(self):
+        """Rätt fråga — label-bunden — ska släppas igenom."""
+        self.executor._refuse_unlabelled_match(
+            "MATCH (n:OdooPartner) RETURN count(n) AS cnt")
+
+    def test_labelled_relationship_passes(self):
+        self.executor._refuse_unlabelled_match(
+            "MATCH (a:OdooPartner)-[:KNOWS]->(b:OdooPartner) RETURN a")
+
+    def test_labelled_with_where_passes(self):
+        self.executor._refuse_unlabelled_match(
+            "MATCH (n:OdooPartner) WHERE n.name = 'x' RETURN n")
+
+    def test_write_without_match_passes(self):
+        """CREATE har ingen MATCH — vakten ska inte röra den."""
+        self.executor._refuse_unlabelled_match(
+            "CREATE (n:OdooPartner {name: 'x'})")
+
+    def test_labelled_with_trailing_clause_passes(self):
+        """Label i en sats, annan klausul efter — får inte felflaggas."""
+        self.executor._refuse_unlabelled_match(
+            "MATCH (n:OdooPartner) SET n.seen = true RETURN n")
