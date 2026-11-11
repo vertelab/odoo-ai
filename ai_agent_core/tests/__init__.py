@@ -173,6 +173,9 @@ from . import test_session_machine
 # test_workspace: testerna körs aldrig, vilket är varför varningen kunde sakna
 # en röd test medan kön stod still i 3 dygn.
 from . import test_okf_stall_warning
+from . import test_okf_temporal_resolver
+from . import test_okf_temporal_contract
+from . import test_okf_temporal_chain
 from . import test_okf_personal_budget_scope
 
 # budget-kanaler (2026-10-27): dagsbudgeten nådde bara 2 av 4 kanaler.
@@ -279,3 +282,6 @@ from . import test_provider_transient_retry
 # Bevisar att en lång rad blir en visuell rad, att klippet sker i Python (så
 # det även gäller i export) och att sökningen fortfarande går mot `content`.
 from . import test_session_line_preview
+from . import test_session_history_tool_pairing
+from . import test_tool_call_quality
+from . import test_turn_quality_verdict

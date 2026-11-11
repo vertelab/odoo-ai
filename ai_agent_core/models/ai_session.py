@@ -977,8 +977,35 @@ class AICoworkerSession(models.Model):
         history = []
         # Vilka tool_call_id:n som den senaste assistant-raden deklarerade.
         # En tool-rad får bara skickas om dess id finns här — annars är den
-        # föräldralös och OpenAI-formatet ogiltigt (422 hos strikta providers).
-        declared_call_ids = set()
+        # föräldralös och OpenAI-formatet ogiltigt (400/422 hos strikta
+        # providers).
+        #
+        # ORDNINGEN ÄR INTE DEN MAN TROR (fynd 2026-11-11, session 28097).
+        # Tool-raderna skrivs när verktyget KÖRS — alltså FÖRE den
+        # assistant-rad som deklarerar anropen, eftersom den raden skrivs
+        # först när hela turen är klar:
+        #
+        #     seq 2–14   tool      (13 verktygssvar)
+        #     seq 15     assistant (deklarerar tool_calls)
+        #
+        # Med `declared_call_ids` som bara fylldes av FÖREGÅENDE assistant-
+        # rad var mängden alltid tom när tool-raderna lästes, och varje
+        # tool-rad hoppades över. Providern fick då ett assistant-meddelande
+        # med `tool_calls` och inga svar på dem:
+        #
+        #     400 invalid_request_error: An assistant message with
+        #     'tool_calls' must be followed by tool messages responding to
+        #     each 'tool_call_id'.
+        #
+        # Det slog ut HELA turen — inte bara verktygsspåret — och var
+        # anledningen till att sessionen svarade "(inget svar)".
+        #
+        # Lösningen: förregistrera de id:n som någon assistant-rad i
+        # sessionen deklarerar. En tool-rad paras då mot sitt anrop även när
+        # den ligger före det i sekvensen. Vi tappar inte säkerhetsnätet: en
+        # tool-rad vars id ALDRIG deklareras (en riktigt föräldralös rad)
+        # hoppas fortfarande över.
+        declared_call_ids = self._declared_tool_call_ids(lines)
         for line in lines:
             role = role_map.get(line.role)
             if role is None:
@@ -1024,15 +1051,17 @@ class AICoworkerSession(models.Model):
                 content = line.content or ''
                 if tool_summary:
                     content = (content + '\n\n' + tool_summary).strip()
-                # Nya assistant-raden äger sina tool_calls — nollställ först
-                # så att tool-rader bara paras mot den rad som deklarerade dem.
-                declared_call_ids = set()
-                if tool_calls:
-                    for tc in tool_calls:
-                        cid = (tc.get('id') or '').strip() \
-                            if isinstance(tc, dict) else ''
-                        if cid:
-                            declared_call_ids.add(cid)
+                # INGEN NOLLSTÄLLNING HÄR. Mängden är FÖRregistrerad ur
+                # hela sessionen (`_declared_tool_call_ids`) just för att
+                # tool-raderna ligger före sina anrop i sekvensen. Att
+                # nollställa per assistant-rad raderade den förregistreringen
+                # och tappade varje tool-rad som hörde till en TIDIGARE tur:
+                # providern fick då assistant-meddelanden med obesvarade
+                # `tool_calls` → 400.
+                #
+                # Säkerhetsnätet är oförändrat: en tool-rad vars id ingen
+                # assistant-rad någonsin deklarerar finns inte i mängden och
+                # utesluts fortfarande (se test_truly_orphan_tool_line).
                 history.append(Message(
                     role=Role.ASSISTANT,
                     content=content,
@@ -1041,6 +1070,36 @@ class AICoworkerSession(models.Model):
             else:
                 history.append(Message(role=role, content=line.content or ''))
         return history
+
+    @staticmethod
+    def _declared_tool_call_ids(lines):
+        """Alla tool_call_id som någon assistant-rad i `lines` deklarerar.
+
+        Läses i förväg (inte under loopen) eftersom tool-raderna skrivs FÖRE
+        den assistant-rad som äger dem — se kommentaren i
+        `_build_history_from_lines`.
+
+        Bara OpenAI-formatet (`{'function': …}` med `id`) bidrar: det är det
+        enda som kan paras mot en tool-rad. Preview-formatet har inga id:n
+        och blir en läsbar sammanfattning i assistant-radens content.
+        """
+        ids = set()
+        for line in lines:
+            if line.role != 'assistant' or not line.tool_calls:
+                continue
+            try:
+                parsed = json.loads(line.tool_calls)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(parsed, list):
+                continue
+            for tc in parsed:
+                if not isinstance(tc, dict) or 'function' not in tc:
+                    continue
+                cid = (tc.get('id') or '').strip()
+                if cid:
+                    ids.add(cid)
+        return ids
 
     @staticmethod
     def _tool_calls_summary(parsed):

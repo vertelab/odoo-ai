@@ -124,6 +124,45 @@ class TestCoreDomainPurity(ConfigParamGuardedCase):
             offenders, [],
             'oskyddade domänreferenser i kärnan:\n  ' + '\n  '.join(offenders))
 
+    def test_temporal_resolver_names_no_domain(self):
+        """okf-temporal-recall task 6.2: resolvern är domän-neutral.
+
+        Tidsresolveraren är den nya kod som lättast smyger in en domän
+        ("om det är ett mail, titta på received_at"). Den får inte göra
+        det — den känner bara till FORMEN (datum, roll), aldrig modellen.
+        """
+        path = os.path.join(os.path.dirname(_MODELS_DIR), 'core',
+                            'okf_temporal.py')
+        src = open(path, encoding='utf-8').read()
+        code = []
+        for line in src.split('\n'):
+            if _is_docstring_or_comment(line):
+                continue
+            code.append(line)
+        body = '\n'.join(code)
+        for model in DOMAIN_MODELS:
+            self.assertNotIn(
+                model, body,
+                'tidsresolveraren nämner domänmodellen %r' % model)
+        # Inte heller de fältnamn som bara en domän känner till.
+        for fname in ('received_at', 'event_start', 'joplin', 'calendar'):
+            self.assertNotIn(
+                "'%s'" % fname, body,
+                'tidsresolveraren nämner domänfältet %r' % fname)
+
+    def test_temporal_enrichment_names_no_domain(self):
+        """Berikningen itererar en registrerad lista — den äger ingen domän."""
+        path = os.path.join(_MODELS_DIR, 'ai_coworker.py')
+        src = open(path, encoding='utf-8').read()
+        start = src.find('def _related_enrich_impl')
+        self.assertGreater(start, 0, '_related_enrich_impl saknas')
+        end = src.find('\n    def ', start + 10)
+        body = src[start:end]
+        for model in DOMAIN_MODELS:
+            self.assertNotIn(
+                model, body,
+                'berikningen nämner domänmodellen %r' % model)
+
     def test_core_installs_without_calendar(self):
         """Kärnan fungerar utan kalendern installerad.
 

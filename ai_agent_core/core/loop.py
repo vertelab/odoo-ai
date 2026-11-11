@@ -210,9 +210,15 @@ class AgentLoop:
         context_provider: Optional[callable] = None,
         denial_callback: Optional[callable] = None,
         tool_selector=None,
+        env=None,
     ):
         self.provider = provider
         self.tools = tools
+        # Odoo-miljön, när loopen skapas från en modell. Behövs för att
+        # läsa systemparametrar (t.ex. `validate_tool_args`). Loopen är
+        # annars domän-neutral och `env` får vara None — då gäller
+        # defaultvärdena.
+        self.env = env
         self.config = config or AgentConfig()
         # Explicit argument vinner över config (bakåtkompatibelt: de vägar
         # som redan skickar `interrupt_handler` till konstruktorn, t.ex.
@@ -229,6 +235,15 @@ class AgentLoop:
         # exekveringsväg har uppstått utan grind, och då ska det synas i
         # loggen i stället för att upptäckas av en säkerhetsgranskning.
         self._gated_call_ids: set = set()
+        # Upprepningsskydd (tool-call-quality D6): (verktygsnamn, argument)
+        # som redan gett ett FEL i den här turen. Session 28097 skickade
+        # `{}` fyra gånger — ett avvisat anrop som bara upprepas äter turer
+        # och tokens utan att komma närmare ett svar.
+        #
+        # Bara anrop som REDAN FELAT registreras: en lyckad sökning får
+        # upprepas (samma fråga två gånger kan vara rimlig), och ett rättat
+        # anrop är per definition inte identiskt.
+        self._failed_calls: set = set()
         # Nekorsak per tool_call_id — används för att skriva ett begripligt
         # TOOL-meddelande till modellen ("denied: <skäl>").
         self._denial_reasons: dict = {}
@@ -403,6 +418,8 @@ class AgentLoop:
         messages = list(history) if history else []
         if prompt:
             messages.append(Message(role=Role.USER, content=prompt))
+        # Upprepningsskyddet gäller PER TUR (tool-call-quality D6).
+        self._failed_calls = set()
 
         round_num = 0
         total_input_tokens = 0
@@ -932,6 +949,92 @@ class AgentLoop:
             )
             return False
 
+    @staticmethod
+    def _call_key(name, args):
+        """Stabil nyckel för (verktyg, argument) — för upprepningsskyddet."""
+        import json as _json
+        try:
+            return (name, _json.dumps(args or {}, sort_keys=True,
+                                      ensure_ascii=False, default=str))
+        except (TypeError, ValueError):
+            return (name, repr(args))
+
+    def _validate_required_args(self, tool, args):
+        """Kontrollera obligatoriska argument INNAN verktyget körs.
+
+        (tool-call-quality D1/D2.) Returnerar ``''`` när anropet är giltigt,
+        annars ett strukturerat fel som JSON-sträng.
+
+        VARFÖR HÄR OCH INTE I VARJE HANDLER: tio handlers validerade redan
+        sina egna argument, men inkonsekvent — `okf_search` svarade
+        "query is required" (begripligt), `odoo_search({})` svarade
+        "Unknown model: " (ett tomt eko). Att laga tio ställen och hoppas på
+        den elfte är samma fälla som `_okf_model_is_indexable` var. EN grind
+        fångar alla nuvarande och framtida verktyg.
+
+        TOMT ÄR SAKNAT: `{}`, `''`, `None` och `[]` för ett obligatoriskt
+        fält räknas som ett saknat argument. Den observerade buggen var inte
+        att nyckeln saknades — modellen skickade ett objekt utan nycklar
+        (session 28097, fyra gånger). En närvarokontroll hade släppt igenom
+        exakt det fallet.
+
+        Bara fält i schemats `required` prövas. Ett verktyg där tom sträng är
+        ett giltigt värde (t.ex. `period=""` i okf_search = "använd default")
+        påverkas därför inte, eftersom fältet inte är obligatoriskt.
+        """
+        params = getattr(tool, 'parameters', None) or {}
+        required = params.get('required') or []
+        if not required:
+            return ''
+        # Systemparametern gör grinden avstängningsbar utan kodändring
+        # (task 2.4) — en rollback ska inte kräva en deploy. Loopen har
+        # ingen `env` (den är domän-neutral), så flaggan läses ur en
+        # kontextnyckel som anroparen sätter; utan den gäller defaulten.
+        enabled = getattr(self, 'validate_tool_args', True)
+        env = getattr(self, 'env', None)
+        if env is not None:
+            try:
+                enabled = env['ir.config_parameter'].sudo().get_param(
+                    'ai_agent_core.validate_tool_args', 'True') == 'True'
+            except Exception:  # noqa: BLE001 — utan env gäller defaulten
+                pass
+        if not enabled:
+            return ''
+
+        properties = params.get('properties') or {}
+        for name in required:
+            value = args.get(name)
+            empty = (
+                value is None
+                or (isinstance(value, str) and not value.strip())
+                or (isinstance(value, (list, dict, tuple)) and not value)
+            )
+            if not empty:
+                continue
+            prop = properties.get(name) or {}
+            # Exempel: schemats egen beskrivning om den bär ett, annars
+            # fältets typ. Vi hittar inte på ett värde som kan vara fel.
+            example = prop.get('example') or ''
+            expected = prop.get('description') or prop.get('type') or 'a value'
+            from .tools import _missing_argument_error
+            # `next_step` kommer ur SCHEMAT när det finns: ett verktyg som
+            # vet vad som är nästa steg (t.ex. describe_model → peka på
+            # describe_available) ska inte skymmas av grindens generiska
+            # text. Grinden fyller bara i när schemat tiger.
+            #
+            # FYND 2026-11-11 (första driftkörningen): den generiska texten
+            # skrev över handlerns specifika, så felet tappade sitt bästa
+            # råd. Fältet läses ur `properties[name].next_step` — det är
+            # där ett schema kan bära det utan att handlern behöver köras.
+            next_step = prop.get('next_step') or (
+                'Pass a non-empty value for %r and try again — the tool '
+                'was not executed.' % name)
+            return _missing_argument_error(
+                name, expected, example=example, tool_name=tool.name,
+                next_step=next_step,
+            ).to_json()
+        return ''
+
     async def _execute_tools_parallel(
         self, tool_calls: list
     ) -> list[tuple]:
@@ -1013,6 +1116,34 @@ class AgentLoop:
         if not isinstance(args, dict):
             args = {}
 
+        # GRINDEN LIGGER EFTER NORMALISERINGEN (tool-call-quality D1/D2).
+        # Ordningen är inte kosmetik: `{'arguments': {'model': 'x'}}` måste
+        # packas upp först, annars ser kontrollen `arguments` som ett okänt
+        # fält och avvisar ett anrop som är giltigt.
+        # Upprepningsskyddet (D6): exakt samma anrop som redan felat i
+        # den här turen körs inte igen.
+        call_key = self._call_key(tool_call.name, args)
+        if call_key in self._failed_calls:
+            repeated = (
+                "This exact call already failed in this turn and was not "
+                "executed again. Change the arguments — repeating it will "
+                "give the same error.")
+            self.tool_history.append(
+                (tool_call.name, repeated[:500], tool_call.id or '',
+                 dict(args or {})))
+            self.tool_results.append((tool_call.name, dict(args or {}),
+                                      repeated))
+            return repeated
+
+        invalid = self._validate_required_args(tool, args)
+        if invalid:
+            self._failed_calls.add(call_key)
+            self.tool_history.append(
+                (tool_call.name, str(invalid)[:500], tool_call.id or '',
+                 dict(args or {})))
+            self.tool_results.append((tool_call.name, dict(args or {}), invalid))
+            return self._frame_untrusted(tool, invalid)
+
         try:
             execute_task = asyncio.create_task(
                 tool.execute(**args)
@@ -1031,6 +1162,8 @@ class AgentLoop:
 
             if execute_task not in done:
                 execute_task.cancel()
+                # Ett timeout är ett fel — upprepa inte exakt samma anrop.
+                self._failed_calls.add(call_key)
                 return f"Error: tool '{tool_call.name}' timed out after {self.config.tool_timeout}s"
 
             result = execute_task.result()
@@ -1049,6 +1182,9 @@ class AgentLoop:
             return f"Tool '{tool_call.name}' cancelled"
         except Exception as e:
             _logger.warning("Tool '%s' failed: %s", tool_call.name, e)
+            # Ett kastat fel är också ett fel — samma anrop igen ger samma
+            # krasch (tool-call-quality D6).
+            self._failed_calls.add(call_key)
             return f"Error executing '{tool_call.name}': {e}"
 
         # Chunkning av stora verktygsresultat — se `_chunk_tool_result`.
@@ -1297,6 +1433,8 @@ class StreamingAgentLoop(AgentLoop):
         messages = list(history) if history else []
         if prompt:
             messages.append(Message(role=Role.USER, content=prompt))
+        # Upprepningsskyddet gäller PER TUR (tool-call-quality D6).
+        self._failed_calls = set()
 
         round_num = 0
 

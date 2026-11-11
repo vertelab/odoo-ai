@@ -45,6 +45,14 @@ class EvalResult:
     tokens_input: int = 0
     tokens_output: int = 0
     cost: float = 0.0
+    # Strömmens egna mått (tool-call-quality D7). `latency_ms` är
+    # väggklocka runt hela anropet; dessa kommer ur sessionens assistentrad
+    # och finns bara när turen strömmade. De hålls SEPARATA — ett sammansatt
+    # index gör det omöjligt att se vilken dimension som svek.
+    first_token_seconds: float = 0.0
+    longest_gap_seconds: float = 0.0
+    stream_seconds: float = 0.0
+    tool_call_count: int = 0
 
 
 @dataclass
@@ -233,6 +241,12 @@ class EvalRunner:
             false_positives=fp,
             false_negatives=fn,
             latency_ms=latency_ms,
+            first_token_seconds=getattr(response, 'first_token_seconds', 0.0)
+            or 0.0,
+            longest_gap_seconds=getattr(response, 'longest_gap_seconds', 0.0)
+            or 0.0,
+            stream_seconds=getattr(response, 'stream_seconds', 0.0) or 0.0,
+            tool_call_count=len(getattr(response, 'tool_calls', []) or []),
             tokens_input=response.input_tokens,
             tokens_output=response.output_tokens,
             cost=(

@@ -405,6 +405,16 @@
                                 <field name="session_graph_enabled"
                                        invisible="not graph_enrichment"/>
                             </group>
+                            <group string="Time and Related Records">
+                                <field name="temporal_default_enabled"/>
+                                <field name="temporal_default_days"
+                                       invisible="not temporal_default_enabled"/>
+                                <field name="related_enrichment"/>
+                                <field name="related_enrichment_limit"
+                                       invisible="not related_enrichment"/>
+                                <field name="related_enrichment_budget"
+                                       invisible="not related_enrichment"/>
+                            </group>
                             <group string="Company Memory" invisible="'Företagets minne' in memory_scopes" >
                                 <field name="inject_company_memory"/>
                                 <field name="company_memory_artifact_types" widget="many2many_tags"/>

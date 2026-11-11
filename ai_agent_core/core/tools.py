@@ -1103,6 +1103,180 @@ def apply_capability_serialization(registry, capabilities, mode):
     return ''
 
 
+# ---------------------------------------------------------------------------
+# describe_available (tool-call-quality D4)
+# ---------------------------------------------------------------------------
+#
+# VARFÖR: session 28097 letade efter mail-modellen med fem `ir.model`-
+# sökningar och fick modellnamn UTAN fält — därför fortsatte den leta. Det
+# systemet vet men aldrig gav den är: vilka modeller som finns och vilka fält
+# en fråga faktiskt behöver.
+
+#: De fältdimensioner en fråga typiskt behöver. Varje dimension fylls ur
+#: modellens FAKTISKA fält (D4) — finns ingen tidsdimension sägs det, inte en
+#: gissning.
+_AVAILABLE_DIMENSIONS = (
+    ('content', ('subject', 'name', 'title', 'description', 'body', 'summary')),
+    ('time', ('received_at', 'date', 'start', 'stop', 'date_deadline',
+              'date_start', 'create_date', 'updated_time', 'follow_up_at')),
+    ('customer', ('partner_id', 'partner_ids')),
+    ('status', ('state', 'status', 'stage_id', 'category')),
+    ('action', ('action_needed', 'activity_ids', 'todo_due')),
+)
+
+
+#: Svenska frågeord → de engelska ord som finns i modellnamn och
+#: fältbeskrivningar. Utan den här bryggan svarar "möten" och "uppgifter"
+#: tomt, eftersom modellerna heter `calendar.event` och `project.task`.
+#:
+#: Det är inte en översättning av systemet — bara de ord en användare
+#: faktiskt skriver när hen letar. Listan är avsiktligt kort; hellre tomt
+#: än en gissning som pekar på fel modell.
+_QUESTION_SYNONYMS = {
+    'möte': 'calendar event meeting', 'möten': 'calendar event meeting',
+    'kalender': 'calendar event', 'bokning': 'calendar event',
+    'uppgift': 'project task', 'uppgifter': 'project task',
+    'projekt': 'project', 'ärende': 'helpdesk ticket',
+    'ärenden': 'helpdesk ticket', 'kund': 'partner', 'kunder': 'partner',
+    'kontakt': 'partner', 'kontakter': 'partner',
+    'faktura': 'account move invoice', 'fakturor': 'account move invoice',
+    'order': 'sale order', 'offerter': 'sale order',
+    'anteckning': 'joplin note', 'anteckningar': 'joplin note',
+    'dokument': 'document page dms file', 'lag': 'document law',
+    'medarbetare': 'hr employee', 'personal': 'hr employee',
+    'företag': 'res company',
+}
+
+
+def _expand_question(question):
+    """Lägg till engelska motsvarigheter för svenska frågeord."""
+    tokens = [t for t in question.split() if len(t) > 2]
+    extra = []
+    for tok in tokens:
+        mapped = _QUESTION_SYNONYMS.get(tok)
+        if mapped:
+            extra.extend(mapped.split())
+    return tokens + extra
+
+
+def _available_fields(Model):
+    """Modellens fält grupperade per dimension.
+
+    Bara lagrade, läsbara, icke-gruppberoende fält — samma integritetsregel
+    som mixinen använder. Ett gruppbegränsat fält ska aldrig föreslås.
+    """
+    out = {}
+    for dim, candidates in _AVAILABLE_DIMENSIONS:
+        hits = []
+        for fname in candidates:
+            field = Model._fields.get(fname)
+            if not field:
+                continue
+            if field.groups:
+                continue
+            hits.append(fname)
+        if hits:
+            out[dim] = hits
+    return out
+
+
+def _tool_describe_available(env, question=''):
+    """Vad finns? Modeller och fält som svarar mot frågan.
+
+    (tool-call-quality D4.) Bygger ur modellregistret, inte ur en
+    `ir.model`-sökning: svaret ska namge de fält som bär innehåll, tid, kund
+    och status — det en fråga behöver filtrera eller sortera på.
+
+    BUDGET: topp 5 modeller, max ~1200 tecken. Ett "vad finns" som fyller
+    kontexten är ett nytt problem, inte en lösning.
+    """
+    import json as _json
+    if 'ai.okf.concept' not in env:
+        return _json.dumps({'models': [], 'note': 'OKF is not installed'})
+
+    question = (question or '').strip().lower()
+    if not question:
+        return _missing_argument_error(
+            'question', 'what you are looking for, in natural language',
+            example='"mail från en kund"',
+            tool_name='describe_available',
+            next_step='Pass the question itself, e.g. "mail" or "möten".',
+        ).to_json()
+
+    Mixin = env['ai.okf.mixin']
+    # Kandidater: de modeller systemet faktiskt indexerar (registret), inte
+    # hela ir.model. Det är de som bär kunskap och är byggda för att sökas.
+    candidates = list(Mixin._okf_indexable_models())
+    for model in Mixin._okf_related_models():
+        if model not in candidates:
+            candidates.append(model)
+
+    # Access: samma asymmetriska klassning som sökvägen. CLOSED-modeller
+    # föreslås aldrig, och svaret avslöjar inte att de dolts.
+    Resolver = env['ai.access.resolver']
+    user = env.user
+
+    scored = []
+    for model_name in candidates:
+        if model_name not in env:
+            continue
+        Model = env[model_name]
+        # Fritext: modellnamn, beskrivning och fältnamn.
+        #
+        # FYND 2026-11-11 (första driftkörningen): `user_mail_ai.mail` gick
+        # inte att hitta med frågan "mail". Vi bytte punkt mot mellanslag
+        # men lämnade understrecket, så `user_mail_ai` blev ett enda ord —
+        # och `mail` som delsträng fanns bara inuti `user_mail_ai`, vilket
+        # matchade men gav fel rang. Nu normaliseras BÅDE punkt och
+        # understreck till mellanslag, så modellnamnets ord blir sökbara.
+        haystack = ' '.join([
+            model_name.replace('.', ' ').replace('_', ' '),
+            Model._description or '',
+            ' '.join(f.replace('_', ' ') for f in Model._fields.keys()),
+        ]).lower()
+        tokens = _expand_question(question)
+        score = sum(1 for t in tokens if t in haystack)
+        if not score:
+            continue
+        # Ett ord som är modellens eget (sista ledet i namnet) väger tyngre
+        # än ett som bara finns i ett fältnamn — "mail" ska peka på
+        # mail-modellen, inte på varje modell som råkade ha ett mail-fält.
+        own = model_name.split('.')[-1].replace('_', ' ').lower()
+        if any(t in own for t in tokens):
+            score += 2
+        try:
+            kind, _ids = Resolver._classify_source_model(model_name, user)
+        except Exception:  # noqa: BLE001 — okänd klassning = stängd
+            continue
+        if kind == Resolver.CLOSED:
+            continue
+        scored.append((score, model_name, Model))
+
+    if not scored:
+        return _json.dumps({
+            'models': [],
+            'note': ('No installed model matches %r. Do not guess a model '
+                     'name — ask the user which system holds the data.'
+                     % question),
+        }, ensure_ascii=False)
+
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    out = []
+    used = 0
+    for score, model_name, Model in scored[:5]:
+        entry = {
+            'model': model_name,
+            'name': Model._description or model_name,
+            'fields': _available_fields(Model),
+        }
+        blob = _json.dumps(entry, ensure_ascii=False)
+        if used + len(blob) > 1200 and out:
+            break
+        out.append(entry)
+        used += len(blob)
+    return _json.dumps({'models': out}, ensure_ascii=False, default=str)
+
+
 def _tool_push_notification(env, title='', body='', url=None):
     """Skicka en push-notis till sessionens användare (push-notification 1.1).
 
@@ -1747,13 +1921,48 @@ def builtin_tools() -> list[Tool]:
             parameters={
                 "type": "object",
                 "properties": {
-                    "model": {"type": "string", "description": "Odoo model technical name, e.g. crm.lead"},
+                    "model": {
+                        "type": "string",
+                        "description": "Odoo model technical name, e.g. crm.lead",
+                        "example": "res.partner",
+                        "next_step": (
+                            "Call describe_available with your question to "
+                            "see which models exist, or pass a model like "
+                            "'res.partner'."),
+                    },
                 },
                 "required": ["model"],
             },
             handler=_tool_describe_model,
             risk_level="read_only",
             source="odoo_model",
+        ),
+        Tool(
+            name="describe_available",
+            description=(
+                "What exists? Given a question in natural language, returns "
+                "the installed models that match — with the fields that "
+                "carry content, time, customer, status and action. Use this "
+                "BEFORE guessing a model name; it is one call instead of "
+                "several ir.model searches, and it names the fields you "
+                "need to filter or sort on."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": (
+                            "What you are looking for, e.g. 'mail', "
+                            "'möten', 'fakturor'."),
+                        "example": "mail från en kund",
+                    },
+                },
+                "required": ["question"],
+            },
+            handler=_tool_describe_available,
+            risk_level="read_only",
+            source="odoo_model",
+            trust="tool",
         ),
         Tool(
             name="odoo_search",
@@ -1878,6 +2087,17 @@ def builtin_tools() -> list[Tool]:
                     "query": {"type": "string"},
                     "scope": {"type": "string", "enum": ["company", "personal", "coworker"]},
                     "limit": {"type": "integer", "default": 10},
+                    "period": {
+                        "type": "string",
+                        "description": (
+                            "OPTIONAL. Only needed to override the automatic "
+                            "time window. Swedish relative expressions such as "
+                            "'i veckan', 'senaste månaden' or 'förra året'. "
+                            "Leave empty in most cases: mail already defaults "
+                            "to the last 7 days and calendar to the next 7, "
+                            "and an expression inside the query is understood "
+                            "automatically."),
+                    },
                 },
                 "required": ["query"],
             },
@@ -2503,7 +2723,8 @@ class ToolError(Exception):
     """
 
     def __init__(self, message, parameter='', expected='', actual='',
-                 valid_fields=None, retryable=True, tool_name='', hint=''):
+                 valid_fields=None, retryable=True, tool_name='', hint='',
+                 next_step=''):
         super().__init__(message)
         self.message = message
         self.parameter = parameter
@@ -2516,6 +2737,14 @@ class ToolError(Exception):
         # istället — t.ex. SSRF-skyddets förklaring. Skiljer sig från
         # ``expected`` som beskriver rätt format.
         self.hint = hint
+        # NÄSTA STEG (tool-call-quality D3): vilken handling som leder
+        # vidare, inte bara vad som var fel. `hint` förklarar VARFÖR;
+        # `next_step` säger VAD anroparen ska göra nu.
+        #
+        # Fältet finns för att session 28097 upprepade samma tomma anrop
+        # fyra gånger: felet konstaterade vad som saknades men pekade inte
+        # vidare, så modellen försökte igen på samma sätt.
+        self.next_step = next_step
 
     def to_text(self):
         """LLM-läsbar text med vägledning."""
@@ -2530,6 +2759,8 @@ class ToolError(Exception):
             parts.append("Valid fields: %s" % ', '.join(self.valid_fields))
         if self.hint:
             parts.append(f"Hint: {self.hint}")
+        if self.next_step:
+            parts.append(f"Next step: {self.next_step}")
         parts.append("Retryable: %s" % ('yes' if self.retryable else 'no'))
         return '\n'.join(parts)
 
@@ -2544,6 +2775,7 @@ class ToolError(Exception):
             'retryable': self.retryable,
             'tool_name': self.tool_name,
             'hint': self.hint,
+            'next_step': self.next_step,
         }
 
     def to_json(self):
@@ -2558,7 +2790,8 @@ def _tool_error(message, valid_fields=None, tool_name=''):
         valid_fields=valid_fields, tool_name=tool_name)
 
 
-def _missing_argument_error(parameter, expected, example='', tool_name=''):
+def _missing_argument_error(parameter, expected, example='', tool_name='',
+                            next_step=''):
     """Saknat eller tomt obligatoriskt argument → åtgärdbart fel.
 
     Ett TOMT argument behandlas som ett saknat (atgardbara-verktygsfel D2):
@@ -2568,6 +2801,9 @@ def _missing_argument_error(parameter, expected, example='', tool_name=''):
     :param parameter: argumentets namn
     :param expected:  förväntat format eller vilka värden som gäller
     :param example:   ett konkret exempel på ett giltigt värde
+    :param next_step: vilken handling som leder vidare (tool-call-quality D3).
+                      Session 28097 upprepade samma tomma anrop fyra gånger
+                      just för att felet inte pekade vidare.
     """
     msg = f"Missing required argument '{parameter}'"
     if example:
@@ -2579,6 +2815,7 @@ def _missing_argument_error(parameter, expected, example='', tool_name=''):
         actual='(empty)',
         retryable=True,
         tool_name=tool_name,
+        next_step=next_step,
     )
 
 
@@ -2659,7 +2896,10 @@ def _tool_describe_model(env, model=''):
         return _missing_argument_error(
             'model', 'an Odoo model name (technical name)',
             example='res.partner',
-            tool_name='describe_model').to_json()
+            tool_name='describe_model',
+            next_step=('Call describe_available with your question to see '
+                       'which models exist, or pass a model like '
+                       '"res.partner".')).to_json()
     if model not in env.registry:
         return _invalid_value_error(
             'model', 'an installed Odoo model', model,
@@ -3256,7 +3496,7 @@ def _tool_odoo_attach(env, model='', id=None, field='', path='',
     })
 
 
-def _tool_okf_search(env, query='', scope='company', limit=10):
+def _tool_okf_search(env, query='', scope='company', limit=10, period=''):
     """Sök OKF-koncept via _okf_search (hybrid pgvector + tsvector + access).
 
     Ägaren löses ur körningskontexten (odoo-mind-memory-scope-isolation):
@@ -3264,12 +3504,33 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
     personal → env.user, coworker → coworkern i kontexten.
     """
     import json as _json
-    if not query:
-        return json.dumps({"error": "query is required"})
+    if not query or not str(query).strip():
+        # Strukturerat fel med nästa steg (tool-call-quality D3): den gamla
+        # strängen "query is required" namngav vad som saknades men inte vad
+        # anroparen skulle göra — och modellen upprepade samma tomma anrop.
+        return _missing_argument_error(
+            'query', 'a search phrase in natural language',
+            example='"mail från Skanska om offerten"',
+            tool_name='okf_search',
+            next_step=('Pass the question itself as the query, or use '
+                       'odoo_search on the model that holds the data.'),
+        ).to_json()
     if 'ai.okf.concept' not in env:
         return json.dumps({"error": "OKF not available"})
     try:
         kw = {'query': query, 'limit': limit or 10}
+        if period:
+            # Explicit period går före allt annat (okf-temporal-recall D6).
+            # Utelämnad `period` är det NORMALLA — defaulten kommer
+            # underifrån, per artefakttyp.
+            from . import okf_temporal
+            res = okf_temporal.resolve(period)
+            if res['date_from'] is not None:
+                kw['temporal_window'] = (res['date_from'], res['date_to'])
+            else:
+                _logger.info(
+                    'okf_search: period %r could not be interpreted — '
+                    'falling back to the artefact-type default', period)
         if scope in ('company', 'personal', 'coworker'):
             kw['scope'] = scope
             # Ägaruppslag per scope — annars kastar _okf_search (med flit).
@@ -3290,13 +3551,33 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
                     return json.dumps({
                         "error": "coworker scope requires a coworker in the context (default_coworker_id)"})
                 kw['owner_id'] = cw_id
-        results = env['ai.okf.concept']._okf_search(**kw)
+        Concept = env['ai.okf.concept']
+        results = Concept._okf_search(**kw)
         out = [{
             'id': c.id, 'title': c.title,
             'summary': (c.summary or '')[:500],
-            'concept_key': c.concept_key, 'scope': c.scope, 'status': c.status,
+            'concept_key': c.concept_key, 'scope': c.scope,
+            'status': c.status,
+            # Källdatumet hör till svaret: en träff utan tid går inte att
+            # bedöma som "nära" eller "gammal" (task 4.6).
+            'source_date': c.source_date.isoformat() if c.source_date else None,
+            'temporal_role': c.temporal_role or None,
         } for c in results]
-        return json.dumps(out, default=str)
+        # Diagnostiken förklarar vilket fönster som användes — eller att
+        # inget gjorde det och varför. Utan den går ett "tomt" svar inte
+        # att skilja från ett "utanför fönstret".
+        diag = Concept._okf_temporal_diag()
+        payload = {
+            'results': out,
+            'temporal': {
+                'from': diag['from'].isoformat() if diag['from'] else None,
+                'to': diag['to'].isoformat() if diag['to'] else None,
+                'direction': diag['direction'],
+                'source': diag['source'],
+                'unmatched': diag['unmatched'],
+            },
+        }
+        return json.dumps(payload, default=str)
     except Exception as e:
         return json.dumps({"error": f"okf_search failed: {e}"})
 

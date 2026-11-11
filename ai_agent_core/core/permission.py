@@ -95,7 +95,8 @@ _ALWAYS_READ = {
     "odoo_calculator", "echo",
     "search_read", "read", "todo_write", "load_skill",
     # Generic Odoo model tools (read-only)
-    "describe_model", "odoo_search", "okf_search", "graph_query",
+    "describe_model", "describe_available", "odoo_search", "okf_search",
+    "graph_query",
 }
 
 #: Verktyg som hämtar otrovärdigt innehåll. De är LÄSANDE (ingen

@@ -443,8 +443,20 @@ class GraphExecutor(models.Model):
         andra gången). Vi sväljer fel: saknas extensionen ska anroparen få
         sitt eget, tydligare fel från ``cypher()``.
         """
+        # EGEN SPARPUNKT. Anroparen har redan en (`graph_executor`), men
+        # den här metoden får inte lämna en förgiftad transaktion efter
+        # sig: PostgreSQL tillåter inga kommandon alls efter ett nekat
+        # LOAD, inte ens ROLLBACK TO. Utan sparpunkten här dog hela
+        # installationen på en graf som bara skulle ha degraderat
+        # (mätt 2026-11-10).
         try:
-            self.env.cr.execute("LOAD 'age'")
+            self.env.cr.execute("SAVEPOINT age_load")
+            try:
+                self.env.cr.execute("LOAD 'age'")
+                self.env.cr.execute("RELEASE SAVEPOINT age_load")
+            except Exception:
+                self.env.cr.execute("ROLLBACK TO SAVEPOINT age_load")
+                self.env.cr.execute("RELEASE SAVEPOINT age_load")
         except Exception:
             # ROLLBACK IS MANDATORY, not defensive.
             #
@@ -516,6 +528,20 @@ class GraphExecutor(models.Model):
         try:
             # Use savepoint to avoid aborting the entire transaction on error
             self.env.cr.execute("SAVEPOINT graph_executor")
+            # `LOAD 'age'` MÅSTE ligga innanför savepointet.
+            #
+            # FYND 2026-11-10: den låg utanför, och `_load_age_extension()`
+            # sväljer felet med `except Exception: pass`. Det räddar Python
+            # — men inte TRANSAKTIONEN. När PostgreSQL nekar LOAD ("access
+            # to library "age" is not allowed", t.ex. på en roll utan
+            # superuser) är transaktionen redan förgiftad, och varje
+            # efterföljande kommando svarar "current transaction is
+            # aborted". Följden var att SAVEPOINT-anropet i sig föll, att
+            # ROLLBACK TO aldrig nåddes, och att HELA installationen dog på
+            # en graf som bara skulle ha degraderat.
+            #
+            # Innanför savepointet kostar ett nekat LOAD bara en rollback
+            # till sparpunkten — precis den degradering som var avsedd.
             self._load_age_extension()
             # AGE:s operatorer (@>, som MERGE/SET/DELETE och
             # property-matchning använder) är OQUALIFICERADE inuti

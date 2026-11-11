@@ -180,3 +180,28 @@ class AIEvalResult(models.Model):
     actual_output = fields.Text('Actual Output')
     errors = fields.Text('Errors')
     latency_ms = fields.Float('Latency (ms)')
+
+    # ── Tidsmått från sessionen (tool-call-quality D7) ────────────────
+    #
+    # `latency_ms` ovan är väggklocka runt ett SYNKROnt anrop. Dessa tre är
+    # strömmens egna mått, hämtade från sessionens assistentrad — de finns
+    # bara när turen faktiskt strömmade.
+    #
+    # VARFÖR DE MÅSTE MED: kvalitet och tid mättes tidigare i skilda världar
+    # (`test_channel_timing` mätte tid, `core/eval.py` kvalitet, aldrig
+    # samma tur). Utan dessa fält kan ett befordrat testfall inte bära med
+    # sig hur lång tid turen tog — och då går "blev det bättre?" inte att
+    # svara på.
+    first_token_seconds = fields.Float(
+        'Time to First Token (s)',
+        help='From the session line. 0 = the turn did not stream.')
+    longest_gap_seconds = fields.Float(
+        'Longest Gap (s)',
+        help='Longest silence between two streaming events in the turn.')
+    stream_seconds = fields.Float(
+        'Streaming Time (s)',
+        help='Total streaming time for the turn.')
+    tool_call_count = fields.Integer(
+        'Tool Calls',
+        help='Number of tool calls before the answer — the measure that '
+             'showed how many probes a turn needed.')

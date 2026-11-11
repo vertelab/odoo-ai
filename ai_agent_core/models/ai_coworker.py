@@ -242,6 +242,38 @@ class AICoworker(models.Model):
     session_graph_enabled = fields.Boolean(
         'Graph in Session', default=False,
         help='Allow the graph to enrich session context too (more expensive).')
+
+    # ── Tid som styrdon (okf-temporal-recall 4.2/5.1) ─────────────────
+    #
+    # Tiden är ett TREDJE styrdon vid sidan av trösklarna (filtrering) och
+    # vikterna (ordning). Den påverkar bara ordningen — aldrig urvalet.
+    # Därför är den avstängningsbar per medarbetare: en specialist som vill
+    # ha "allt som matchar, oavsett när" ska kunna säga det.
+    temporal_default_enabled = fields.Boolean(
+        'Time Weighting', default=True,
+        help='Let proximity in time influence the ranking. Mail defaults to '
+             'the last 7 days and calendar to the next 7. On = hits near in '
+             'time rank higher; off = the search behaves as before.')
+    temporal_default_days = fields.Integer(
+        'Time Window Override (days)', default=0,
+        help='Override the artefact type default window with this many days. '
+             '0 = use the type default (mail 7 days back, calendar 7 days '
+             'forward).')
+
+    # ── Relaterade objekt nära i tiden (okf-temporal-recall D11/D12) ──
+    related_enrichment = fields.Boolean(
+        'Related in Time', default=True,
+        help='After the search, suggest related records (customer, project, '
+             'task, note, meeting, mail) whose own date lies in the same '
+             'window. Presented as SUGGESTIONS (basis="temporal") — never as '
+             'established links, and never in place of the search result.')
+    related_enrichment_limit = fields.Integer(
+        'Related: max records', default=5,
+        help='Maximum number of related records added to the answer context.')
+    related_enrichment_budget = fields.Integer(
+        'Related: budget (characters)', default=800,
+        help='Maximum characters the related-records block may add. It has '
+             'its own budget and never eats the memory blocks.')
     learning = fields.Selection([
         ('active', 'Active — learns from conversations'),
         ('passive', 'Passive — injects only, does not learn'),
@@ -3230,8 +3262,13 @@ class AICoworker(models.Model):
                     agent.name, missing.mapped('name'))
 
         _adopt('agent_odoo_business', [
-            'describe_model', 'odoo_search', 'odoo_create',
-            'odoo_call_method', 'odoo_write', 'odoo_unlink', 'okf_search',
+            # `describe_available` (tool-call-quality D4): agenten som söker
+            # i Odoo-modeller ska kunna fråga vad som finns INNAN den gissar
+            # ett modellnamn. Session 28097 gjorde fem `ir.model`-sökningar
+            # för att hitta mail-modellen.
+            'describe_available', 'describe_model', 'odoo_search',
+            'odoo_create', 'odoo_call_method', 'odoo_write', 'odoo_unlink',
+            'okf_search',
         ])
         # Kostnadskontext på ledar-agenten ("Allmän kärna").
         #
@@ -3597,6 +3634,204 @@ class AICoworker(models.Model):
             return []
         return [(r, params['min_score']) for r in records]
 
+    def _related_enrich(self, records, window=None, limit=None,
+                        budget=None, user=None):
+        """Föreslå relaterade poster nära i tiden (okf-temporal-recall D11).
+
+        ETT EGET STEG EFTER SÖKNINGEN. Skälet står i design D11: en nära
+        uppgift får inte konkurrera om `limit` med det mail frågan gällde.
+        Sökvägen svarar "vilka koncept matchar frågan"; den här metoden
+        svarar "vad mer ligger nära det vi hittade".
+
+        VARFÖR INTE GRAFEN: `graph_enrichment` traverserar EXISTERANDE
+        kanter. En uppgift som ännu inte är kopplad har ingen kant — och då
+        kan grafen inte hitta den. Tidsnärhet finns just för att hitta det
+        som inte är kopplat än.
+
+        KANDIDATERNA HITTAS UTAN DOMÄNKUNSKAP: bryggorna registrerar sina
+        modeller via `_okf_register_related()`; kärnan itererar listan och
+        filtrerar på datum i fönstret och på gemensam part.
+
+        Args:
+            records: sökträffar (`[{record, ...}]`) — källan till part och
+                tidsfönster.
+            window: `(date_from, date_to)` eller None → inget fönster.
+            limit: max antal poster (default `related_enrichment_limit`).
+            budget: max tecken (default `related_enrichment_budget`).
+            user: användaren (för tidszon).
+
+        Returns:
+            Text att lägga till kontexten, eller '' — aldrig ett fel.
+        """
+        self.ensure_one()
+        if not self.related_enrichment:
+            return ''
+        if not window or window[0] is None or window[1] is None:
+            return ''
+        limit = limit if limit is not None else (
+            self.related_enrichment_limit or 5)
+        budget = budget if budget is not None else (
+            self.related_enrichment_budget or 800)
+        if limit <= 0 or budget <= 0:
+            return ''
+        try:
+            return self._related_enrich_impl(records, window, limit, budget)
+        except Exception as e:  # noqa: BLE001
+            # Degraderar till INGEN berikning — aldrig till ett tomt svar.
+            # Samma ärlighetskrav som grafberikningen: ett tystnat block
+            # ska synas i loggen, inte se ut som "inget relaterat finns".
+            _logger.warning('Related enrichment degraded: %s', e,
+                            exc_info=True)
+            return ''
+
+    def _okf_hit_partner_ids(self, rec):
+        """Part-id:n för en sökträff, lästa ur KÄLLPOSTEN.
+
+        Ett `ai.okf.concept` speglar sin källa. Parten bor där — inte på
+        konceptet. Vi slår upp källposten via `source_ref` och läser dess
+        partfält. En källa som saknas eller inte går att läsa ger tom
+        mängd, aldrig ett fel: en trasig referens får inte sänka
+        berikningen.
+        """
+        source_ref = getattr(rec, 'source_ref', None)
+        if not source_ref or ',' not in source_ref:
+            return set()
+        model, _sep, res_id = source_ref.partition(',')
+        model = model.strip()
+        try:
+            res_id = int(res_id)
+        except (TypeError, ValueError):
+            return set()
+        if model not in self.env:
+            return set()
+        try:
+            source = self.env[model].sudo().browse(res_id)
+            if not source.exists():
+                return set()
+            found = set()
+            for fname in ('partner_id', 'partner_ids'):
+                if fname in source._fields:
+                    val = source[fname]
+                    if val:
+                        found.update(val.ids)
+            return found
+        except Exception as e:  # noqa: BLE001
+            _logger.debug(
+                'Related enrichment: %s could not be read (%s)',
+                source_ref, e)
+            return set()
+
+    def _related_enrich_impl(self, records, window, limit, budget):
+        """Berikningens kropp — hålls separat så felet fångas på ETT ställe."""
+        Mixin = self.env['ai.okf.mixin']
+        registry = Mixin._okf_related_models() or {}
+        if not registry:
+            return ''
+
+        date_from, date_to = window
+        # Gemensamma parter ur träffarna: det som gör "nära i tiden"
+        # meningsfullt. Utan en gemensam kund är alla uppgifter i veckan
+        # lika relevanta, dvs. ingen.
+        #
+        # FYND 2026-11-10: träffarna är `ai.okf.concept` — KONCEPTET har
+        # inget `partner_id`. Parten finns på KÄLLPOSTEN som `source_ref`
+        # pekar på (`user_mail_ai.mail,42` → mailen → `partner_id`).
+        # Att läsa parten ur konceptet gav alltid tom mängd, och
+        # berikningen var därför tyst död.
+        partner_ids = set()
+        for hit in records or []:
+            rec = hit.get('record') if isinstance(hit, dict) else hit
+            if rec is None:
+                continue
+            # Direkt på träffen, om modellen bär fältet (t.ex. ai.memory).
+            for fname in ('partner_id', 'partner_ids'):
+                if fname in getattr(rec, '_fields', {}):
+                    val = rec[fname]
+                    if val:
+                        partner_ids.update(val.ids)
+            # Via källposten — den väg som faktiskt gäller för koncept.
+            partner_ids.update(self._okf_hit_partner_ids(rec))
+        if not partner_ids:
+            # Ingen gemensam kund → ingen berikning. Det är det NORMALLA
+            # för en fråga som inte rör en kund, inte ett fel.
+            _logger.debug(
+                'Related enrichment: no shared partner in %s hits',
+                len(records or []))
+            return ''
+
+        found = []
+        for model_name, cfg in registry.items():
+            if model_name not in self.env:
+                continue
+            date_field = cfg.get('date_field')
+            partner_field = cfg.get('partner_field')
+            if not date_field or not partner_field:
+                # Utan datum eller part kan modellen bara nås via en
+                # explicit länk — den hör inte i tidsberikningen.
+                continue
+            Model = self.env[model_name].sudo()
+            if date_field not in Model._fields or \
+                    partner_field not in Model._fields:
+                continue
+            # Partfältet kan vara many2one ELLER many2many. Kalendern
+            # använder `partner_ids` (many2many); `'in'` fungerar för båda
+            # i Odoo-domänen, men fälttypen avgör hur värdet tolkas — en
+            # many2one jämförs mot en lista av id:n, en many2many matchar
+            # om NÅGON av dess id:n finns i listan. Båda är rätt.
+            domain = [
+                (partner_field, 'in', list(partner_ids)),
+                (date_field, '>=', date_from),
+                (date_field, '<=', date_to),
+            ]
+            if 'active' in Model._fields:
+                domain.append(('active', '=', True))
+            try:
+                recs = Model.search(domain, limit=limit * 2,
+                                    order=date_field + ' asc')
+            except Exception as e:  # noqa: BLE001
+                _logger.info(
+                    'Related enrichment: %s skipped (%s)', model_name, e)
+                continue
+            for rec in recs:
+                when = rec[date_field]
+                if not when:
+                    continue
+                found.append({
+                    'kind': cfg.get('kind') or model_name,
+                    'ref': '%s,%s' % (model_name, rec.id),
+                    'label': (rec[cfg.get('label_field') or 'name'] or '')
+                    if (cfg.get('label_field') or 'name') in rec._fields
+                    else '',
+                    'date': when,
+                    'distance': abs((when - date_from).total_seconds())
+                    if when < date_from
+                    else abs((when - date_to).total_seconds())
+                    if when > date_to
+                    else 0,
+                })
+
+        if not found:
+            return ''
+        # Närmast först, sedan trunkera mot budgeten.
+        found.sort(key=lambda d: (d['distance'], d['kind']))
+        lines = []
+        used = 0
+        for item in found[:limit]:
+            label = item['label'][:80]
+            line = '- %s (%s): %s' % (
+                item['ref'],
+                item['date'].strftime('%Y-%m-%d'),
+                ('"%s"' % label) if label else item['kind'])
+            if used + len(line) > budget:
+                break
+            lines.append(line)
+            used += len(line)
+        if not lines:
+            return ''
+        return (
+            '\n## Relaterat i tiden (förslag, inte fastställda kopplingar)\n'
+            + '\n'.join(lines))
+
     def _graph_enrich(self, records, budget=None, hops=None):
         """Berika hittade koncept med kunskapsgrafen (13.8, 13.9).
 
@@ -3693,6 +3928,21 @@ class AICoworker(models.Model):
         if self.hybrid_semantic_weight:
             params['semantic_weight'] = min(
                 1.0, max(0.0, self.hybrid_semantic_weight))
+        # Tidsstyrningen (okf-temporal-recall 5.2): avstängd → ingen
+        # tidsvikt alls; `days > 0` → överstyr fönstrets bredd för ALLA
+        # artefakttyper den här medarbetaren söker. Defaulten bor i
+        # bryggornas registrering och rörs inte av detta.
+        if not self.temporal_default_enabled:
+            kw.setdefault('temporal', False)
+        elif self.temporal_default_days and self.temporal_default_days > 0:
+            defaults = self.env['ai.okf.mixin']._okf_temporal_defaults()
+            overridden = {
+                name: {'days': self.temporal_default_days,
+                       'direction': cfg.get('direction', 'backward')}
+                for name, cfg in (defaults or {}).items()
+            }
+            if overridden:
+                kw.setdefault('temporal_defaults', overridden)
         sources = sources if sources is not None else self.search_sources
         sources = sources.filtered('active')
         if not sources:
@@ -3961,6 +4211,35 @@ class AICoworker(models.Model):
                             budget -= len(graph_text)
             except Exception as e:
                 _logger.warning('Grafberikning misslyckades: %s', e,
+                                exc_info=True)
+
+        # 6c. Relaterade objekt nära i tiden (okf-temporal-recall D11/D12).
+        # ETT EGET STEG EFTER SÖKNINGEN, med egen budget: det får inte äta
+        # av minnesbudgeten och inte röra sökningens `limit`. Blocket är
+        # märkt "förslag" — LLM:en formulerar svaret, och en temporär träff
+        # får aldrig presenteras som en fastställd koppling.
+        if self.related_enrichment and 'ai.okf.concept' in self.env:
+            try:
+                diag = self.env['ai.okf.concept']._okf_temporal_diag()
+                window = (diag.get('from'), diag.get('to'))
+                if window[0] and window[1]:
+                    hits, _diag = self._multi_source_recall(
+                        prompt or self.description or '', scope='company',
+                        owner_id=self.company_id.id or self.env.company.id,
+                        user=user,
+                        sources=self.search_sources.filtered(
+                            lambda s: s.backend == 'okf_concept'),
+                        semantic=False)
+                    related_text = self._related_enrich(
+                        hits, window=window, user=user)
+                    if related_text:
+                        parts.append(related_text)
+                        # Egen budget: dras INTE från `budget` — annars
+                        # hade ett relaterat block kunnat tränga ut ett
+                        # minnesblock. Blocket bär sin egen gräns
+                        # (`related_enrichment_budget`).
+            except Exception as e:
+                _logger.warning('Relaterad berikning misslyckades: %s', e,
                                 exc_info=True)
 
         # 6. Mission/values
@@ -5381,6 +5660,7 @@ class AICoworker(models.Model):
             from odoo.addons.ai_agent_core.core.permission import PermissionMode
             return AgentLoop(
                 provider=provider, tools=tools,
+                env=self.env,
                 config=AgentConfig(
                     model=model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
@@ -5399,6 +5679,7 @@ class AICoworker(models.Model):
             agents = self.agent_ids.sorted('sequence')
             if not agents:
                 return AgentLoop(provider=provider, tools=tools,
+                    env=self.env,
                     config=AgentConfig(model=model, system_prompt=system_prompt,
                         max_rounds=max_rounds,
                         session_headers=bifrost_headers,
@@ -10160,6 +10441,18 @@ class AICoworker(models.Model):
                 'actual_output': case_result.actual_output or '',
                 'errors': '\n'.join(case_result.errors) or False,
                 'latency_ms': case_result.latency_ms,
+                # Tidsmåtten följer med in i resultatet (tool-call-quality
+                # D7/7.4): utan dem kan ett befordrat testfall inte bära
+                # med sig hur lång tid turen tog, och då går "blev det
+                # bättre?" inte att svara på.
+                'first_token_seconds': getattr(
+                    case_result, 'first_token_seconds', 0.0) or 0.0,
+                'longest_gap_seconds': getattr(
+                    case_result, 'longest_gap_seconds', 0.0) or 0.0,
+                'stream_seconds': getattr(
+                    case_result, 'stream_seconds', 0.0) or 0.0,
+                'tool_call_count': getattr(
+                    case_result, 'tool_call_count', 0) or 0,
             }) for case, case_result in zip(cases, result.results)],
         })
         # 5.5 — accuracy till veckorapporten (trendkällan för kaizen).

@@ -42,6 +42,7 @@ versioner av `ai.memory,257` innan den fixades 2026-09-21.
 
 import logging
 import time
+import json
 
 import re
 
@@ -379,20 +380,119 @@ class AIOkfMixin(models.AbstractModel):
             value = self[fname]
             if not value:
                 continue
-            refs.extend('%s,%s' % (comodel, rid) for rid in value.ids)
-        # Dedup men behåll ordningen (samma post kan nås via flera fält)
-        seen = set()
-        return [r for r in refs if not (r in seen or seen.add(r))]
+            for rid in value.ids:
+                refs.append(self._okf_link_entry(comodel, rid))
+        # Bryggan kan lägga länkar relationsfältet inte bär (t.ex. ett
+        # mails object_model/object_res_id). Posterna kommer i samma form.
+        refs.extend(self._okf_links_extra() or [])
+        # Dedup men behåll ordningen. Nyckeln är `ref` — samma mål får
+        # inte dyka upp två gånger bara för att det nås via två fält.
+        # Vid dubblett vinner den STARKARE basen: explicit slår temporal.
+        seen = {}
+        for entry in refs:
+            key = entry.get('ref') if isinstance(entry, dict) else entry
+            if not key:
+                continue
+            prev = seen.get(key)
+            if prev is None:
+                seen[key] = entry
+                continue
+            if isinstance(prev, dict) and isinstance(entry, dict):
+                if entry.get('basis') == 'explicit' and \
+                        prev.get('basis') != 'explicit':
+                    seen[key] = entry
+        return list(seen.values())
+
+    def _okf_link_entry(self, model_name, res_id):
+        """En typad länkpost för `(model_name, res_id)`.
+
+        Formen (okf-temporal-recall D9):
+
+            {'ref': 'project.task,42', 'kind': 'project_task',
+             'date': '2026-11-12T00:00:00', 'basis': 'explicit'}
+
+        `kind` ur målmodellen, `date` ur MÅLETS eget källdatum — inte ur
+        källans. En uppgifts deadline säger något om uppgiften; källans
+        ankomsttid gör det inte (design D9).
+        """
+        entry = {
+            'ref': '%s,%s' % (model_name, res_id),
+            'kind': self._okf_link_kind(model_name),
+            'date': None,
+            'basis': 'explicit',
+        }
+        try:
+            Target = self.env[model_name].sudo().browse(res_id)
+            if Target.exists() and hasattr(Target, '_okf_source_date'):
+                target_date, target_role = Target._okf_source_date()
+                if target_date:
+                    entry['date'] = target_date.isoformat()
+                if target_role:
+                    entry['role'] = target_role
+        except Exception as e:  # noqa: BLE001 — en trasig länk är tillåten
+            _logger.debug('OKF: no source date for %s,%s: %s',
+                          model_name, res_id, e)
+        return entry
+
+    def _okf_link_kind(self, model_name):
+        """Relationstypen för en länk — modellnamnet utan punkt.
+
+        `project.task` → `project_task`. Bryggan kan överrida via
+        `_okf_artifact_type()` om den har en egen typ.
+        """
+        try:
+            Target = self.env[model_name]
+            if hasattr(Target, '_okf_artifact_type'):
+                return Target._okf_artifact_type()
+        except Exception:  # noqa: BLE001
+            pass
+        return model_name.replace('.', '_')
+
+    def _okf_links_extra(self):
+        """Länkar bryggan lägger utöver relationsfälten (överridbar).
+
+        Returnerar en lista poster i samma form som `_okf_link_entry()`.
+        Default: tom — mixinen lägger inget eget.
+        """
+        return []
 
     @api.model
     def _okf_model_is_indexable(self, model_name):
-        """Bär modellen `ai.okf.mixin`? (cachas per registerladdning)"""
+        """Bär modellen `ai.okf.mixin`?
+
+        FYND 2026-11-10 (okf-temporal-recall 7.2): den här metoden läste
+        `_inherit` — och `_inherit` är INTE sanningen om en abstrakt mixin.
+
+        Mätt i drift: `res.partner` och `user_mail_ai.mail` deklarerar
+        `_inherit = ['res.partner', 'ai.okf.mixin']` i källkoden, men
+        registret visar `_inherit = ['res.partner']`. Odoo normaliserar
+        bort den abstrakta modellen när den redan finns i MRO:n. Följden
+        var att metoden svarade **False** för två modeller som bevisligen
+        bär mixinen (de har `okf_dirty`, `okf_body` och
+        `_okf_body_source`).
+
+        Konsekvensen var tyst och allvarlig: `_okf_links_source()` länkar
+        bara till modeller som "är indexerbara" — så **inga** länkar till
+        `res.partner` eller `user_mail_ai.mail` skapades någonsin. En
+        kalenderhändelses `partner_ids` blev aldrig länkar, och ett mails
+        `partner_id` blev det inte heller.
+
+        Rätt källa är MRO:n: bär klassens arvskedja mixin-klassen?
+        `_inherit` behålls som första prövning (den är billig och rätt för
+        modeller som inte ärver via `_name`), men MRO:n avgör.
+        """
         if model_name not in self.env:
             return False
-        inherit = self.env[model_name]._inherit
+        Model = self.env[model_name]
+        inherit = Model._inherit
         if isinstance(inherit, str):
             inherit = [inherit]
-        return 'ai.okf.mixin' in inherit
+        if 'ai.okf.mixin' in inherit:
+            return True
+        # MRO:n är sanningen: Odoo tar bort abstrakta modeller ur
+        # `_inherit` när de redan ingår i arvskedjan.
+        from .ai_okf_mixin import AIOkfMixin
+        return any(issubclass(cls, AIOkfMixin) for cls in type(Model).__mro__)
 
     @staticmethod
     def _okf_html_to_text(html):
@@ -404,6 +504,226 @@ class AIOkfMixin(models.AbstractModel):
             return AIMemoryMixin._html_to_text(html)
         except Exception:  # noqa: BLE001 — fallback är ett giltigt utfall
             return html
+
+    # ==================================================================
+    # Källdatum (okf-temporal-recall D1)
+    # ==================================================================
+
+    def _okf_source_date(self):
+        """Postens KÄLDDATUM och vad det betyder — `(datetime, role)`.
+
+        VARFÖR EN EGEN METOD OCH INTE ETT FÄLTNAMN: kärnan får inte känna
+        till `received_at`, `start` eller något annat domänfält. Bryggan
+        pekar ut sin tid, precis som den pekar ut sin text via
+        `_okf_body_source()`.
+
+        GENERISK DEFAULT: inget datum. Vi gissar ALDRIG ur ett fältnamn —
+        en gissning hade gett `create_date` (indexeringstid) för varje
+        modell som glömde implementera metoden, och då vore hela axeln
+        meningslös (det är exakt den buggen ändringen botar).
+
+        Returnerar:
+            (datetime|None, str|None) där rollen är en av `received`,
+            `event_start`, `event_stop`, `modified`.
+        """
+        return None, None
+
+    #: Registrerade tidsdefault per artefakttyp. En brygga lägger till sin:
+    #:
+    #:     _okf_register_temporal_default('mail', days=7, direction='backward')
+    #:
+    #: Bor i `ir.config_parameter` (inte ett klassattribut): Odoos testramverk
+    #: fäller nya klassattribut på modeller, och en systemparameter delas
+    #: korrekt mellan processer — samma skäl som `okf_priority_models`.
+    TEMPORAL_DEFAULT_PARAM = 'ai_agent_core.okf_temporal_defaults'
+
+    @api.model
+    def _okf_register_temporal_default(self, artifact_type, days,
+                                       direction='backward'):
+        """Registrera en artefakttyps tidsdefault (kallas av bryggor).
+
+        `days` är fönstrets halva bredd i dygn; `direction` säger åt vilket
+        håll det sträcker sig från nu (`backward` för mail, `forward` för
+        möten). Båda riktningarna är giltiga för båda typerna — en fråga om
+        "senaste veckan" på kalender är lika rimlig som "i veckan".
+
+        Idempotent: samma typ skriver över sin egen post.
+        """
+        if not artifact_type:
+            return False
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            _logger.warning(
+                'OKF: temporal default for %s is not a number (%r) — '
+                'ignored', artifact_type, days)
+            return False
+        if direction not in ('backward', 'forward'):
+            direction = 'backward'
+        current = self._okf_temporal_defaults()
+        current[artifact_type] = {'days': max(0, days),
+                                  'direction': direction}
+        self.env['ir.config_parameter'].sudo().set_param(
+            self.TEMPORAL_DEFAULT_PARAM, json.dumps(current))
+        _logger.info('OKF: temporal default for %s = %s days %s',
+                     artifact_type, days, direction)
+        return True
+
+    @api.model
+    def _okf_temporal_defaults(self):
+        """Läs de registrerade tidsdefaultarna (`{typ: {days, direction}}`)."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            self.TEMPORAL_DEFAULT_PARAM, '{}')
+        try:
+            data = json.loads(raw or '{}')
+        except (TypeError, ValueError):
+            _logger.warning(
+                'OKF: %s is not valid JSON (%r) — treating as empty',
+                self.TEMPORAL_DEFAULT_PARAM, raw)
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    # ── Berikning med relaterade objekt (okf-temporal-recall D11) ──────
+    #
+    # En brygga registrerar sin modell; kärnan itererar listan. Kärnan
+    # känner inte till `project.task`, `joplin.note` eller `mail` — den
+    # känner bara till FORMEN (kind, datumfält, etikettfält, partfält).
+    # Samma registreringsmönster som `_okf_register_indexable`, av samma
+    # skäl: `@api.model`-uppslagningen sker på den abstrakta modellen.
+    RELATED_PARAM = 'ai_agent_core.okf_related_models'
+
+    @api.model
+    def _okf_register_related(self, kind, model, date_field=None,
+                              label_field='name', partner_field=None):
+        """Registrera en modell för tidsnära berikning (kallas av bryggor).
+
+        Args:
+            kind: relationstypen som presenteras (`project_task`, `mail`, …)
+            model: modellnamnet (`project.task`)
+            date_field: fältet som bär modellens EGET datum. `None` =
+                modellen deltar bara som gemensam part, aldrig som
+                tidskandidat (t.ex. `res.partner`).
+            label_field: fältet som ger en läsbar rad (`name`)
+            partner_field: fältet som binder posten till en kund. Utan det
+                kan modellen bara nås via en explicit länk — ensam
+                tidsnärhet är för svagt för att vara en träff.
+
+        Idempotent: samma modell skriver över sin egen post.
+        """
+        if not kind or not model:
+            return False
+        current = self._okf_related_models()
+        current[model] = {'kind': kind, 'model': model,
+                          'date_field': date_field,
+                          'label_field': label_field,
+                          'partner_field': partner_field}
+        self.env['ir.config_parameter'].sudo().set_param(
+            self.RELATED_PARAM, json.dumps(current))
+        _logger.info('OKF: registered %s (%s) for temporal enrichment',
+                     model, kind)
+        return True
+
+    @api.model
+    def _okf_related_models(self):
+        """Läs de registrerade berikningsmodellerna (`{model: config}`)."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            self.RELATED_PARAM, '{}')
+        try:
+            data = json.loads(raw or '{}')
+        except (TypeError, ValueError):
+            _logger.warning(
+                'OKF: %s is not valid JSON (%r) — treating as empty',
+                self.RELATED_PARAM, raw)
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    # ── Vikt (tool-call-quality D5) ────────────────────────────────────
+    #
+    # `interest_score` mäter INTRESSE — hur mycket innehållet berör en
+    # användare. Det är inte samma sak som VIKT. Session 28097 visade
+    # följden: nyhetsbreven hade högst intressepoäng (5) och fakturan
+    # lägst (1), så "viktigaste mail" gav fel svar.
+    #
+    # Kärnan definierar SIGNALERNA, inte fälten. Bryggan registrerar hur
+    # dess modell fyller dem — kärnan förblir domän-ren (samma mönster som
+    # `_okf_register_related`).
+    IMPORTANCE_PARAM = 'ai_agent_core.okf_importance_signals'
+
+    @api.model
+    def _okf_register_importance(self, model, signals):
+        """Registrera hur en modell fyller vikt-signalerna.
+
+        Args:
+            model: modellnamnet (`user_mail_ai.mail`)
+            signals: `{'action_required': 'action_needed',
+                       'due': 'follow_up_at',
+                       'customer': 'partner_id'}` — signaltyp → fältnamn.
+
+        Signaltyperna är generiska (`action_required`, `due`, `customer`);
+        fältnamnen är bryggans. Kärnan namnger aldrig ett domänfält.
+        """
+        if not model or not signals:
+            return False
+        current = self._okf_importance_signals()
+        current[model] = dict(signals)
+        self.env['ir.config_parameter'].sudo().set_param(
+            self.IMPORTANCE_PARAM, json.dumps(current))
+        _logger.info('OKF: importance signals for %s = %s', model, signals)
+        return True
+
+    @api.model
+    def _okf_importance_signals(self):
+        """Läs de registrerade vikt-signalerna (`{model: {kind: field}}`)."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            self.IMPORTANCE_PARAM, '{}')
+        try:
+            data = json.loads(raw or '{}')
+        except (TypeError, ValueError):
+            _logger.warning(
+                'OKF: %s is not valid JSON (%r) — treating as empty',
+                self.IMPORTANCE_PARAM, raw)
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    #: Vikt per signaltyp. `action_required` väger tyngst: ett objekt som
+    #: kräver en handling är viktigare än ett som bara har en deadline.
+    IMPORTANCE_WEIGHTS = {
+        'action_required': 3.0,
+        'due': 2.0,
+        'customer': 1.0,
+    }
+
+    @api.model
+    def _okf_importance_of(self, record):
+        """Vikt för en post, med orsaker — `(score, [reason, ...])`.
+
+        Vikten byggs ur de signaler bryggan registrerat för postens modell.
+        En post utan registrering får vikt 0 och ingen orsak: vi gissar
+        inte, och intressepoängen räknas ALDRIG in (D5).
+        """
+        signals = (self._okf_importance_signals() or {}).get(
+            record._name) or {}
+        if not signals:
+            return 0.0, []
+        score = 0.0
+        reasons = []
+        for kind, fname in signals.items():
+            if fname not in record._fields:
+                continue
+            value = record[fname]
+            if not value:
+                continue
+            weight = self.IMPORTANCE_WEIGHTS.get(kind, 1.0)
+            score += weight
+            if kind == 'action_required':
+                reasons.append('kräver åtgärd')
+            elif kind == 'due':
+                reasons.append('har förfallodatum')
+            elif kind == 'customer':
+                reasons.append('har kund')
+            else:
+                reasons.append(kind)
+        return score, reasons
 
     def _okf_dirty_fields(self):
         """Fält vars ändring gör OKF-fälten inaktuella.
@@ -1096,6 +1416,10 @@ class AIOkfMixin(models.AbstractModel):
                 self.sudo().write({'okf_tags': [(6, 0, tag_ids)]})
 
         source_ref = '%s,%s' % (self._name, self.id)
+        # Källdatumet frågas FÖRST här — efter `_okf_skip_reason()`: en post
+        # som avförts ska inte kosta ett datumuppslag. Bryggan äger
+        # tolkningen; kärnan gissar aldrig (okf-temporal-recall D1).
+        source_date, temporal_role = self._okf_source_date()
         vals = {
             'artifact_type': self._okf_artifact_type(),
             'concept_key': self._okf_concept_key(
@@ -1103,6 +1427,12 @@ class AIOkfMixin(models.AbstractModel):
             'summary': summary,
             'title': (self.display_name or source_ref)[:120],
             'source_ref': source_ref,
+            'source_date': source_date,
+            'temporal_role': temporal_role,
+            # Länkarna följer med till KONCEPTET (okf-temporal-recall D9).
+            # Att bara skriva dem på källposten gjorde bakåtuppslaget
+            # omöjligt — konceptet hade inget att fråga på.
+            'okf_links': links,
             'sources': [{'resource': source_ref, 'lang': self.env.lang}],
             'attribution': [{'line': 1, 'source_ref': source_ref}],
             'generated_by': 'cron',
