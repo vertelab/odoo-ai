@@ -19,6 +19,7 @@ Dessa tester bevisar:
 from datetime import date, timedelta
 
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 
 
 @tagged('coworker_form_performance', 'post_install', '-at_install')
@@ -31,11 +32,7 @@ class TestTokenTotals(TransactionCase):
         cls.Coworker = cls.env['ai.coworker']
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Token Totals User',
-            'login': 'token_totals@example.com',
-            'email': 'token_totals@example.com',
-        })
+        cls.user = cls.env.create_user(name='Token Totals User', login='token_totals@example.com', email='token_totals@example.com')
         cls.coworker = cls.Coworker.create({
             'name': 'Token Totals Coworker',
             'status': 'active',

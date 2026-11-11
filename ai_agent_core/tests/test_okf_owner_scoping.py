@@ -28,6 +28,7 @@ from unittest.mock import patch
 
 from odoo.tests import common, tagged
 from ._config_param_guard import ConfigParamGuardedCase
+from ._test_users import create_user
 
 _logger = logging.getLogger(__name__)
 
@@ -46,15 +47,9 @@ class _MultiOwnerMemory(common.TransactionCase):
         if not cls.atype:
             cls.atype = cls.env['ai.artifact.type'].create({
                 'name': 'learning', 'kind': 'memory'})
-        cls.user_a = cls.env['res.users'].create({
-            'name': 'ZZ OKF Owner A', 'login': 'zz_okf_owner_a',
-        })
-        cls.user_b = cls.env['res.users'].create({
-            'name': 'ZZ OKF Owner B', 'login': 'zz_okf_owner_b',
-        })
-        cls.user_c = cls.env['res.users'].create({
-            'name': 'ZZ OKF Owner C', 'login': 'zz_okf_owner_c',
-        })
+        cls.user_a = cls.env.create_user(name='ZZ OKF Owner A', login='zz_okf_owner_a')
+        cls.user_b = cls.env.create_user(name='ZZ OKF Owner B', login='zz_okf_owner_b')
+        cls.user_c = cls.env.create_user(name='ZZ OKF Owner C', login='zz_okf_owner_c')
 
 
 @tagged('okf', 'post_install', '-at_install')

@@ -16,6 +16,7 @@ Verifierar att:
 import uuid
 
 from odoo.tests import common, tagged
+from ._test_users import create_user
 
 
 @tagged('post_install')
@@ -26,11 +27,7 @@ class TestPiSessionLink(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Pi Link User',
-            'login': 'pi_link@example.com',
-            'email': 'pi_link@example.com',
-        })
+        cls.user = cls.env.create_user(name='Pi Link User', login='pi_link@example.com', email='pi_link@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Pi Link Coworker',
             'description': 'Pi session link test',

@@ -315,6 +315,8 @@ class TestOkfAccessResolver(TestOkfConceptBase):
             'name': login,
             'login': login,
             'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
         })
 
     def test_resolve_visible_sources_res_partner(self):

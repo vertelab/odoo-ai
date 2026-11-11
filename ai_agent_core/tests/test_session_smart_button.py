@@ -19,6 +19,7 @@ from datetime import date, timedelta
 import lxml.etree
 
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 
 
 @tagged('coworker_session_smart_button', 'post_install', '-at_install')
@@ -30,11 +31,7 @@ class TestSessionDomain(TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Coworker = cls.env['ai.coworker']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Smart Button User',
-            'login': 'smartbutton@example.com',
-            'email': 'smartbutton@example.com',
-        })
+        cls.user = cls.env.create_user(name='Smart Button User', login='smartbutton@example.com', email='smartbutton@example.com')
         cls.coworker = cls.Coworker.create({
             'name': 'Smart Button Coworker',
             'status': 'active',

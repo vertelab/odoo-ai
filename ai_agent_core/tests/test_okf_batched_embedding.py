@@ -43,11 +43,20 @@ class TestBatchedEmbedding(ConfigParamGuardedCase):
             cls.atype = cls.env['ai.artifact.type'].create({
                 'name': 'learning', 'kind': 'memory'})
         cls.user_a = cls.env['res.users'].create({
-            'name': 'ZZ Batch A', 'login': 'zz_batch_a'})
+            'name': 'ZZ Batch A', 'login': 'zz_batch_a',
+            'company_id': cls.env.company.id,
+            'company_ids': [(6, 0, [cls.env.company.id])],
+        })
         cls.user_b = cls.env['res.users'].create({
-            'name': 'ZZ Batch B', 'login': 'zz_batch_b'})
+            'name': 'ZZ Batch B', 'login': 'zz_batch_b',
+            'company_id': cls.env.company.id,
+            'company_ids': [(6, 0, [cls.env.company.id])],
+        })
         cls.user_c = cls.env['res.users'].create({
-            'name': 'ZZ Batch C', 'login': 'zz_batch_c'})
+            'name': 'ZZ Batch C', 'login': 'zz_batch_c',
+            'company_id': cls.env.company.id,
+            'company_ids': [(6, 0, [cls.env.company.id])],
+        })
 
     def _mem(self, content='Ett minne om fakturor och kunder.'):
         return self.Personal.create({

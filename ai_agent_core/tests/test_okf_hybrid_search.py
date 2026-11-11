@@ -155,9 +155,15 @@ class TestOkfHybridSearch(common.TransactionCase):
     def test_personal_scope_isolates_users(self):
         """Två användare i samma scope ser inte varandras koncept."""
         user_a = self.env['res.users'].create({
-            'name': 'Iso A', 'login': 'iso_a_search'})
+            'name': 'Iso A', 'login': 'iso_a_search',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         user_b = self.env['res.users'].create({
-            'name': 'Iso B', 'login': 'iso_b_search'})
+            'name': 'Iso B', 'login': 'iso_b_search',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         self._mk('iso.a', 'Fakturor för A.', scope='personal')
         self.env.cr.execute(
             "UPDATE ai_okf_concept SET owner_user_id=%s WHERE concept_key='iso.a'",
@@ -195,9 +201,15 @@ class TestOkfHybridSearch(common.TransactionCase):
         coworker = self.env['ai.coworker'].create({
             'name': 'Iso Coworker', 'status': 'active'})
         user_a = self.env['res.users'].create({
-            'name': 'Cw A', 'login': 'cw_a_search'})
+            'name': 'Cw A', 'login': 'cw_a_search',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         user_b = self.env['res.users'].create({
-            'name': 'Cw B', 'login': 'cw_b_search'})
+            'name': 'Cw B', 'login': 'cw_b_search',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         # A:s lärdom
         self._mk('cw.a', 'Fakturor lärt av A.', scope='coworker')
         self.env.cr.execute(

@@ -18,6 +18,7 @@ Dessa tester bevisar:
 from odoo.tests import common, tagged
 
 from odoo.addons.ai_agent_core.models.ai_session_line import PREVIEW_LENGTH
+from ._test_users import create_user
 
 
 @tagged('session_line_preview', 'post_install', '-at_install')
@@ -29,11 +30,7 @@ class TestSessionLinePreview(common.TransactionCase):
         super().setUpClass()
         cls.Line = cls.env['ai.coworker.session.line']
         cls.Session = cls.env['ai.coworker.session']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Line Preview User',
-            'login': 'line_preview@example.com',
-            'email': 'line_preview@example.com',
-        })
+        cls.user = cls.env.create_user(name='Line Preview User', login='line_preview@example.com', email='line_preview@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Line Preview Coworker',
             'status': 'active',

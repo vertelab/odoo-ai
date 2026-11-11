@@ -15,6 +15,7 @@ Dessa tester bevisar:
 
 from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 
 
 @tagged('session_object_navigation', 'post_install', '-at_install')
@@ -122,6 +123,8 @@ class TestSessionObjectNavigation(TransactionCase):
             'name': 'Navigation No Access',
             'login': 'navigation_no_access_test',
             'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
         })
         restricted_model = 'ir.actions.server'
         row = self._lineage(
@@ -151,14 +154,11 @@ class TestSessionObjectNavigation(TransactionCase):
         Om åtgärden körde `sudo()` skulle vilken rad som helst öppna vilket
         objekt som helst — då vore behörighetskravet verkningslöst.
         """
-        parent = self.env['res.users'].create({
-            'name': 'Navigation Admin User',
-            'login': 'navigation_admin_test',
-            'groups_id': [(6, 0, [
-                self.env.ref('base.group_user').id,
-                self.env.ref('base.group_system').id,
-            ])],
-        })
+        parent = create_user(
+            self.env, name='Navigation Admin User',
+            login='navigation_admin_test',
+            groups=['base.group_user', 'base.group_system'],
+        )
         row = self._lineage()
         # Som administratör fungerar raden (kontrollfall) …
         self.assertEqual(

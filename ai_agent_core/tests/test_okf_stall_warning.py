@@ -32,6 +32,7 @@ from odoo.tests import common, tagged
 # Varningen loggas på MODULENS logger (ai_okf_mixin._logger), inte på en
 # lokal instans — patcha rätt objekt, annars ser mocken ingenting.
 from odoo.addons.ai_agent_core.models import ai_okf_mixin as _mixin_mod
+from ._test_users import create_user
 
 STALL_PARAM = 'odoomind.personal_memory.stall_warn_hours'
 MODEL = 'ai.personal.memory'
@@ -45,9 +46,7 @@ class TestOkfStallWarning(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Memory = cls.env[MODEL]
-        cls.user = cls.env['res.users'].create({
-            'name': 'ZZ Stall User', 'login': 'zz_stall_user',
-        })
+        cls.user = cls.env.create_user(name='ZZ Stall User', login='zz_stall_user')
         cls.params = cls.env['ir.config_parameter'].sudo()
 
     def setUp(self):

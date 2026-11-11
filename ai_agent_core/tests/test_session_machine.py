@@ -19,6 +19,7 @@ Dessa tester bevisar:
 import uuid
 
 from odoo.tests import common, tagged
+from ._test_users import create_user
 
 
 @tagged('session_machine', 'post_install', '-at_install')
@@ -29,11 +30,7 @@ class TestSessionMachine(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Session Machine User',
-            'login': 'session_machine@example.com',
-            'email': 'session_machine@example.com',
-        })
+        cls.user = cls.env.create_user(name='Session Machine User', login='session_machine@example.com', email='session_machine@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Session Machine Coworker',
             'status': 'active',

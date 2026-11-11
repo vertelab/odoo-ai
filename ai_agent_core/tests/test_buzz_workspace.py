@@ -3,6 +3,7 @@
 
 from odoo.tests.common import TransactionCase
 from odoo.exceptions import ValidationError
+from ._test_users import create_user
 
 
 class TestBuzzWorkspace(TransactionCase):
@@ -10,11 +11,7 @@ class TestBuzzWorkspace(TransactionCase):
     def setUp(self):
         super().setUp()
         self.partner = self.env['res.partner'].create({'name': 'Test User'})
-        self.user = self.env['res.users'].create({
-            'name': 'Test User',
-            'login': 'testuser_buzz',
-            'partner_id': self.partner.id,
-        })
+        self.user = self.env.create_user(name='Test User', login='testuser_buzz', partner_id=self.partner.id)
         self.channel = self.env['discuss.channel'].with_context(
             mail_create_nosubscribe=True).create({
             'name': 'Test Buzz Channel',

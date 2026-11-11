@@ -17,6 +17,7 @@ Dessa tester bevisar:
 
 from unittest.mock import patch
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 
 
 @tagged('pi_message_dedup', 'post_install', '-at_install')
@@ -27,11 +28,7 @@ class TestPiMessageDedup(TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Dedup User',
-            'login': 'dedup@example.com',
-            'email': 'dedup@example.com',
-        })
+        cls.user = cls.env.create_user(name='Dedup User', login='dedup@example.com', email='dedup@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Dedup Coworker',
             'status': 'active',

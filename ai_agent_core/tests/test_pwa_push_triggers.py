@@ -5,6 +5,7 @@ import base64
 import json
 
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 from ._config_param_guard import ConfigParamGuardedCase
 
 
@@ -24,11 +25,11 @@ class TestAiPushTriggers(TransactionCase):
         icp = cls.env['ir.config_parameter'].sudo()
         icp.set_param('mail.web_push_vapid_private_key', 'priv')
         icp.set_param('mail.web_push_vapid_public_key', 'pub')
-        cls.user = cls.env['res.users'].create({
-            'name': 'Push Bob',
-            'login': 'push_bob_%s' % cls.env['ir.sequence'].next_by_code('res.users') or '1',
-            'partner_id': cls.env['res.partner'].create({'name': 'Push Bob'}).id,
-        })
+        cls.user = create_user(
+            cls.env, name='Push Bob',
+            login='push_bob_%s' % (cls.env['ir.sequence'].next_by_code('res.users') or '1'),
+            partner_id=cls.env['res.partner'].create({'name': 'Push Bob'}).id,
+        )
         cls.device = cls.env['mail.push.device'].create({
             'partner_id': cls.user.partner_id.id,
             'endpoint': 'https://push.example.com/endpoint',
@@ -68,11 +69,11 @@ class TestAiPushTriggers(TransactionCase):
         self.assertGreater(self._push_count(), before)
 
     def test_silent_without_devices(self):
-        other = self.env['res.users'].create({
-            'name': 'NoDev',
-            'login': 'nodev_%s' % (self.env['ir.sequence'].next_by_code('res.users') or '2'),
-            'partner_id': self.env['res.partner'].create({'name': 'NoDev'}).id,
-        })
+        other = create_user(
+            self.env, name='NoDev',
+            login='nodev_%s' % (self.env['ir.sequence'].next_by_code('res.users') or '2'),
+            partner_id=self.env['res.partner'].create({'name': 'NoDev'}).id,
+        )
         session = self.env['ai.coworker.session'].create({'user_id': other.id})
         before = self._push_count()
         session.mark_done()

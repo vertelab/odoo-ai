@@ -309,7 +309,19 @@ class GraphNodeDefinition(models.Model):
                     # failure every remaining record logged "current
                     # transaction is aborted", and _sync_all's handler then
                     # crashed reading defn.graph_label.
-                    self.env.cr.rollback()
+                    #
+                    # SPARPUNKT, INTE cr.rollback() (fix 2026-11-11):
+                    # `cr.rollback()` rullar tillbaka HELA transaktionen —
+                    # inklusive det testramverket äger. Odoo:s
+                    # TransactionCase fångar det med
+                    # "forbidden to call rollback() in a test" och fäller
+                    # hela sviten. Mätt i ledningssystem_copy: 42 gröna
+                    # tester blev RC=255 så fort en synk misslyckades.
+                    #
+                    # En sparpunkt rullar bara tillbaka det som hände sedan
+                    # den sattes — exakt samma avsikt, utan att röra
+                    # anroparens transaktion. Mönstret används redan i
+                    # ai_coworker.py.
                     failed += 1
                     if first_error is None:
                         first_error = str(e)
@@ -410,7 +422,9 @@ class GraphNodeDefinition(models.Model):
                 #   ai_graph_node.py:385  -> logging the failure crashed
                 #   cron_task.py:699      -> recording it crashed too
                 # Three tracebacks for one root cause, none naming it.
-                self.env.cr.rollback()
+                # Ingen cr.rollback() — se kommentaren i _sync_batch.
+                # Transaktionen är redan återställd av sparpunkten runt
+                # anropet; en rollback här river anroparens transaktion.
                 _logger.error("Sync failed for %s: %s", defn.graph_label, e)
                 defn.write({'last_error': str(e)})
 
@@ -496,7 +510,16 @@ class GraphExecutor(models.Model):
             try:
                 self.env.cr.execute("ROLLBACK TO SAVEPOINT graph_executor")
             except Exception:
-                self.env.cr.rollback()
+                # Fallbacken får INTE vara en naken rollback() (fix
+                # 2026-11-11): i ett test äger TransactionCase
+                # transaktionen, och en rollback fäller hela sviten med
+                # "forbidden to call rollback() in a test". Utan sparpunkt
+                # finns inget att rulla tillbaka till — då är det ärliga
+                # svaret att låta felet stå kvar och rapporteras, inte att
+                # riva anroparens transaktion.
+                _logger.debug(
+                    'LOAD age failed outside a savepoint; leaving the '
+                    'transaction as is')
 
     @api.model
     def cypher(self, query, read_only=True, timeout=10):

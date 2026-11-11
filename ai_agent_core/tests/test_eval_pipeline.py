@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, patch
 
 from odoo.tests.common import TransactionCase, tagged
 from odoo.exceptions import AccessError, ValidationError
+from ._test_users import create_user
 
 
 @tagged('post_install', '-at_install')
@@ -168,11 +169,7 @@ class TestEvalModels(EvalTestBase):
 
     def test_user_can_read_but_not_unlink(self):
         """3.5: vanlig användare läser, systemgruppen raderar."""
-        user = self.env['res.users'].create({
-            'name': 'Eval läsare',
-            'login': 'eval_reader_test',
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-        })
+        user = self.env.create_user(name='Eval läsare', login='eval_reader_test', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
         case = self._case(self._coworker('Eval access'))
         as_user = case.with_user(user)
         self.assertEqual(as_user.read(['input'])[0]['input'], 'Vad är 2+2?')

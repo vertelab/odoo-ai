@@ -15,6 +15,7 @@ import json
 
 from odoo.tests import common, tagged
 from odoo.exceptions import UserError
+from ._test_users import create_user
 
 
 @tagged('post_install')
@@ -26,11 +27,7 @@ class TestSessionMemory(common.TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Session Memory User',
-            'login': 'session_memory@example.com',
-            'email': 'session_memory@example.com',
-        })
+        cls.user = cls.env.create_user(name='Session Memory User', login='session_memory@example.com', email='session_memory@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Session Memory Coworker',
             'description': 'Session memory test',

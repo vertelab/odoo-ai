@@ -11,6 +11,7 @@ import base64
 import json
 
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 
 
 def _fake_keys():
@@ -29,10 +30,7 @@ class TestPushNotificationTool(TransactionCase):
         icp = cls.env['ir.config_parameter'].sudo()
         icp.set_param('mail.web_push_vapid_private_key', 'priv')
         icp.set_param('mail.web_push_vapid_public_key', 'pub')
-        cls.user = cls.env['res.users'].create({
-            'name': 'Push Tool User',
-            'login': 'push_tool_user_%s' % (cls.env.uid,),
-        })
+        cls.user = cls.env.create_user(name='Push Tool User', login='push_tool_user_%s' % (cls.env.uid,))
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Push Tool Coworker %s' % cls.env.uid,
         })
@@ -142,10 +140,7 @@ class TestPushNotificationTool(TransactionCase):
 
     def test_does_not_notify_another_user(self):
         """Mottagaren är sessionens användare — inte den som anropar."""
-        other = self.env['res.users'].create({
-            'name': 'Push Other User',
-            'login': 'push_other_user_%s' % (self.env.uid,),
-        })
+        other = self.env.create_user(name='Push Other User', login='push_other_user_%s' % (self.env.uid,))
         self.env['mail.push.device'].create({
             'partner_id': other.partner_id.id,
             'endpoint': 'https://push.example.com/other-endpoint',

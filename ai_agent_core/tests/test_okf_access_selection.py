@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 from odoo.tests import common, tagged
 from ._config_param_guard import ConfigParamGuardedCase
+from ._test_users import create_user
 
 _logger = logging.getLogger(__name__)
 
@@ -63,9 +64,7 @@ class TestOkfSourceModelClassification(ConfigParamGuardedCase):
         KAN läsa `res.users` i en tom databas — det är därför testet bygger
         sin egen regel i stället för att anta att en grupp saknar rätt.)
         """
-        user = self.env['res.users'].create({
-            'name': 'ZZ OKF Ingen läsning', 'login': 'zz_okf_noread',
-        })
+        user = self.env.create_user(name='ZZ OKF Ingen läsning', login='zz_okf_noread')
         rule = self.env['ir.rule'].create({
             'name': 'ZZ OKF ingen läsning',
             'model_id': self.env['ir.model']._get_id('res.partner'),
@@ -87,9 +86,7 @@ class TestOkfSourceModelClassification(ConfigParamGuardedCase):
         # Skapa två partners; begränsa med ir.rule till en av dem
         p1 = self.env['res.partner'].create({'name': 'ZZ OKF P1'})
         p2 = self.env['res.partner'].create({'name': 'ZZ OKF P2'})
-        user = self.env['res.users'].create({
-            'name': 'ZZ OKF Partial', 'login': 'zz_okf_partial',
-        })
+        user = self.env.create_user(name='ZZ OKF Partial', login='zz_okf_partial')
         rule = self.env['ir.rule'].create({
             'name': 'ZZ OKF partial rule',
             'model_id': self.env['ir.model']._get_id('res.partner'),
@@ -476,9 +473,7 @@ class TestOkfOpaqueSourceRef(ConfigParamGuardedCase):
         INTE öppna en läcka: `_okf_search` filtrerar på `owner_user_id`
         för personal-scope, ett oberoende lager.
         """
-        other = self.env['res.users'].create({
-            'name': 'ZZ OKF Annan Ägare', 'login': 'zz_okf_other_owner',
-        })
+        other = self.env.create_user(name='ZZ OKF Annan Ägare', login='zz_okf_other_owner')
         self._mk_mail('mail.min', '<probe-min@x>',
                       'Faktura till mig.', self.owner.id)
         self._mk_mail('mail.annans', '<probe-annan@x>',

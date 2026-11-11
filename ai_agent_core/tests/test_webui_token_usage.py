@@ -22,6 +22,7 @@ import json
 from unittest.mock import patch
 
 from odoo.tests import common, tagged
+from ._test_users import create_user
 
 
 @tagged('post_install', '-at_install')
@@ -33,11 +34,7 @@ class TestWebuiTokenUsage(common.TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Token Usage User',
-            'login': 'token_usage@example.com',
-            'email': 'token_usage@example.com',
-        })
+        cls.user = cls.env.create_user(name='Token Usage User', login='token_usage@example.com', email='token_usage@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Token Usage Coworker',
             'description': 'restore-webui-token-usage',

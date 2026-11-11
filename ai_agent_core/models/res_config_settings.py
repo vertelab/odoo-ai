@@ -196,25 +196,28 @@ class ResConfigSettings(models.TransientModel):
     @api.depends()
     def _compute_graph_node_count(self):
         for r in self:
+            # SPARPUNKT RUNT ANROPET (fix 2026-11-11) — se den längre
+            # motiveringen i get_values() nedan. Kort: ett misslyckat
+            # cypher() aborterar transaktionen och nästa fråga faller på
+            # "current transaction is aborted". `cr.rollback()` löste det
+            # men river HELA transaktionen, vilket Odoos testramverk
+            # förbjuder ("forbidden to call rollback() in a test") och
+            # därmed fäller hela testsviten.
             try:
-                executor = self.env['graph.executor'].sudo()
-                result = executor.cypher(
-                    "MATCH (n) RETURN count(n) AS cnt", read_only=True)
-                # cypher() returns a FLAT list of cell values: [9], not
-                # [[9]]. result[0][0] raised TypeError('int' object is not
-                # subscriptable), which the caller swallowed and turned into
-                # 'N/A' — so the settings form showed N/A on a graph that
-                # answered fine. Verified on dms 2026-11-10: cypher() -> [9].
-                cnt = result[0] if result else '?'
-                r.graph_node_count = str(cnt)
+                with self.env.cr.savepoint():
+                    executor = self.env['graph.executor'].sudo()
+                    result = executor.cypher(
+                        "MATCH (n) RETURN count(n) AS cnt", read_only=True)
+                    # cypher() returns a FLAT list of cell values: [9], not
+                    # [[9]]. result[0][0] raised TypeError('int' object is
+                    # not subscriptable), which the caller swallowed and
+                    # turned into 'N/A' — so the settings form showed N/A on
+                    # a graph that answered fine. Verified on dms
+                    # 2026-11-10: cypher() -> [9].
+                    cnt = result[0] if result else '?'
+                    r.graph_node_count = str(cnt)
             except Exception:
-                # ROLLBACK: a failed cypher() aborts the transaction, and
-                # every later query in this request then fails with
-                # "current transaction is aborted" instead of its own error.
-                # On the settings form that meant the NEXT line (an ir.cron
-                # search) crashed the whole RPC call. Verified on dms
-                # 2026-11-10.
-                self.env.cr.rollback()
+                # Transaktionen är redan återställd av sparpunkten.
                 r.graph_node_count = 'N/A'
 
     # ── Company / Personal / Coworker Memory settings ──
@@ -386,28 +389,53 @@ class ResConfigSettings(models.TransientModel):
         res['company_website_url_edit'] = company.partner_id.website or ''
 
         # Compute graph node count
+        #
+        # SPARPUNKTEN OMGER ANROPET (fix 2026-11-11). Den måste sättas
+        # INNAN det som kan falla — en sparpunkt efter ett misslyckat
+        # anrop återställer ingenting, transaktionen är redan aborterad.
+        #
+        # Bakgrunden (dms.azzar.org 2026-11-10) var riktig: ett misslyckat
+        # cypher() lämnar transaktionen aborterad, och nästa rad
+        # (ir.cron.search) föll på InFailedSqlTransaction med en traceback
+        # som pekade på ir.cron i stället för orsaken.
+        #
+        # Men lösningen var `cr.rollback()`, som rullar tillbaka HELA
+        # transaktionen — inklusive det ett test äger. Odoo:s
+        # TransactionCase fångar det med "forbidden to call rollback() in a
+        # test" och fäller hela sviten. Mätt i ledningssystem_copy
+        # 2026-11-11: 42 gröna tester blev RC=255 på detta enda anrop.
+        #
+        # `with savepoint():` gör exakt det rollbacken var till för —
+        # återställer transaktionen till en användbar punkt — men rör bara
+        # det som hänt sedan sparpunkten sattes.
         try:
-            executor = self.env['graph.executor'].sudo()
-            result = executor.cypher(
-                "MATCH (n) RETURN count(n) AS cnt", read_only=True)
-            # cypher() returns a FLAT list of cell values: [9], not
-            # [[9]]. result[0][0] raised TypeError('int' object is not
-            # subscriptable), which the caller swallowed and turned into
-            # 'N/A' — so the settings form showed N/A on a graph that
-            # answered fine. Verified on dms 2026-11-10: cypher() -> [9].
-            cnt = result[0] if result else '?'
-            res['graph_node_count'] = str(cnt)
+            with self.env.cr.savepoint():
+                executor = self.env['graph.executor'].sudo()
+                result = executor.cypher(
+                    "MATCH (n) RETURN count(n) AS cnt", read_only=True)
+                # cypher() returns a FLAT list of cell values: [9], not
+                # [[9]]. result[0][0] raised TypeError('int' object is not
+                # subscriptable), which the caller swallowed and turned into
+                # 'N/A' — so the settings form showed N/A on a graph that
+                # answered fine. Verified on dms 2026-11-10: cypher() -> [9].
+                cnt = result[0] if result else '?'
+                res['graph_node_count'] = str(cnt)
         except Exception:
-            # ROLLBACK, or the settings form dies one line later.
+            # SPARPUNKT, INTE cr.rollback() (fix 2026-11-11).
             #
-            # This is the failure reported from dms.azzar.org 2026-11-10:
-            #   res_config_settings.py:379  cypher() raises
-            #   res_config_settings.py:383  caught, no rollback
-            #   res_config_settings.py:390  ir.cron.search ->
-            #       InFailedSqlTransaction
-            # The traceback pointed at ir.cron and ir.rule, which had
-            # nothing to do with it.
-            self.env.cr.rollback()
+            # Bakgrunden (dms.azzar.org 2026-11-10) var riktig: ett
+            # misslyckat cypher() lämnar transaktionen aborterad, och nästa
+            # rad (ir.cron.search) föll på InFailedSqlTransaction med en
+            # traceback som pekade på ir.cron i stället för orsaken.
+            #
+            # Men lösningen — cr.rollback() — rullar tillbaka HELA
+            # transaktionen, inklusive det ett test äger. Odoo:s
+            # TransactionCase fångar det med "forbidden to call rollback()
+            # in a test" och fäller hela sviten. Mätt i
+            # ledningssystem_copy 2026-11-11: 42 gröna tester blev RC=255.
+            #
+            # Transaktionen är redan återställd av sparpunkten ovan.
+            # Ingen rollback här.
             res['graph_node_count'] = 'N/A'
 
         # Background jobs status

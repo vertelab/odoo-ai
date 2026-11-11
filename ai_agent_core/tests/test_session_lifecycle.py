@@ -20,6 +20,7 @@ Dessa tester låser att:
 import uuid
 
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 
 
 @tagged('post_install', '-at_install')
@@ -31,11 +32,7 @@ class TestSessionLifecycle(TransactionCase):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
         cls.CloseEvent = cls.env['ai.coworker.session.close_event']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Lifecycle User',
-            'login': 'lifecycle@example.com',
-            'email': 'lifecycle@example.com',
-        })
+        cls.user = cls.env.create_user(name='Lifecycle User', login='lifecycle@example.com', email='lifecycle@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'Lifecycle Coworker',
             'description': 'lifecycle test',

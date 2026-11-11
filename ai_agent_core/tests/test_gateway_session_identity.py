@@ -18,6 +18,7 @@ gav därför alltid noll träffar och `bifrost_cost` förblev omätt.
 """
 
 from odoo.tests import common
+from ._test_users import create_user
 
 
 class TestGatewaySessionIdentity(common.TransactionCase):
@@ -27,11 +28,7 @@ class TestGatewaySessionIdentity(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Session = cls.env['ai.coworker.session']
-        cls.user = cls.env['res.users'].create({
-            'name': 'GW Identity User',
-            'login': 'gw_identity@example.com',
-            'email': 'gw_identity@example.com',
-        })
+        cls.user = cls.env.create_user(name='GW Identity User', login='gw_identity@example.com', email='gw_identity@example.com')
         cls.coworker = cls.env['ai.coworker'].create({
             'name': 'GW Identity Coworker',
             'description': 'Gateway identity test',

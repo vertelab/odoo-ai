@@ -138,7 +138,10 @@ class TestHandover(TransactionCase):
     # ── 4.2: behörighetsgränsen ───────────────────────────────────────
     def test_other_users_sessions_not_listed(self):
         other = self.env['res.users'].create({
-            'name': 'Annan', 'login': 'annan_handover_test'})
+            'name': 'Annan', 'login': 'annan_handover_test',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         mine = self._session()
         self._line(mine, 'tool', 1)
         theirs = self.Session.create({
@@ -151,7 +154,10 @@ class TestHandover(TransactionCase):
 
     def test_owned_domain_filters_by_user(self):
         other = self.env['res.users'].create({
-            'name': 'Annan2', 'login': 'annan2_handover_test'})
+            'name': 'Annan2', 'login': 'annan2_handover_test',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         theirs = self.Session.create({
             'name': 'deras2', 'init_type': 'web_ui',
             'user_id': other.id})

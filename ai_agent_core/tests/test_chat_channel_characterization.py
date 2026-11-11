@@ -30,6 +30,7 @@ from unittest.mock import patch
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.ai_agent_core.models import ai_coworker as coworker_module
+from ._test_users import create_user
 
 
 class ChatChannelCharacterization(TransactionCase):
@@ -47,11 +48,7 @@ class ChatChannelCharacterization(TransactionCase):
                 'name': 'Karaktäriseringskanal',
                 'channel_type': 'channel',
             })
-        self.bot_user = self.env['res.users'].create({
-            'name': 'Karaktäriseringsbot',
-            'login': 'karaktarisering_bot_%s' % self.env.uid,
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-        })
+        self.bot_user = self.env.create_user(name='Karaktäriseringsbot', login='karaktarisering_bot_%s' % self.env.uid, groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
         self.message = self.env['mail.message'].create({
             'model': 'discuss.channel',
             'res_id': self.channel.id,

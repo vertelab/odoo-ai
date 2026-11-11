@@ -4,6 +4,7 @@
 from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase
 from ._config_param_guard import ConfigParamGuardedCase
+from ._test_users import create_user
 
 
 class TestCoworkerHITL(TransactionCase):
@@ -17,18 +18,8 @@ class TestCoworkerHITL(TransactionCase):
             'orchestration_mode': 'single',
             'status': 'active',
         })
-        self.approver = self.env['res.users'].create({
-            'name': 'HITL Godkännare',
-            'login': 'hitl_approver_%s' % self.env['res.users'].search_count([]),
-            'password': 'approver-pass',
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-        })
-        self.stranger = self.env['res.users'].create({
-            'name': 'HITL Främling',
-            'login': 'hitl_stranger_%s' % self.env['res.users'].search_count([]),
-            'password': 'stranger-pass',
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-        })
+        self.approver = self.env.create_user(name='HITL Godkännare', login='hitl_approver_%s' % self.env['res.users'].search_count([]), password='approver-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.stranger = self.env.create_user(name='HITL Främling', login='hitl_stranger_%s' % self.env['res.users'].search_count([]), password='stranger-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
 
     def _session(self, user=None):
         """En körningssession — HITL kräver en (design D7)."""

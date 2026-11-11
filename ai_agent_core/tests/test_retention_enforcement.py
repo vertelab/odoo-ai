@@ -28,6 +28,7 @@ from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 
 from ._config_param_guard import ConfigParamGuardedCase
+from ._test_users import create_user
 
 
 @tagged('okf', 'retention', 'post_install', '-at_install')
@@ -69,12 +70,7 @@ class RetentionBase(ConfigParamGuardedCase):
         cls.company = cls.env.ref('base.main_company')
         cls.Concept = cls.env['ai.okf.concept']
         cls.ArtifactType = cls.env['ai.artifact.type']
-        cls.owner = cls.env['res.users'].create({
-            'name': 'Retention Owner',
-            'login': 'retention_owner',
-            'email': 'retention.owner@example.com',
-            'groups_id': [(6, 0, [cls.env.ref('base.group_user').id])],
-        })
+        cls.owner = cls.env.create_user(name='Retention Owner', login='retention_owner', email='retention.owner@example.com', groups_id=[(6, 0, [cls.env.ref('base.group_user').id])])
         cls.atype_long = cls.ArtifactType.create({
             'name': 'retention-test-long',
             'kind': 'knowledge',

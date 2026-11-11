@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from odoo.tests import common, tagged
 from odoo.exceptions import UserError
+from ._test_users import create_user
 
 
 @tagged('post_install')
@@ -28,11 +29,7 @@ class TestPersonalMemorySources(common.TransactionCase):
             create=True)
         cls._embed_patch.start()
         cls.addClassCleanup(cls._embed_patch.stop)
-        cls.user = cls.env['res.users'].create({
-            'name': 'Mitchell Test',
-            'login': 'mitchell_test@example.com',
-            'email': 'mitchell_test@example.com',
-        })
+        cls.user = cls.env.create_user(name='Mitchell Test', login='mitchell_test@example.com', email='mitchell_test@example.com')
         cls.company = cls.env.ref('base.main_company')
         cls.Concept = cls.env['ai.okf.concept']
         cls.ArtifactType = cls.env['ai.artifact.type']

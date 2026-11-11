@@ -1,0 +1,62 @@
+# -*- coding: utf-8 -*-
+"""Testhjälpare: skapa användare som faktiskt får finnas i databasen.
+
+FYND 2026-11-11 (ledningssystem_copy, 102 fel i hela sviten):
+
+    odoo.exceptions.ValidationError: Företag YourCompany finns inte bland
+    de tillåtna företagen för användare HITL Godkännare ()
+
+Samma fel låg bakom **~56 av 102 fel** — varje test som skapade en användare
+föll. Klassen var inte trasig; anropet var ofullständigt:
+
+    env['res.users'].create({'name': 'X', 'login': 'x'})
+
+`res.users` har `_check_company` via `company_ids`. Utan `company_id` sätts
+ingen standard, och utan `company_ids` är listan tom — då finns inget tillåtet
+bolag och valideringen fäller anropet.
+
+VARFÖR DET INTE SYNS I DRIFT: där råkade standardbolaget och användarens
+bolag stämma. Ett test som förlitar sig på att miljön "råkar" ha rätt
+standardbolag är skört — det faller i varje databas vars bolagsstruktur ser
+annorlunda ut. Det är den sortens test som ser generiskt ut men inte är det.
+
+Använd `create_user(env, ...)` i stället för att skriva `res.users.create`
+för hand. Den sätter bolaget explicit, så testet mäter koden och inte
+databasens förhistoria.
+"""
+
+
+def create_user(env, name, login, password='test-pass', groups=None,
+                company=None, **extra):
+    """Skapa en testanvändare med bolag satt — annars fäller `_check_company`.
+
+    Args:
+        env: Odoo-miljö
+        name: visningsnamn
+        login: unik inloggning
+        password: lösenord (default 'test-pass')
+        groups: xmlids att lägga användaren i (default: `base.group_user`)
+        company: `res.company` att sätta som både `company_id` och enda
+            tillåtna bolag. Default: `env.company`.
+        **extra: övriga fält som skickas rakt igenom
+
+    Returns:
+        res.users
+
+    VARFÖR `company_ids` OCKSÅ: `company_id` styr vilket bolag användaren
+    arbetar i; `company_ids` är listan hen får se. Sätts bara det första är
+    listan fortfarande tom och valideringen faller.
+    """
+    company = company or env.company
+    if groups is None:
+        groups = ['base.group_user']
+    vals = {
+        'name': name,
+        'login': login,
+        'password': password,
+        'company_id': company.id,
+        'company_ids': [(6, 0, [company.id])],
+        'groups_id': [(6, 0, [env.ref(g).id for g in groups])],
+    }
+    vals.update(extra)
+    return env['res.users'].create(vals)

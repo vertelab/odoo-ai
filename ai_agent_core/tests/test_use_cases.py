@@ -11,6 +11,7 @@ import time
 from unittest.mock import patch
 
 from odoo.tests import TransactionCase
+from ._test_users import create_user
 
 
 class TestUseCases(TransactionCase):
@@ -94,10 +95,7 @@ class TestUseCases(TransactionCase):
             'status': 'active',
         })
         # En riktig användare — dispatch vägrar systemuser (D5).
-        real_user = self.env['res.users'].create({
-            'name': 'Webbanvändare',
-            'login': 'webuser_usecase2',
-        })
+        real_user = self.env.create_user(name='Webbanvändare', login='webuser_usecase2')
         start = time.monotonic()
         with patch.object(rt, 'spawn', side_effect=fake_spawn), \
                 patch.object(rt, 'wait_for_port', return_value=True), \
@@ -129,10 +127,7 @@ class TestUseCases(TransactionCase):
         })
         # session.user_id defaultar till env.user, som i en TransactionCase
         # ÄR base.user_root. Skapa en riktig användare för testet.
-        real_user = self.env['res.users'].create({
-            'name': 'Driftoperatör',
-            'login': 'driftoperator_usecase3',
-        })
+        real_user = self.env.create_user(name='Driftoperatör', login='driftoperator_usecase3')
         session = self.env['ai.coworker.session'].create({
             'coworker_id': coworker.id,
             'user_id': real_user.id,

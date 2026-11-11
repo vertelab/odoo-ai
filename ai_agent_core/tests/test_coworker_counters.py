@@ -20,6 +20,7 @@ Dessa tester bevisar:
 from datetime import date, timedelta
 
 from odoo.tests.common import TransactionCase, tagged
+from ._test_users import create_user
 
 
 @tagged('coworker_form_performance', 'post_install', '-at_install')
@@ -33,11 +34,7 @@ class TestCoworkerCounters(TransactionCase):
         cls.Session = cls.env['ai.coworker.session']
         cls.Line = cls.env['ai.coworker.session.line']
         cls.Concept = cls.env['ai.okf.concept']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Counters User',
-            'login': 'counters@example.com',
-            'email': 'counters@example.com',
-        })
+        cls.user = cls.env.create_user(name='Counters User', login='counters@example.com', email='counters@example.com')
         cls.coworker = cls.Coworker.create({
             'name': 'Counters Coworker',
             'status': 'active',

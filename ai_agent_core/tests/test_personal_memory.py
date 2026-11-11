@@ -6,6 +6,7 @@ from datetime import datetime
 
 from odoo.tests import common, tagged
 from odoo.exceptions import UserError
+from ._test_users import create_user
 
 
 @tagged('-at_install', 'post_install')
@@ -15,11 +16,7 @@ class TestPersonalMemory(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         # Skapa testanvändare
-        cls.user = cls.env['res.users'].create({
-            'name': 'Test User',
-            'login': 'test_personal_memory@example.com',
-            'email': 'test_personal_memory@example.com',
-        })
+        cls.user = cls.env.create_user(name='Test User', login='test_personal_memory@example.com', email='test_personal_memory@example.com')
         cls.company = cls.env.ref('base.main_company')
 
     # ════════════════════════════════════════════
@@ -113,10 +110,7 @@ class TestPersonalMemory(common.TransactionCase):
 
     def test_search_excludes_other_users(self):
         """En användares minnen syns inte för en annan användare."""
-        user2 = self.env['res.users'].create({
-            'name': 'User 2',
-            'login': 'user2@test.com',
-        })
+        user2 = self.env.create_user(name='User 2', login='user2@test.com')
         self.env['ai.personal.memory'].add_memory(
             user_id=self.user.id, content='User 1 memory', category='fact')
         self.env['ai.personal.memory'].add_memory(
@@ -283,7 +277,10 @@ class TestPersonalMemory(common.TransactionCase):
     def test_is_my_memory_filter(self):
         """'Mina minnen' = personliga + coworker lärda ur min session."""
         other = self.env['res.users'].create({
-            'name': 'Other', 'login': 'other_mymem@example.com'})
+            'name': 'Other', 'login': 'other_mymem@example.com',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         coworker = self.env['ai.coworker'].create({
             'name': 'MyMem Coworker', 'status': 'active'})
         # Min personliga
@@ -314,7 +311,10 @@ class TestPersonalMemory(common.TransactionCase):
     def test_okf_counts_are_owner_scoped(self):
         """Räknarna visar bara den egna ägarens koncept."""
         other = self.env['res.users'].create({
-            'name': 'Other2', 'login': 'other_counts@example.com'})
+            'name': 'Other2', 'login': 'other_counts@example.com',
+            'company_id': self.env.company.id,
+            'company_ids': [(6, 0, [self.env.company.id])],
+        })
         self._mk_concept('cnt.mine', 'personal', owner_user=self.user)
         self._mk_concept('cnt.other', 'personal', owner_user=other)
         self.user._compute_okf_memory_count()
@@ -353,12 +353,7 @@ class TestDiscussLearning(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Memory = cls.env['ai.personal.memory']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Discuss Learner',
-            'login': 'discuss_learner@example.com',
-            'email': 'discuss_learner@example.com',
-            'learn_from_discuss': True,
-        })
+        cls.user = cls.env.create_user(name='Discuss Learner', login='discuss_learner@example.com', email='discuss_learner@example.com', learn_from_discuss=True)
 
     def _channel_with_messages(self, count=3):
         channel = self.env['discuss.channel'].create({
@@ -403,11 +398,7 @@ class TestDiscussLearning(common.TransactionCase):
 
     def test_gate_is_user_scoped(self):
         """Grinden är per användare — samma meddelande, olika användare."""
-        other = self.env['res.users'].create({
-            'name': 'Other Learner',
-            'login': 'other_learner@example.com',
-            'email': 'other_learner@example.com',
-        })
+        other = self.env.create_user(name='Other Learner', login='other_learner@example.com', email='other_learner@example.com')
         ref = 'discuss,999999'
         self.Memory.add_memory(
             user_id=self.user.id, content='Användare A',

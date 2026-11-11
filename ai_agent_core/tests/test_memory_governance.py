@@ -4,6 +4,7 @@ seedning, injektion, per-användare, session-golv, per-agent-block."""
 
 from odoo.tests import common, tagged
 from odoo.exceptions import UserError
+from ._test_users import create_user
 
 
 @tagged('post_install')
@@ -14,16 +15,8 @@ class TestMemoryGovernance(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.company = cls.env.ref('base.main_company')
-        cls.user_mitchell = cls.env['res.users'].create({
-            'name': 'Mitchell',
-            'login': 'mitchell_gov@example.com',
-            'email': 'mitchell_gov@example.com',
-        })
-        cls.user_marc = cls.env['res.users'].create({
-            'name': 'Marc',
-            'login': 'marc_gov@example.com',
-            'email': 'marc_gov@example.com',
-        })
+        cls.user_mitchell = cls.env.create_user(name='Mitchell', login='mitchell_gov@example.com', email='mitchell_gov@example.com')
+        cls.user_marc = cls.env.create_user(name='Marc', login='marc_gov@example.com', email='marc_gov@example.com')
 
         # Setup scope codes
         cls.Scope = cls.env['ai.memory.scope']

@@ -33,6 +33,7 @@ from odoo.tests import common, tagged
 # Modulnivå-import: samma modulobjekt som endpointen använder, så patchar
 # träffar rätt `request`/`_check_api_key`.
 from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+from ._test_users import create_user
 
 
 class _FakeHttpRequest:
@@ -70,11 +71,7 @@ class TestToolsRunCoworkerContext(common.TransactionCase):
         cls.Session = cls.env['ai.coworker.session']
         cls.Coworker = cls.env['ai.coworker']
         cls.Tool = cls.env['ai.tool']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Tools Run User',
-            'login': 'tools_run@example.com',
-            'email': 'tools_run@example.com',
-        })
+        cls.user = cls.env.create_user(name='Tools Run User', login='tools_run@example.com', email='tools_run@example.com')
         cls.coworker_a = cls.Coworker.create({
             'name': 'Tools Run A',
             'description': 'T/11533 coworker A',

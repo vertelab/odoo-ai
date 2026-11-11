@@ -4,6 +4,7 @@ mail.activity, tool-kostnad, session.token_sys."""
 
 from datetime import date, timedelta
 from odoo.tests import common, tagged
+from ._test_users import create_user
 
 
 @tagged('post_install')
@@ -14,11 +15,7 @@ class TestBudgetHardCap(common.TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.Concept = cls.env['ai.okf.concept']
-        cls.user = cls.env['res.users'].create({
-            'name': 'Budget Test User',
-            'login': 'budget_test@example.com',
-            'email': 'budget_test@example.com',
-        })
+        cls.user = cls.env.create_user(name='Budget Test User', login='budget_test@example.com', email='budget_test@example.com')
 
     def _mk_coworker(self, cap_mtokens=0, **kw):
         vals = {

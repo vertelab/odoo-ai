@@ -13,6 +13,7 @@ from odoo.exceptions import ValidationError
 from odoo.tests.common import TransactionCase, tagged
 
 from ._config_param_guard import ConfigParamGuardedCase
+from ._test_users import create_user
 
 
 class DelegationTestBase(TransactionCase):
@@ -33,12 +34,7 @@ class DelegationTestBase(TransactionCase):
 
         # Användare för uppmärksamhet.
         n = self.env['res.users'].search_count([])
-        self.owner = self.env['res.users'].create({
-            'name': 'Delegation Owner %s' % n,
-            'login': 'deleg_owner_%s' % n,
-            'password': 'x',
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-        })
+        self.owner = self.env.create_user(name='Delegation Owner %s', login='deleg_owner_%s' % n, password='x', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
 
         # Coworkers.
         # chat_user_id krävs för att mottagaren ska vara heartbeat-operativ
