@@ -3020,6 +3020,45 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
             actual=str(e),
             tool_name='odoo_search',
         ).to_json()
+
+    # ── TOMT SKA VARA SJÄLVBESKRIVANDE (mail-digest-quality 3.1) ──────
+    # Ett bart `[]` betyder idag fyra olika saker: inga rader, fel modell,
+    # fel fält, eller nekad åtkomst. Modellen kan inte skilja dem och väljer
+    # den mest sannolika tolkningen — "det finns ingen data".
+    #
+    # Mätt 2026-11-11 (session 28417): modellen sökte `mail.message` i
+    # stället för `user_mail_ai.mail`, fick `[]`, och svarade användaren att
+    # tabellen var "helt tom — noll poster för alla användare". Den hade
+    # 3 559 rader. Ett tomt svar som ser ut som ett svar är värre än ett fel.
+    #
+    # Nu bär det tomma svaret sitt eget sammanhang: vilken modell som
+    # frågades, med vilken domän, och hur många rader modellen har TOTALT.
+    # Skillnaden mellan "modellen är tom" och "din fråga matchade inget"
+    # blir synlig — och den senare är den vanliga.
+    if not records:
+        total = 0
+        try:
+            total = Model.search_count([])
+        except Exception:
+            pass  # best-effort: tyst fallback — se etiketteringsregeln
+        empty = {
+            'rows': [],
+            'model': model,
+            'domain': domain or [],
+            'total_rows_in_model': total,
+        }
+        if total == 0:
+            empty['note'] = (
+                'The model exists but has no rows at all. This is a real '
+                'empty table, not a bad query.')
+        else:
+            empty['note'] = (
+                'The model has %d rows, but the domain matched none. The '
+                'table is NOT empty — widen or correct the domain '
+                '(check field names with describe_model, and whether the '
+                'records belong to another model).' % total)
+        return json.dumps(empty, default=str)
+
     return json.dumps(records, default=str)
 
 
