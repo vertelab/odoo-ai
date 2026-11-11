@@ -2178,9 +2178,14 @@ def builtin_tools() -> list[Tool]:
                 "reason per mail — one call instead of searching the mail "
                 "schema by hand. Importance comes from action_needed (3), "
                 "follow_up_at (2) and customer (1); interest_score is shown "
-                "but does NOT decide the order. 'missed' lists mail that "
-                "needs action and is older than 7 days. Use this FIRST for "
-                "any question about the user's mail or inbox."
+                "but does NOT decide the order. Default window is 7 days "
+                "back - 'recent' means a week unless the user says otherwise. "
+                "'missed' lists mail needing action that is older than 7 days "
+                "but within 30; older mail is reported as a count, never "
+                "listed as if current. 'upcoming' returns calendar events in "
+                "the next 7 days: what is waiting is often what makes a mail "
+                "urgent. Use this FIRST for any question about the user's "
+                "mail or inbox."
             ),
             parameters={
                 "type": "object",
@@ -2190,9 +2195,12 @@ def builtin_tools() -> list[Tool]:
                         "description": "How many mail to return (default 5).",
                     },
                     "since_days": {
-                        "type": "integer", "default": 30,
-                        "description": ("Only mail received within this many "
-                                        "days. 0 = no limit."),
+                        "type": "integer", "default": 7,
+                        "description": ("How many days back to look. "
+                                        "Default 7 - a week is what 'recent' "
+                                        "means unless the user says "
+                                        "otherwise. 0 = no limit (use with "
+                                        "care on a large inbox)."),
                     },
                     "only_action_needed": {
                         "type": "boolean", "default": False,
@@ -2202,6 +2210,19 @@ def builtin_tools() -> list[Tool]:
                         "type": "boolean", "default": True,
                         "description": ("Also list mail needing action that "
                                         "is older than 7 days."),
+                    },
+                    "missed_days": {
+                        "type": "integer", "default": 30,
+                        "description": ("How far back 'missed' may reach. "
+                                        "Mail older than this is reported "
+                                        "as a count only, not listed."),
+                    },
+                    "lookahead_days": {
+                        "type": "integer", "default": 7,
+                        "description": ("Also return calendar events in the "
+                                        "next N days (default 7) - what is "
+                                        "waiting is often what makes a mail "
+                                        "urgent."),
                     },
                 },
                 "required": [],
@@ -2227,8 +2248,9 @@ def _neg_ts(ts):
                    for c in str(ts))
 
 
-def _tool_mail_digest(env, limit=5, since_days=30, only_action_needed=False,
-                      include_missed=True):
+def _tool_mail_digest(env, limit=5, since_days=7, only_action_needed=False,
+                      include_missed=True, missed_days=30,
+                      lookahead_days=7):
     """Topp-N mail med motivering per mail — ett anrop i stället för tio.
 
     VARFÖR (mail-digest-quality 4.1): modellen upptäckte mailschemat på nytt
@@ -2271,14 +2293,34 @@ def _tool_mail_digest(env, limit=5, since_days=30, only_action_needed=False,
     total_in_scope = Mail.search_count(domain)
     if not total_in_scope:
         # Ärligt tomt, men SJÄLVBESKRIVANDE — samma lärdom som odoo_search.
+        # OCH med åldern: ett tomt 7-dagarsfönster på en inkorg vars nyaste
+        # mail är sju månader gammalt är inte "inga mail" — det är en
+        # synk som stannat. Utan åldern ser de två likadana ut.
         any_mail = Mail.search_count([('user_id', '=', user.id)])
+        newest = Mail.search([('user_id', '=', user.id)],
+                             order='received_at desc', limit=1)
+        age = ((_fields.Datetime.now() - newest.received_at).days
+               if newest and newest.received_at else None)
+        n_act = Mail.search_count([
+            ('user_id', '=', user.id), ('action_needed', '=', True)])
+        if not any_mail:
+            note = 'The user has no mail at all in user_mail_ai.mail.'
+        elif age is not None and age > 14:
+            note = ('No mail in the last %s days. The newest mail is %d '
+                    'days old — the inbox has stopped syncing, so widening '
+                    'the window will only surface old mail. Fix the sync '
+                    'first.' % (since_days, age))
+        else:
+            note = ('No mail matched since_days=%s. The user has %d mail in '
+                    'total (%d need action) — widen the window.'
+                    % (since_days, any_mail, n_act))
         return _json.dumps({
-            'mails': [], 'missed': [], 'total': 0,
+            'mails': [], 'missed': [], 'upcoming': [],
+            'missed_older_count': n_act if any_mail else 0,
+            'total': 0,
             'total_rows_for_user': any_mail,
-            'note': ('No mail matched since_days=%s. The user has %d mail in '
-                     'total — widen the window.' % (since_days, any_mail)
-                     if any_mail else
-                     'The user has no mail at all in user_mail_ai.mail.'),
+            'newest_mail_age_days': age,
+            'note': note,
         }, ensure_ascii=False)
 
     def _importance(rec):
@@ -2344,28 +2386,95 @@ def _tool_mail_digest(env, limit=5, since_days=30, only_action_needed=False,
     ))
     top = rows[:max(1, int(limit or 5))]
 
+    # ── TIDSFÖNSTER (mail-digest-quality, 2026-11-11) ────────────────
+    # "Missade" är mail som kräver åtgärd och ligger UTANFÖR det fönster
+    # användaren normalt skannar — men bara inom rimligt avstånd. Den
+    # första versionen tog ALLT äldre än 7 dagar, vilket på en inkorg som
+    # slutat synkas gav mail från sju månader tillbaka som om de vore
+    # aktuella. Det är samma tidsblindhet som gjorde att svaret listade
+    # mars/april som "dina viktigaste mail" i november.
+    #
+    # Nu: missed = äldre än 7 dagar men inom `missed_days` (default 30).
+    # Mail utanför fönstret rapporteras som ett ANTAL, inte som en lista —
+    # de är inte aktuella, men att tiga om dem vore att dölja data.
     missed = []
+    missed_older_count = 0
     if include_missed:
-        stale_cut = _fields.Datetime.now() - timedelta(days=7)
+        now = _fields.Datetime.now()
+        recent_cut = now - timedelta(days=7)
+        horizon = now - timedelta(days=int(missed_days or 30))
         stale = Mail.search([
             ('user_id', '=', user.id),
             ('action_needed', '=', True),
-            ('received_at', '<', stale_cut),
+            ('received_at', '<', recent_cut),
+            ('received_at', '>=', horizon),
         ], order='received_at desc', limit=5)
         seen = {r['id'] for r in top}
         missed = [_row(r) for r in stale if r.id not in seen]
+        missed_older_count = Mail.search_count([
+            ('user_id', '=', user.id),
+            ('action_needed', '=', True),
+            ('received_at', '<', horizon),
+        ])
+
+    # ── FRAMÅT: kalender (mail-digest-quality 5.x) ───────────────────
+    # En fråga om "viktiga mail" handlar i praktiken om VAD SOM VÄNTAR.
+    # Ett mail från i förrgår kan vara mindre angeläget än ett möte i
+    # morgon. Vi tittar därför 7 dagar framåt som underförstått
+    # komplement — samma horisont som bakåt, för symmetrin.
+    upcoming = []
+    try:
+        if 'calendar.event' in env:
+            now = _fields.Datetime.now()
+            ahead = now + timedelta(days=int(lookahead_days or 7))
+            evs = env['calendar.event'].sudo().search([
+                ('start', '>=', now),
+                ('start', '<=', ahead),
+                ('partner_ids', 'in', [user.partner_id.id]),
+            ], order='start asc', limit=5)
+            for e in evs:
+                upcoming.append({
+                    'id': e.id,
+                    'name': e.name or '(utan titel)',
+                    'start': str(e.start or ''),
+                    'days_ahead': max(0, (e.start - now).days),
+                })
+    except Exception as e:  # noqa: BLE001 — kalendern får ej fälla digesten
+        _logger.warning('mail_digest: kalender misslyckades: %s', e)
+
+    now_ts = _fields.Datetime.now()
+    newest = Mail.search([('user_id', '=', user.id)],
+                         order='received_at desc', limit=1)
+    newest_age = ((now_ts - newest.received_at).days
+                  if newest and newest.received_at else None)
 
     note = ('Ranked by importance (action_needed=3, follow_up_at=2, '
             'customer=1), not by interest_score alone — interest measures '
             'how much the content touches the user, not how important it is.')
     if missed:
-        note += (' "missed" lists mail that need action and are older than '
-                 '7 days: the ones a manual scan tends to skip.')
+        note += (' "missed" lists mail that need action, are older than 7 '
+                 'days, and fall within the last %d days: the ones a manual '
+                 'scan tends to skip.' % int(missed_days or 30))
+    if missed_older_count:
+        note += (' %d more mail need action but are older than %d days and '
+                 'are NOT listed — they are outside the current window.'
+                 % (missed_older_count, int(missed_days or 30)))
+    if upcoming:
+        note += (' "upcoming" lists calendar events in the next %d days: '
+                 'what is waiting, which is often what makes a mail urgent.'
+                 % int(lookahead_days or 7))
+    if newest_age is not None and newest_age > 14:
+        note += (' WARNING: the newest mail is %d days old — the inbox has '
+                 'stopped syncing, so this digest reflects old data.'
+                 % newest_age)
 
     return _json.dumps({
         'mails': top,
         'missed': missed,
+        'missed_older_count': missed_older_count,
+        'upcoming': upcoming,
         'total': total_in_scope,
+        'newest_mail_age_days': newest_age,
         'note': note,
     }, ensure_ascii=False, default=str)
 
