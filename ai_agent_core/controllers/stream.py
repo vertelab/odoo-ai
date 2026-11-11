@@ -5009,6 +5009,16 @@ class AIOpenAIAPI(http.Controller):
             'web_search', 'fetch_content',
             'task_get', 'task_set_status', 'task_update_fields',
             'okf_search',
+            # mail_digest är ALWAYS av ett skäl som är mätt: en fråga om
+            # "mina mail" innehöll ordet "mail", men RULES har ingen
+            # mail-regel (den enda mail-post som fanns pekar på
+            # postfix/dovecot — INFRASTRUKTUR, inte sökning). Följden var
+            # att API-vägen fick noll användbara verktyg och svarade med
+            # motfrågor i stället. Ett verktyg som svarar på en hel
+            # domänfråga ska inte hänga på en nyckelordslista (se
+            # audit-hardcoded-keyword-lists).
+            'mail_digest',
+            'odoo_search', 'describe_model',
         }
 
         # Sammanställ uppgiftstexten (senaste meddelanden)

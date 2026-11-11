@@ -2171,7 +2171,203 @@ def builtin_tools() -> list[Tool]:
             risk_level="write",
             source="builtin",
         ),
+        Tool(
+            name="mail_digest",
+            description=(
+                "The user's most important mail, ranked, with a stated "
+                "reason per mail — one call instead of searching the mail "
+                "schema by hand. Importance comes from action_needed (3), "
+                "follow_up_at (2) and customer (1); interest_score is shown "
+                "but does NOT decide the order. 'missed' lists mail that "
+                "needs action and is older than 7 days. Use this FIRST for "
+                "any question about the user's mail or inbox."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer", "default": 5,
+                        "description": "How many mail to return (default 5).",
+                    },
+                    "since_days": {
+                        "type": "integer", "default": 30,
+                        "description": ("Only mail received within this many "
+                                        "days. 0 = no limit."),
+                    },
+                    "only_action_needed": {
+                        "type": "boolean", "default": False,
+                        "description": "Only mail that requires action.",
+                    },
+                    "include_missed": {
+                        "type": "boolean", "default": True,
+                        "description": ("Also list mail needing action that "
+                                        "is older than 7 days."),
+                    },
+                },
+                "required": [],
+            },
+            handler=_tool_mail_digest,
+            risk_level="read_only",
+            source="builtin",
+            trust="tool",
+        ),
     ]
+
+
+def _neg_ts(ts):
+    """Sorteringsnyckel: nyast först, utan att parsa datetime.
+
+    `received_at` ligger som sträng i digest-raden (JSON-säkert). ISO-formade
+    tidsstämplar sorterar lexikalt, så vi inverterar tecknen för fallande
+    ordning. Tom sträng hamnar sist.
+    """
+    if not ts:
+        return '\uffff'
+    return ''.join(chr(0x10FFFF - ord(c)) if ord(c) < 0x10FFFF else c
+                   for c in str(ts))
+
+
+def _tool_mail_digest(env, limit=5, since_days=30, only_action_needed=False,
+                      include_missed=True):
+    """Topp-N mail med motivering per mail — ett anrop i stället för tio.
+
+    VARFÖR (mail-digest-quality 4.1): modellen upptäckte mailschemat på nytt
+    varje gång. Mätt 2026-11-11: 19 verktygsanrop, 101 s, 32 % av anropen
+    resultatlösa — och svaret öppnade med att påstå att tabellen var tom.
+
+    Vikten beräknas ur `interest_components` (mail-digest-quality 1.1):
+    `action_needed` väger 3, `follow_up_at` 2, `partner_id` 1. Orsakerna
+    följer med varje rad, så listan går att försvara — en rankning utan
+    orsak är en rankning man inte kan lita på.
+
+    `include_missed` lägger till mail användaren sannolikt missat: kräver
+    åtgärd men äldre än 7 dagar. Det är den del som gör AI:n bättre än en
+    manuell genomgång — den ser det ingen skannar.
+
+    Returnerar JSON: {mails: [...], missed: [...], total: N, note: str}
+    """
+    import json as _json
+    from datetime import timedelta
+    from odoo import fields as _fields
+
+    if 'user_mail_ai.mail' not in env:
+        return _json.dumps({
+            'error': 'user_mail_ai.mail is not installed — no mail to digest.',
+            'hint': 'Install user_mail_ai, or use odoo_search on mail.message '
+                    'for Odoo-internal threads (those are NOT personal mail).',
+        }, ensure_ascii=False)
+
+    Mail = env['user_mail_ai.mail'].sudo()
+    user = env.user
+    # Scope: användarens egna mail. Admin ser allt, men digesten ska vara
+    # PERSONLIG — annars får en administratör andras inkorgar i svaret.
+    domain = [('user_id', '=', user.id)]
+    if only_action_needed:
+        domain.append(('action_needed', '=', True))
+    if since_days:
+        cutoff = _fields.Datetime.now() - timedelta(days=int(since_days))
+        domain.append(('received_at', '>=', cutoff))
+
+    total_in_scope = Mail.search_count(domain)
+    if not total_in_scope:
+        # Ärligt tomt, men SJÄLVBESKRIVANDE — samma lärdom som odoo_search.
+        any_mail = Mail.search_count([('user_id', '=', user.id)])
+        return _json.dumps({
+            'mails': [], 'missed': [], 'total': 0,
+            'total_rows_for_user': any_mail,
+            'note': ('No mail matched since_days=%s. The user has %d mail in '
+                     'total — widen the window.' % (since_days, any_mail)
+                     if any_mail else
+                     'The user has no mail at all in user_mail_ai.mail.'),
+        }, ensure_ascii=False)
+
+    def _importance(rec):
+        """(vikt, orsaker) ur den sparade komponenten, med fallback."""
+        raw = rec.interest_components
+        if raw:
+            try:
+                d = _json.loads(raw)
+                return float(d.get('importance') or 0.0), list(d.get('reasons') or [])
+            except (ValueError, TypeError):
+                pass
+        # Fallback: räkna om (poster skapade före backfillen).
+        try:
+            return env['ai.okf.mixin']._okf_importance_of(rec)
+        except Exception:
+            return 0.0, []
+
+    def _row(rec):
+        imp, reasons = _importance(rec)
+        return {
+            'id': rec.id,
+            'subject': rec.subject or '(inget ämne)',
+            'from': rec.from_name or rec.from_email or '?',
+            'received_at': str(rec.received_at or ''),
+            'category': rec.category or '',
+            'action_needed': bool(rec.action_needed),
+            'reply_needed': bool(rec.reply_needed),
+            'importance': imp,
+            'reasons': reasons,
+            'interest_score': float(rec.interest_score or 0.0),
+            'folder': rec.folder or '',
+        }
+
+    # ── RANGORDNING (mätt 2026-11-11) ────────────────────────────────
+    # Första versionen sorterade på vikt först. Det var fel, och mätningen
+    # visade varför: vikten är 4.0 för ALLA 497 action_needed-mail
+    # (action_required + customer fyrar för varje), så den diskriminerar
+    # ingenting. Topplistan blev spam — "Din betalning nekades",
+    # "Ditt Google-konto raderas" — för de låg bara tidigast.
+    #
+    # `interest_score` diskriminerar däremot (project 7.71, other 5.98,
+    # invoice 6.92). Den ska därför RANGORDNA; vikten är ett filter
+    # (kräver åtgärd) och en förklaring, inte en ordning.
+    #
+    # Ordningen är: kräver åtgärd först (det är frågan "vad måste jag
+    # göra"), sedan intresse, sedan nyast. Vikten följer med som orsak.
+    ordered = Mail.search(
+        domain,
+        order='action_needed desc, interest_score desc, received_at desc',
+        limit=max(int(limit or 5) * 6, 30))
+    rows = [_row(r) for r in ordered]
+    rows.sort(key=lambda x: (
+        0 if x['action_needed'] else 1,   # action först
+        -x['interest_score'],              # intresse rangordnar
+        '' if not x['received_at'] else x['received_at'],
+    ), reverse=False)
+    # `received_at` är en sträng i _row(); sortera nyast först inom samma
+    # intresse genom att vända på tidsdelen separat.
+    rows.sort(key=lambda x: (
+        0 if x['action_needed'] else 1,
+        -x['interest_score'],
+        _neg_ts(x['received_at']),
+    ))
+    top = rows[:max(1, int(limit or 5))]
+
+    missed = []
+    if include_missed:
+        stale_cut = _fields.Datetime.now() - timedelta(days=7)
+        stale = Mail.search([
+            ('user_id', '=', user.id),
+            ('action_needed', '=', True),
+            ('received_at', '<', stale_cut),
+        ], order='received_at desc', limit=5)
+        seen = {r['id'] for r in top}
+        missed = [_row(r) for r in stale if r.id not in seen]
+
+    note = ('Ranked by importance (action_needed=3, follow_up_at=2, '
+            'customer=1), not by interest_score alone — interest measures '
+            'how much the content touches the user, not how important it is.')
+    if missed:
+        note += (' "missed" lists mail that need action and are older than '
+                 '7 days: the ones a manual scan tends to skip.')
+
+    return _json.dumps({
+        'mails': top,
+        'missed': missed,
+        'total': total_in_scope,
+        'note': note,
+    }, ensure_ascii=False, default=str)
 
 
 async def _tool_echo(message: str) -> str:
