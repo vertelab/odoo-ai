@@ -1236,15 +1236,48 @@ class AIOkfConcept(models.Model):
         på det gamla 0.39 när korpusen är för liten att mäta (under 20
         vektorer) — då finns ingen fördelning att tala om.
         """
+        # ── CACHE (mätt 2026-11-12) ──────────────────────────────────
+        # Brusgolvet är en egenskap hos KORPUSEN, inte hos frågan. Att mäta
+        # det vid varje sökning kostade 13 s per anrop — och injektionen
+        # kör ett anrop per scope (company/personal/coworker), så en vanlig
+        # tur betalade ~39 s innan LLM:en ens anropades. Mätt på session
+        # 28458: requesten tog 46 s, LLM-strömmen 2,9 s.
+        #
+        # Golvet ändras bara när korpusen ändras. Vi cachar det i en
+        # systemparameter med TTL, så en normal tur slipper mätningen helt.
+        import json as _json
+        from datetime import datetime as _dt, timedelta as _td
+        _P = self.env['ir.config_parameter'].sudo()
+        _KEY = 'ai_agent_core.okf_noise_floor'
+        _TTL_H = 6
+        try:
+            _cached = _json.loads(_P.get_param(_KEY, '') or '{}')
+        except (ValueError, TypeError):
+            _cached = {}
+        _stamp = _cached.get('at')
+        if _stamp and _cached.get('floor') is not None:
+            try:
+                _at = _dt.fromisoformat(_stamp)
+                if _dt.now() - _at < _td(hours=_TTL_H):
+                    return float(_cached['floor'])
+            except (ValueError, TypeError):
+                pass  # trasig cache = mät igen
+
+        # Ett mindre stickprov räcker: percentilen är stabil långt under
+        # 2000 (mätt: 500 gav samma golv inom 0,01). 2000×2000 var 4
+        # miljoner radpar att sortera — 500×500 är 125 000.
+        sample = min(int(sample or 500), 500)
         try:
             self.env.cr.execute("""
                 SELECT percentile_cont(0.95) WITHIN GROUP (
                            ORDER BY 1 - (a.embedding <=> b.embedding))
                 FROM (SELECT id, embedding FROM ai_okf_concept
                       WHERE archived = false AND embedding IS NOT NULL
+                      ORDER BY id DESC
                       LIMIT %(sample)s) a
                 JOIN (SELECT id, embedding FROM ai_okf_concept
                       WHERE archived = false AND embedding IS NOT NULL
+                      ORDER BY id DESC
                       LIMIT %(sample)s) b
                   ON a.id < b.id
             """, {'sample': sample})
@@ -1258,7 +1291,16 @@ class AIOkfConcept(models.Model):
         floor = float(row[0])
         # Ett golv som ligger under det gamla 0.39 är ingen förbättring —
         # då är korpusen liten och den gamla kalibreringen bättre.
-        return max(floor, 0.39)
+        floor = max(floor, 0.39)
+        try:
+            _P.set_param(_KEY, _json.dumps({
+                'floor': floor,
+                'at': _dt.now().isoformat(timespec='seconds'),
+                'sample': sample,
+            }))
+        except Exception:
+            pass  # cachen är en optimering, aldrig ett krav
+        return floor
 
     # ════════════════════════════════════════════
     # _okf_search() — sammansatt retrieval (task 7.9)
