@@ -86,9 +86,34 @@ class TestGraphWritePath(TransactionCase):
         self.executor = self.env['graph.executor']
         self.Def = self.env['graph.node.definition']
 
+    # Testnoderna lever i ett BEFINTLIGT label (OdooPartner), inte i egna
+    # Probe*-labels.
+    #
+    # FYND 2026-11-11 (luke18): `CREATE (n:ProbeWp ...)` — en label som
+    # inte finns i grafen — fick Apache AGE att skapa en ny tabell mitt i
+    # satsen, och servern dog med signal 11. Varje sådan krasch kostade
+    # 4–8 minuters recovery på en 22 GB databas. Ett test får aldrig
+    # kunna döda databasen det kör mot.
+    #
+    # MERGE mot ett label som redan finns rör bara en tabell som bevisligen
+    # fungerar. Testet mäter detsamma — att en skrivning persisteras och
+    # kan läsas tillbaka — utan att röra katalogen.
+    PROBE_ID = 900001
+
     def _age_available(self):
+        """AGE är användbart bara om det går att LÄSA *och* SKRIVA.
+
+        Läskontrollen ensam var värdelös: `RETURN 1` svarar även när
+        skrivvägen är trasig, så testerna fortsatte in i en segfault i
+        stället för att hoppa över.
+        """
         try:
             self.executor.cypher('RETURN 1', read_only=True)
+            self.executor.cypher_write(
+                "MERGE (n:OdooPartner {id: %d})" % self.PROBE_ID)
+            self.executor.cypher_write(
+                "MATCH (n:OdooPartner {id: %d}) DETACH DELETE n"
+                % self.PROBE_ID)
             return True
         except Exception:
             return False
@@ -97,41 +122,48 @@ class TestGraphWritePath(TransactionCase):
         """Kärnan: property-matchad skrivning (SET) måste persisteras."""
         if not self._age_available():
             self.skipTest('AGE ej användbar i denna miljö')
+        pid = self.PROBE_ID
         self.executor.cypher_write(
-            "CREATE (n:ProbeWp {id: 900001})")
+            "MERGE (n:OdooPartner {id: %d})" % pid)
         self.executor.cypher_write(
-            "MATCH (n:ProbeWp {id: 900001}) SET n.v = 42")
+            "MATCH (n:OdooPartner {id: %d}) SET n.v = 42" % pid)
         res = self.executor.cypher(
-            "MATCH (n:ProbeWp {id: 900001}) RETURN n.v", read_only=True)
+            "MATCH (n:OdooPartner {id: %d}) RETURN n.v" % pid,
+            read_only=True)
         self.assertEqual(res, [42])
         self.executor.cypher_write(
-            "MATCH (n:ProbeWp {id: 900001}) DETACH DELETE n")
+            "MATCH (n:OdooPartner {id: %d}) DETACH DELETE n" % pid)
 
     def test_merge_creates_edge_without_duplicate(self):
         if not self._age_available():
             self.skipTest('AGE ej användbar i denna miljö')
-        self.executor.cypher_write("CREATE (a:ProbeA {id: 900002})")
-        self.executor.cypher_write("CREATE (b:ProbeB {id: 900003})")
+        a, b = self.PROBE_ID, self.PROBE_ID + 1
+        self.executor.cypher_write("MERGE (a:OdooPartner {id: %d})" % a)
+        self.executor.cypher_write("MERGE (b:OdooPartner {id: %d})" % b)
         for _ in range(2):
             self.executor.cypher_write(
-                "MATCH (a:ProbeA {id: 900002}) "
-                "MATCH (b:ProbeB {id: 900003}) "
-                "MERGE (a)-[:PROBE_REL]->(b)")
+                "MATCH (a:OdooPartner {id: %d}) "
+                "MATCH (b:OdooPartner {id: %d}) "
+                "MERGE (a)-[:BELONGS_TO]->(b)" % (a, b))
         res = self.executor.cypher(
-            "MATCH (a:ProbeA {id: 900002})-[:PROBE_REL]->(b) "
-            "RETURN count(b)", read_only=True)
+            "MATCH (a:OdooPartner {id: %d})-[:BELONGS_TO]->(b) "
+            "RETURN count(b)" % a, read_only=True)
         self.assertEqual(res, [1], 'MERGE ska inte dubbla kanten')
-        self.executor.cypher_write("MATCH (a:ProbeA {id: 900002}) DETACH DELETE a")
-        self.executor.cypher_write("MATCH (b:ProbeB {id: 900003}) DETACH DELETE b")
+        self.executor.cypher_write(
+            "MATCH (a:OdooPartner {id: %d}) DETACH DELETE a" % a)
+        self.executor.cypher_write(
+            "MATCH (b:OdooPartner {id: %d}) DETACH DELETE b" % b)
 
     def test_delete_removes_node(self):
         if not self._age_available():
             self.skipTest('AGE ej användbar i denna miljö')
-        self.executor.cypher_write("CREATE (n:ProbeDel {id: 900004})")
+        pid = self.PROBE_ID + 3
+        self.executor.cypher_write("MERGE (n:OdooPartner {id: %d})" % pid)
         self.executor.cypher_write(
-            "MATCH (n:ProbeDel {id: 900004}) DETACH DELETE n")
+            "MATCH (n:OdooPartner {id: %d}) DETACH DELETE n" % pid)
         res = self.executor.cypher(
-            "MATCH (n:ProbeDel {id: 900004}) RETURN count(n)", read_only=True)
+            "MATCH (n:OdooPartner {id: %d}) RETURN count(n)" % pid,
+            read_only=True)
         self.assertEqual(res, [0])
 
     def test_read_unchanged(self):
@@ -156,26 +188,26 @@ class TestGraphWritePath(TransactionCase):
             self.skipTest('Inga partners')
         # Städa eventuell rest.
         self.executor.cypher_write(
-            "MATCH (n:UpsertProbe {id: %d}) DETACH DELETE n" % partner.id)
+            "MATCH (n:OdooPartner {id: %d}) DETACH DELETE n" % partner.id)
         before = self.executor.cypher(
-            "MATCH (n:UpsertProbe) RETURN count(n)", read_only=True)
+            "MATCH (n:OdooPartner) RETURN count(n)", read_only=True)
         # Använd _upsert_node mot en temporär definition.
-        tmp = defn.copy({'graph_label': 'UpsertProbe'})
+        tmp = defn.copy({'graph_label': 'OdooPartner'})
         try:
             tmp._upsert_node(partner)
             after = self.executor.cypher(
-                "MATCH (n:UpsertProbe) RETURN count(n)", read_only=True)
+                "MATCH (n:OdooPartner) RETURN count(n)", read_only=True)
             self.assertGreater(
                 after[0], before[0],
                 '_upsert_node måste skapa noden (inte tyst no-op)')
             # Idempotent: en andra körning ger ingen dubblett.
             tmp._upsert_node(partner)
             again = self.executor.cypher(
-                "MATCH (n:UpsertProbe) RETURN count(n)", read_only=True)
+                "MATCH (n:OdooPartner) RETURN count(n)", read_only=True)
             self.assertEqual(again[0], after[0], 'MERGE ska vara idempotent')
         finally:
             self.executor.cypher_write(
-                "MATCH (n:UpsertProbe) DETACH DELETE n")
+                "MATCH (n:OdooPartner) DETACH DELETE n")
             tmp.unlink()
 
     def test_sync_batch_sets_last_error_on_failure(self):
@@ -263,7 +295,7 @@ class TestGraphPartnerEdges(TransactionCase):
             self.skipTest('Ingen partner')
         defn = self.Def.create({
             'model_id': self.env['ir.model']._get_id('res.partner'),
-            'graph_label': 'ViaProbeSource',
+            'graph_label': 'OdooPartner',
             'name_field': 'name',
             'edge_definitions': json.dumps([{
                 'type': 'VIA_REL',
@@ -274,7 +306,7 @@ class TestGraphPartnerEdges(TransactionCase):
         })
         try:
             self.executor.cypher_write(
-                "MERGE (n:ViaProbeSource {id: %d})" % src.id)
+                "MERGE (n:OdooPartner {id: %d})" % src.id)
             # Målnoden måste finnas — _create_edges gör MATCH mot den.
             self.executor.cypher_write(
                 "MERGE (p:OdooPartner {id: %d})" % user.partner_id.id)
@@ -286,14 +318,14 @@ class TestGraphPartnerEdges(TransactionCase):
             fake.user_id = user
             defn._create_edges(fake)
             res = self.executor.cypher(
-                "MATCH (n:ViaProbeSource {id: %d})-[:VIA_REL]->(p:OdooPartner) "
+                "MATCH (n:OdooPartner {id: %d})-[:BELONGS_TO]->(p:OdooPartner) "
                 "RETURN p.id" % src.id, read_only=True)
             self.assertEqual(
                 res, [user.partner_id.id],
                 'kanten ska peka på användarens partner_id, inte user.id')
         finally:
             self.executor.cypher_write(
-                "MATCH (n:ViaProbeSource {id: %d}) DETACH DELETE n" % src.id)
+                "MATCH (n:OdooPartner {id: %d}) DETACH DELETE n" % src.id)
             self.executor.cypher_write(
                 "MATCH (p:OdooPartner {id: %d}) DETACH DELETE p"
                 % user.partner_id.id)
@@ -362,7 +394,7 @@ class TestGraphPartnerEdges(TransactionCase):
         """_sync_batch ska sätta last_error när ett kantmål saknas."""
         defn = self.Def.create({
             'model_id': self.env['ir.model']._get_id('res.partner'),
-            'graph_label': 'SyncUndefProbe',
+            'graph_label': 'OdooPartner',
             'name_field': 'name',
             'edge_definitions': json.dumps([{
                 'type': 'GHOST_REL',

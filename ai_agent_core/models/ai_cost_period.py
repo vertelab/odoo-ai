@@ -96,60 +96,121 @@ class AiCostPeriodLine(models.Model):
         det en post per period.
 
         En period utan rader ger INGEN post (inte en nollkostnad).
+
+        AGGREGERAR I SQL, INTE I PYTHON (2026-11-12). Den tidigare versionen
+        gjorde `search(domain)` utan limit och läste `ln.session_id` per rad.
+        Det drog in hela perioden i minnet: 163 994 rader för innevarande
+        månad, ur en tabell på 2,3 GB och 619 618 rader totalt. Processen
+        dog på `psycopg2.DatabaseError: out of memory for query result`, och
+        eftersom det var en DATABASfel och inte ett vanligt undantag stängdes
+        anslutningen — vilket i sin tur fick `_record_failure` att kasta
+        `InterfaceError: connection already closed` och stoppade HELA
+        cron-ticken. En kostnadsrapport tog ner schemaläggaren.
+
+        Nu görs grupperingen i databasen: en rad per (period, valfritt
+        partner/projekt/task) i stället för en Python-rad per session line.
+        Mängden som lämnar PostgreSQL är antalet BUCKETS — normalt ett
+        fåtal — inte antalet rader.
+
+        `cost_company` räknas fortfarande i Python, eftersom växelkursen ska
+        vara radens datum och kursen hämtas via ORM:en. Det sker nu på
+        bucket-nivå (en konvertering per period och valuta), inte per rad.
         """
         group_by = group_by or []
-        domain = [('usage_reported', '!=', None)]  # alla rader
+
+        # ── Grupperingskolumner ─────────────────────────────────────────
+        #
+        # Fälten project_id/task_id läggs på `ai.coworker.session` av
+        # bryggor (project_ai) via arv. Saknas de blir posten okontextad,
+        # inte felaktig — samma kontrakt som tidigare.
+        Session = self.env['ai.coworker.session']
+        select_parts = []
+        group_parts = []
+        if 'partner' in group_by:
+            select_parts.append('s.partner_id AS partner_id')
+            group_parts.append('s.partner_id')
+        if 'project' in group_by and 'project_id' in Session._fields:
+            select_parts.append('s.project_id AS project_id')
+            group_parts.append('s.project_id')
+        if 'task' in group_by and 'task_id' in Session._fields:
+            select_parts.append('s.task_id AS task_id')
+            group_parts.append('s.task_id')
+
+        # Periodens start beräknas i SQL så att grupperingen sker på samma
+        # nyckel som `_period_start()` ger i Python.
+        if granularity == 'month':
+            period_expr = "date_trunc('month', l.create_date)::date"
+        else:
+            period_expr = 'l.create_date::date'
+        select_parts.insert(0, '%s AS period_start' % period_expr)
+        group_parts.insert(0, period_expr)
+
+        where = ['l.usage_reported IS NOT NULL']
+        params = []
         if date_from:
-            domain.append(('create_date', '>=', date_from))
+            where.append('l.create_date >= %s')
+            params.append(date_from)
         if date_to:
-            domain.append(('create_date', '<=', date_to))
-        lines = self.env['ai.coworker.session.line'].search(domain)
+            where.append('l.create_date <= %s')
+            params.append(date_to)
+
+        # `usage_reported` är ett booleskt fält: `IS NOT NULL` motsvarar det
+        # gamla `('usage_reported', '!=', None)` — alla rader som har ett
+        # värde, oavsett om det är sant eller falskt.
+        sql = """
+            SELECT %(select)s,
+                   count(*) AS line_count,
+                   count(*) FILTER (WHERE l.usage_reported = false)
+                       AS unreported_line_count,
+                   coalesce(sum(l.cost_usd) FILTER
+                       (WHERE l.usage_reported = true), 0) AS cost_usd,
+                   coalesce(sum(l.token_sys) FILTER
+                       (WHERE l.usage_reported = true), 0) AS billing_base,
+                   bool_or(s.cost_context_confirmed) AS context_confirmed
+              FROM ai_coworker_session_line l
+              JOIN ai_coworker_session s ON s.id = l.session_id
+             WHERE %(where)s
+          GROUP BY %(group)s
+        """ % {
+            'select': ', '.join(select_parts),
+            'where': ' AND '.join(where),
+            'group': ', '.join(group_parts),
+        }
+
+        self.env.cr.execute(sql, params)
+        rows = self.env.cr.dictfetchall()
 
         company_currency = self.env.company.currency_id
-        buckets = {}
-        for ln in lines:
-            sess = ln.session_id
-            start = self._period_start(ln.create_date, granularity)
-            key = (start,)
-            vals = {}
-            if 'partner' in group_by:
-                vals['partner_id'] = sess.partner_id.id or False
-                key += (vals['partner_id'],)
-            if 'project' in group_by:
-                # Domänfält — läggs av bryggor (project_ai) via arv. Saknas
-                # de blir posten okontextad, inte felaktig.
-                proj = sess.project_id if 'project_id' in sess._fields else False
-                vals['project_id'] = proj.id if proj else False
-                key += (vals['project_id'],)
-            if 'task' in group_by:
-                task = sess.task_id if 'task_id' in sess._fields else False
-                vals['task_id'] = task.id if task else False
-                key += (vals['task_id'],)
-            b = buckets.setdefault(key, {
-                'period_start': start, 'granularity': granularity,
-                'cost_usd': 0.0, 'cost_company': 0.0, 'billing_base': 0.0,
-                'line_count': 0, 'unreported_line_count': 0,
-                'context_confirmed': bool(sess.cost_context_confirmed),
-                **vals,
-            })
-            b['line_count'] += 1
-            if not ln.usage_reported:
-                b['unreported_line_count'] += 1
-                continue
-            b['cost_usd'] += ln.cost_usd or 0.0
-            b['billing_base'] += ln.token_sys or 0
-            # Omräkning per RADENS datum (inte dagens kurs).
+        company = self.env.company
+        today = fields.Date.today()
+        result = []
+        for row in rows:
+            cost_usd = float(row['cost_usd'] or 0.0)
+            # Omräkning per PERIOD (inte dagens kurs). Kursen slås upp en
+            # gång per bucket; `_convert` är cache-ad i Odoo, så en period
+            # med samma datum kostar ett uppslag, inte ett per rad.
             try:
-                b['cost_company'] += company_currency._convert(
-                    ln.cost_usd or 0.0,
-                    self.env.company.currency_id,
-                    self.env.company,
-                    ln.create_date.date() if ln.create_date else fields.Date.today(),
-                )
+                cost_company = company_currency._convert(
+                    cost_usd, company_currency, company,
+                    row['period_start'] or today)
             except Exception:
                 # Ingen kurs tillgänglig → lämna 0 men behåll cost_usd.
-                pass  # best-effort: tyst fallback — se etiketteringsregeln
-        return list(buckets.values())
+                cost_company = 0.0
+            vals = {
+                'period_start': row['period_start'],
+                'granularity': granularity,
+                'cost_usd': cost_usd,
+                'cost_company': cost_company,
+                'billing_base': float(row['billing_base'] or 0.0),
+                'line_count': row['line_count'],
+                'unreported_line_count': row['unreported_line_count'],
+                'context_confirmed': bool(row['context_confirmed']),
+            }
+            for key in ('partner_id', 'project_id', 'task_id'):
+                if key in row:
+                    vals[key] = row[key] or False
+            result.append(vals)
+        return result
 
     @api.model
     def cron_aggregate(self, granularity='month'):
