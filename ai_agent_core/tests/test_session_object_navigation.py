@@ -123,7 +123,7 @@ class TestSessionObjectNavigation(TransactionCase):
             'name': 'Navigation No Access',
             'login': 'navigation_no_access_test',
             'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         restricted_model = 'ir.actions.server'

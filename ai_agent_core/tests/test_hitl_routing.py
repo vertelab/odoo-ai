@@ -47,7 +47,7 @@ class TestHITLRouting(TransactionCase):
         channel = self.env['discuss.channel'].create({'name': 'HITL-test'})
         bot = self.env['res.users'].create({
             'name': 'HITL Bot', 'login': 'hitl_bot_test',
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         handler = select_interrupt_handler(

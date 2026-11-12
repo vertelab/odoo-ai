@@ -315,7 +315,7 @@ class TestOkfAccessResolver(TestOkfConceptBase):
             'name': login,
             'login': login,
             'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
 

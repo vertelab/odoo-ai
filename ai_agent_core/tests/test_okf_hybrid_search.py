@@ -156,12 +156,12 @@ class TestOkfHybridSearch(common.TransactionCase):
         """Två användare i samma scope ser inte varandras koncept."""
         user_a = self.env['res.users'].create({
             'name': 'Iso A', 'login': 'iso_a_search',
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         user_b = self.env['res.users'].create({
             'name': 'Iso B', 'login': 'iso_b_search',
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         self._mk('iso.a', 'Fakturor för A.', scope='personal')
@@ -202,12 +202,12 @@ class TestOkfHybridSearch(common.TransactionCase):
             'name': 'Iso Coworker', 'status': 'active'})
         user_a = self.env['res.users'].create({
             'name': 'Cw A', 'login': 'cw_a_search',
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         user_b = self.env['res.users'].create({
             'name': 'Cw B', 'login': 'cw_b_search',
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         # A:s lärdom

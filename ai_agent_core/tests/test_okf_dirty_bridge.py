@@ -54,7 +54,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
 
     def test_new_company_memory_is_dirty(self):
         mem = self.Company.create({
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'content': 'Vi använder tvåveckorssprintar.',
             'category': 'knowledge',
         })
@@ -129,7 +129,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
 
     def test_cron_indexes_company_memory(self):
         mem = self.Company.create({
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'content': 'Vi använder tvåveckorssprintar.',
             'category': 'knowledge',
         })
@@ -197,7 +197,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
         p = self.Personal.create({
             'user_id': self.user.id, 'content': 'P.', 'category': 'fact'})
         c = self.Company.create({
-            'company_id': self.env.company.id, 'content': 'C.',
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id, 'content': 'C.',
             'category': 'knowledge'})
         self.assertEqual(p._okf_owner_vals()['owner_user_id'], self.user.id)
         self.assertEqual(c._okf_owner_vals()['owner_company_id'],
@@ -228,7 +228,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
             'user_id': self.user.id, 'content': 'Personligt.',
             'category': 'fact'})
         c = self.Company.create({
-            'company_id': self.env.company.id, 'content': 'Företagsvisst.',
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id, 'content': 'Företagsvisst.',
             'category': 'knowledge'})
 
         total = self.env['ai.okf.mixin']._okf_cron_index_dirty()

@@ -44,17 +44,17 @@ class TestBatchedEmbedding(ConfigParamGuardedCase):
                 'name': 'learning', 'kind': 'memory'})
         cls.user_a = cls.env['res.users'].create({
             'name': 'ZZ Batch A', 'login': 'zz_batch_a',
-            'company_id': cls.env.company.id,
+            'company_id': (cls.env.company if cls.env.company in cls.env.user.company_ids else cls.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [cls.env.company.id])],
         })
         cls.user_b = cls.env['res.users'].create({
             'name': 'ZZ Batch B', 'login': 'zz_batch_b',
-            'company_id': cls.env.company.id,
+            'company_id': (cls.env.company if cls.env.company in cls.env.user.company_ids else cls.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [cls.env.company.id])],
         })
         cls.user_c = cls.env['res.users'].create({
             'name': 'ZZ Batch C', 'login': 'zz_batch_c',
-            'company_id': cls.env.company.id,
+            'company_id': (cls.env.company if cls.env.company in cls.env.user.company_ids else cls.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [cls.env.company.id])],
         })
 

@@ -278,7 +278,7 @@ class TestPersonalMemory(common.TransactionCase):
         """'Mina minnen' = personliga + coworker lärda ur min session."""
         other = self.env['res.users'].create({
             'name': 'Other', 'login': 'other_mymem@example.com',
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         coworker = self.env['ai.coworker'].create({
@@ -312,7 +312,7 @@ class TestPersonalMemory(common.TransactionCase):
         """Räknarna visar bara den egna ägarens koncept."""
         other = self.env['res.users'].create({
             'name': 'Other2', 'login': 'other_counts@example.com',
-            'company_id': self.env.company.id,
+            'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
             'company_ids': [(6, 0, [self.env.company.id])],
         })
         self._mk_concept('cnt.mine', 'personal', owner_user=self.user)

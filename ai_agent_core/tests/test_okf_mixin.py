@@ -368,7 +368,7 @@ class TestIndexableModels(_OkfTestModel):
                 'content': 'Batch-test %s.' % i, 'category': 'fact'})
         for i in range(4):
             self.env['ai.company.memory'].create({
-                'company_id': self.env.company.id,
+                'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
                 'content': 'Batch-test %s.' % i, 'category': 'knowledge'})
         # D3 (2026-10-21): `batch_size` är ett GOLV. Taket räknas fram ur
         # ködjupet — på en databas med hundratals dirty-poster blir det
@@ -453,7 +453,7 @@ class TestIndexableModels(_OkfTestModel):
         """En prioriterad modell får sin andel även när kön domineras (4.3)."""
         for i in range(30):
             self.env['ai.company.memory'].create({
-                'company_id': self.env.company.id,
+                'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
                 'content': 'Dominerande %s.' % i, 'category': 'knowledge'})
         mem = self.env['ai.personal.memory'].create({
             'user_id': self.env.ref('base.user_admin').id,
@@ -485,7 +485,7 @@ class TestIndexableModels(_OkfTestModel):
                 'user_id': self.env.ref('base.user_admin').id,
                 'content': 'Svalt-a %s.' % i, 'category': 'fact'})
             self.env['ai.company.memory'].create({
-                'company_id': self.env.company.id,
+                'company_id': (self.env.company if self.env.company in self.env.user.company_ids else self.env.user.company_ids[:1]).id,
                 'content': 'Svalt-b %s.' % i, 'category': 'knowledge'})
         self._set_priority([])
         with patch.object(type(self.Mixin), '_okf_indexable_models',
