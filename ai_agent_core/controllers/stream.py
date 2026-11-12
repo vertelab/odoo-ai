@@ -721,10 +721,17 @@ class AIStreamController(http.Controller):
         # Aktuellt datum — LLM:en har kunskaps-cutoff och behöver veta "idag"
         # för tidssensitiv information (priser, release-datum, valuta, …).
         from datetime import date as _date
+        # Språket kommer från användarens inställning, inte från en gissning.
+        _lang_rules = ''
+        try:
+            _lang_rules = _language_instruction(request.env.user)
+        except Exception as e:
+            _logger.warning('language instruction failed: %s', e)
         system_prompt = (
             f"Today is {_date.today().isoformat()}. "
             "Your knowledge has a cutoff — use web_search/fetch_url for "
             "current, up-to-date information.\n\n"
+            + _lang_rules
             + (system_prompt or '')
         ).strip()
 
@@ -3159,6 +3166,56 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
 _NO_ANSWER_MARKER = '(inget svar)'
 
 
+#: Läsbart språknamn per kod. Modellen svarar på språkets namn, inte koden —
+#: "sv_SE" betyder inget för en LLM, "Swedish" gör det.
+_LANG_NAMES = {
+    'sv_SE': 'Swedish', 'sv': 'Swedish',
+    'en_US': 'English', 'en_GB': 'English', 'en': 'English',
+    'nb_NO': 'Norwegian', 'nn_NO': 'Norwegian', 'no': 'Norwegian',
+    'da_DK': 'Danish', 'fi_FI': 'Finnish', 'de_DE': 'German',
+    'fr_FR': 'French', 'es_ES': 'Spanish', 'nl_NL': 'Dutch',
+    'pl_PL': 'Polish', 'et_EE': 'Estonian', 'lv_LV': 'Latvian',
+    'lt_LT': 'Lithuanian', 'ru_RU': 'Russian', 'uk_UA': 'Ukrainian',
+}
+
+
+def _language_instruction(user):
+    """Systemprompt-rad som binder svaret till användarens språk.
+
+    VARFÖR (mätt 2026-11-12): ingenting i systemprompten sa vilket språk
+    svaret skulle ha. Modellen gissade — samma fråga ("hi") från samma
+    användare svarade på svenska ena gången och engelska nästa:
+
+        "Hej Anders! 👋 Torsdag eftermiddag — jag är igång…"
+        "Hi! Good to see you. 👋 Before we dive in…"
+
+    Användarens språk är en INSTÄLLNING (`res.users.lang`), inte en
+    gissning. Vi läser den och säger det rakt ut.
+
+    Regeln är avsiktligt tvådelad: svara på användarens språk, men byt om
+    användaren själv skriver på ett annat. Annars blir en engelsk fråga
+    besvarad på svenska — vilket är lika fel som det omvända.
+
+    Returnerar '' när språket är okänt: då är en påhittad regel sämre än
+    ingen regel, och modellen får göra som den gjorde förut.
+    """
+    try:
+        code = (user.lang or '').strip() if user else ''
+    except Exception:
+        return ''
+    if not code:
+        return ''
+    name = _LANG_NAMES.get(code) or _LANG_NAMES.get(code.split('_')[0])
+    if not name:
+        return ''
+    return (
+        '## Language\n'
+        'The user\'s interface language is %s (%s). Write your answer in '
+        '%s. If the user writes to you in another language, answer in THAT '
+        'language instead — the setting is the default, not a constraint.\n\n'
+        % (name, code, name)
+    )
+
 def _humanize_provider_error(exc):
     """Översätt ett provider-/gatewayfel till en mening användaren förstår.
 
@@ -5183,6 +5240,14 @@ class AIOpenAIAPI(http.Controller):
         prompt = _clean_user_message(
             _content_to_text(user_messages[-1].get('content')))
         system_prompt = quest.description or ''
+        # Samma språkregel på API-vägen (se _language_instruction). Utan den
+        # svarade /ai/v1 på engelska för en svensk användare — mätt
+        # 2026-11-12, samma fråga som web-UI:t besvarade på svenska.
+        try:
+            system_prompt = _language_instruction(
+                request.env.user) + system_prompt
+        except Exception as e:
+            _logger.warning('language instruction failed (api path): %s', e)
 
         # Spår-context för turen (session-observability): urvalet av skills,
         # klientens `pi_trace` och turens metadata samlas här och skrivs som
