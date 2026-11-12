@@ -435,16 +435,22 @@ class AISkill(models.Model):
             ('failure_cases', '!=', False),
         ], limit=limit)
         made = 0
+        # I test är `cr.commit` patchad till Odoo:s `forbidden` (se
+        # TransactionCase.setUpClass). Att anropa den fäller testet med
+        # AssertionError — inte för att koden är fel, utan för att
+        # testramverket äger transaktionen. Checkpoint-commit är en
+        # driftoptimering; i test fyller den ingen funktion.
+        in_test = getattr(self.env.cr.commit, '__name__', '') == 'forbidden'
         for skill in candidates:
             try:
                 if skill.propose_improvement():
                     made += 1
-                    if commit:
+                    if commit and not in_test:
                         self.env.cr.commit()
             except Exception:
                 _logger.warning('Improvement suggestion failed for %s',
                                 skill.name, exc_info=True)
-                if commit:
+                if commit and not in_test:
                     self.env.cr.rollback()
         _logger.info('Kaizen: %d improvement suggestions created', made)
         return made

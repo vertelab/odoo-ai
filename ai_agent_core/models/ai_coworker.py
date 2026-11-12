@@ -3667,10 +3667,6 @@ class AICoworker(models.Model):
         if not self.related_enrichment:
             return ''
         if not window or window[0] is None or window[1] is None:
-<<<<<<< Updated upstream
-=======
-            _logger.info('Related enrichment: no window (%s)', window)
->>>>>>> Stashed changes
             return ''
         limit = limit if limit is not None else (
             self.related_enrichment_limit or 5)
@@ -3730,10 +3726,6 @@ class AICoworker(models.Model):
         Mixin = self.env['ai.okf.mixin']
         registry = Mixin._okf_related_models() or {}
         if not registry:
-<<<<<<< Updated upstream
-=======
-            _logger.info('Related enrichment: no registry')
->>>>>>> Stashed changes
             return ''
 
         date_from, date_to = window
@@ -3760,13 +3752,9 @@ class AICoworker(models.Model):
             # Via källposten — den väg som faktiskt gäller för koncept.
             partner_ids.update(self._okf_hit_partner_ids(rec))
         if not partner_ids:
-<<<<<<< Updated upstream
             # Ingen gemensam kund → ingen berikning. Det är det NORMALLA
             # för en fråga som inte rör en kund, inte ett fel.
             _logger.debug(
-=======
-            _logger.info(
->>>>>>> Stashed changes
                 'Related enrichment: no shared partner in %s hits',
                 len(records or []))
             return ''
@@ -5631,6 +5619,23 @@ class AICoworker(models.Model):
         # per-handling-semantik som en användare får i UI:t — och det är just
         # det som gör att transaktionen kan släppas.
         def _commit_checkpoint(_label):
+            # I TEST får vi aldrig committa: TransactionCase äger
+            # transaktionen och Odoo:s `forbidden()` slår till med
+            # "Commit is forbidden in tests". Undantaget kastades inifrån
+            # checkpointen och fällde hela setup-kedjan.
+            #
+            # Checkpointen finns för att släppa lås i DRIFT (mätt: 35–39 s
+            # → 0,8 s vid moduluppgradering). Utanför drift fyller den
+            # ingen funktion: testtransaktionen rullas ändå tillbaka.
+            if getattr(self.env.cr, 'commit', None) is None:
+                return
+            # Odoo:s TransactionCase classPatch:ar `cr.commit` till en
+            # funktion som heter `forbidden` och kastar AssertionError.
+            # Namnet är den enda stabila signalen — det finns ingen
+            # `in_test`-flagga på cursorn. Att fråga funktionens namn är
+            # billigare och säkrare än att låta undantaget fälla setupen.
+            if getattr(self.env.cr.commit, '__name__', '') == 'forbidden':
+                return
             try:
                 self.env.cr.commit()
             except Exception:
