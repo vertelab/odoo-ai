@@ -453,10 +453,51 @@ class GraphExecutor(models.Model):
             SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$);
             -- 1
 
-        ``LOAD`` är sessionslokalt och billigt (biblioteket är redan laddat
-        andra gången). Vi sväljer fel: saknas extensionen ska anroparen få
-        sitt eget, tydligare fel från ``cypher()``.
+        ``LOAD`` är sessionslokalt och billigt när biblioteket inte redan är
+        preloadat — men **onödigt och skadligt** när det är det.
+
+        MÄTT 2026-11-12 på ``ledningssystem``: ``age`` ligger i
+        ``shared_preload_libraries``. Då FUNGERAR ``cypher()`` utan ``LOAD``
+        — det gamla felet ``unhandled cypher(cstring)`` kom aldrig:
+
+            SET search_path = ag_catalog, public;
+            SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$)
+              AS (result agtype);
+            -- 1
+
+        Men app-rollen (``ledningssystem``, icke-superuser) får
+        ``access to library "age" is not allowed``. Varje ``cypher()``-anrop
+        tog då den dyra vägen genom savepoint + nekat LOAD + ROLLBACK TO —
+        och eftersom ``cypher()`` anropas tusentals gånger under en
+        OKF-indexering hölls transaktionen öppen i minuter. Det var den som
+        höll radlåset som gav ``canceling statement due to lock timeout`` i
+        ``alert_count_backfill`` och de andra (mätt 2026-11-12).
+
+        Därför: **läs av om ett LOAD behövs innan vi försöker.** Är
+        biblioteket preloadat hoppar vi över — det är både snabbare och
+        undviker det nekade LOAD som förgiftade transaktionen.
         """
+        # KORT VÄG: är `age` preloadat behövs inget LOAD alls.
+        #
+        # Mätt 2026-11-12: på `ledningssystem` ligger age i
+        # shared_preload_libraries, och `cypher()` fungerar rakt av. Att ändå
+        # försöka LOAD kostade en savepoint + ett nekat anrop + en rollback
+        # PER cypher()-anrop, tusentals gånger under en indexering.
+        #
+        # `SET LOCAL` används inte här — det här är bara en läsning.
+        try:
+            self.env.cr.execute(
+                "SELECT 1 FROM pg_settings "
+                "WHERE name = 'shared_preload_libraries' "
+                "AND 'age' = ANY (string_to_array(setting, ','))")
+            if self.env.cr.fetchone():
+                return True
+        except Exception:  # noqa: BLE001 — probe får aldrig fälla anropet
+            # Rollen kan sakna rätt att läsa pg_settings (kräver
+            # pg_read_all_settings). Då faller vi igenom till LOAD-vägen
+            # nedan, som är den gamla, fungerande.
+            pass
+
         # EGEN SPARPUNKT. Anroparen har redan en (`graph_executor`), men
         # den här metoden får inte lämna en förgiftad transaktion efter
         # sig: PostgreSQL tillåter inga kommandon alls efter ett nekat
