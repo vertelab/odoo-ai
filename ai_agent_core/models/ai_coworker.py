@@ -3667,6 +3667,10 @@ class AICoworker(models.Model):
         if not self.related_enrichment:
             return ''
         if not window or window[0] is None or window[1] is None:
+<<<<<<< Updated upstream
+=======
+            _logger.info('Related enrichment: no window (%s)', window)
+>>>>>>> Stashed changes
             return ''
         limit = limit if limit is not None else (
             self.related_enrichment_limit or 5)
@@ -3726,6 +3730,10 @@ class AICoworker(models.Model):
         Mixin = self.env['ai.okf.mixin']
         registry = Mixin._okf_related_models() or {}
         if not registry:
+<<<<<<< Updated upstream
+=======
+            _logger.info('Related enrichment: no registry')
+>>>>>>> Stashed changes
             return ''
 
         date_from, date_to = window
@@ -3752,9 +3760,13 @@ class AICoworker(models.Model):
             # Via källposten — den väg som faktiskt gäller för koncept.
             partner_ids.update(self._okf_hit_partner_ids(rec))
         if not partner_ids:
+<<<<<<< Updated upstream
             # Ingen gemensam kund → ingen berikning. Det är det NORMALLA
             # för en fråga som inte rör en kund, inte ett fel.
             _logger.debug(
+=======
+            _logger.info(
+>>>>>>> Stashed changes
                 'Related enrichment: no shared partner in %s hits',
                 len(records or []))
             return ''

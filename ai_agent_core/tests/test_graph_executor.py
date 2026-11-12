@@ -456,12 +456,12 @@ class TestCypherValueEscaping(TransactionCase):
         val = "'Carl Falk'"
         cv = self._cv(val)
         Ex.cypher_write(
-            "MERGE (n:QuoteEscape {id: 1}) SET n.v = %s" % cv)
+            "MERGE (n:OdooPartner {id: 1}) SET n.v = %s" % cv)
         res = Ex.cypher(
-            "MATCH (n:QuoteEscape {id: 1}) RETURN n.v", read_only=True)
+            "MATCH (n:OdooPartner {id: 1}) RETURN n.v", read_only=True)
         self.assertEqual(res, [val],
                          'värdet ska läsas tillbaka exakt som det skrevs')
-        Ex.cypher_write("MATCH (n:QuoteEscape {id: 1}) DETACH DELETE n")
+        Ex.cypher_write("MATCH (n:OdooPartner {id: 1}) DETACH DELETE n")
 
 
 class TestUnlabelledMatchGuard(TransactionCase):

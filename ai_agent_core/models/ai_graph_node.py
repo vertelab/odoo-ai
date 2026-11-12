@@ -472,6 +472,7 @@ class GraphExecutor(models.Model):
                 self.env.cr.execute("ROLLBACK TO SAVEPOINT age_load")
                 self.env.cr.execute("RELEASE SAVEPOINT age_load")
         except Exception:
+<<<<<<< Updated upstream
             # ROLLBACK IS MANDATORY, not defensive.
             #
             # A failed statement inside a transaction leaves PostgreSQL in
@@ -520,6 +521,12 @@ class GraphExecutor(models.Model):
                 _logger.debug(
                     'LOAD age failed outside a savepoint; leaving the '
                     'transaction as is')
+=======
+            # Även sparpunkten kan falla (t.ex. utanför en transaktion).
+            # Best-effort kvarstår: saknas extensionen ska `cypher()`
+            # rapportera det med ett tydligare fel.
+            pass
+>>>>>>> Stashed changes
 
     @api.model
     def cypher(self, query, read_only=True, timeout=10):

@@ -637,6 +637,7 @@ class AIOkfMixin(models.AbstractModel):
             return {}
         return data if isinstance(data, dict) else {}
 
+<<<<<<< Updated upstream
     # ── Vikt (tool-call-quality D5) ────────────────────────────────────
     #
     # `interest_score` mäter INTRESSE — hur mycket innehållet berör en
@@ -725,6 +726,8 @@ class AIOkfMixin(models.AbstractModel):
                 reasons.append(kind)
         return score, reasons
 
+=======
+>>>>>>> Stashed changes
     def _okf_dirty_fields(self):
         """Fält vars ändring gör OKF-fälten inaktuella.
 
