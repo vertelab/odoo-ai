@@ -6419,11 +6419,27 @@ class AICoworker(models.Model):
                     user = self.env['res.users'].search(
                         [('login', '=', login)], limit=1)
                     if not user:
+                        # BOLAG KRÄVS — se _ensure_chat_user. Utan
+                        # company_id/company_ids fäller
+                        # res.users._check_company, och här fångas felet
+                        # och loggas som "Owner repair failed" — så
+                        # coworkern blev tyst utan ägare.
+                        partner = coworker.partner_id or (
+                            coworker.employee_id.work_contact_id
+                            if coworker.employee_id else False)
+                        vals = {'name': coworker.name, 'login': login}
+                        if partner:
+                            vals['partner_id'] = partner.id
+                            if partner.company_id:
+                                vals['company_id'] = partner.company_id.id
+                                vals['company_ids'] = [
+                                    (6, 0, [partner.company_id.id])]
+                        else:
+                            _c = self.env.company
+                            vals['company_id'] = _c.id
+                            vals['company_ids'] = [(6, 0, [_c.id])]
                         user = self.env['res.users'].with_context(
-                            no_reset_password=True).create({
-                                'name': coworker.name,
-                                'login': login,
-                            })
+                            no_reset_password=True).create(vals)
                     coworker.sudo().chat_user_id = user.id
 
                 repaired += 1
