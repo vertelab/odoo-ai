@@ -52,11 +52,9 @@ class TestQuestAccessible(TransactionCase):
         super().setUp()
         Users = self.env['res.users'].with_context(no_reset_password=True)
         self.user_in = Users.create({
-            'name': 'Quest User In', 'login': 'quest_user_in@example.com',
-        })
+            'name': 'Quest User In', 'login': 'quest_user_in@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         self.user_out = Users.create({
-            'name': 'Quest User Out', 'login': 'quest_user_out@example.com',
-        })
+            'name': 'Quest User Out', 'login': 'quest_user_out@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         self.group = self.env['res.groups'].create({
             'name': 'Quest Access Test Group',
         })
@@ -106,11 +104,9 @@ class TestSessionOwnerLookup(TransactionCase):
         super().setUp()
         Users = self.env['res.users'].with_context(no_reset_password=True)
         self.owner = Users.create({
-            'name': 'Thread Owner', 'login': 'thread_owner@example.com',
-        })
+            'name': 'Thread Owner', 'login': 'thread_owner@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         self.other = Users.create({
-            'name': 'Thread Other', 'login': 'thread_other@example.com',
-        })
+            'name': 'Thread Other', 'login': 'thread_other@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         self.coworker = self.env['ai.coworker'].create({
             'name': 'Owner Lookup Test',
         })
@@ -260,8 +256,7 @@ class TestWebUiThreadFlowStillWorks(TransactionCase):
         super().setUp()
         Users = self.env['res.users'].with_context(no_reset_password=True)
         self.owner = Users.create({
-            'name': 'WebUI Owner', 'login': 'webui_owner@example.com',
-        })
+            'name': 'WebUI Owner', 'login': 'webui_owner@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         self.coworker = self.env['ai.coworker'].create({
             'name': 'WebUI Flow Test',
         })
@@ -303,8 +298,7 @@ class TestWebUiThreadFlowStillWorks(TransactionCase):
     def test_other_user_cannot_touch_the_thread(self):
         Users = self.env['res.users'].with_context(no_reset_password=True)
         other = Users.create({
-            'name': 'WebUI Other', 'login': 'webui_other@example.com',
-        })
+            'name': 'WebUI Other', 'login': 'webui_other@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         env = self.env(user=other.id)
         with patch(
             'odoo.addons.ai_agent_core.controllers.stream.request',

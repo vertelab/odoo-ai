@@ -19,9 +19,13 @@ class TestCoworkerIdentitySync(TransactionCase):
 
         # Two employees, each with their own user (and therefore partner).
         cls.user_a = cls.Users.create({
-            'name': 'Identity Test A', 'login': 'ident_test_a'})
+            'name': 'Identity Test A', 'login': 'ident_test_a',
+            'company_id': cls.env.company.id,
+            'company_ids': [(6, 0, [cls.env.company.id])]})
         cls.user_b = cls.Users.create({
-            'name': 'Identity Test B', 'login': 'ident_test_b'})
+            'name': 'Identity Test B', 'login': 'ident_test_b',
+            'company_id': cls.env.company.id,
+            'company_ids': [(6, 0, [cls.env.company.id])]})
         cls.emp_a = cls.Employee.create({
             'name': 'Employee A', 'user_id': cls.user_a.id})
         cls.emp_b = cls.Employee.create({

@@ -115,13 +115,11 @@ class TestApiKeyOwnership(TransactionCase):
         self.user_a = Users.create({
             'name': 'Callback Owner A',
             'login': 'callback_owner_a@example.com',
-            'email': 'callback_owner_a@example.com',
-        })
+            'email': 'callback_owner_a@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         self.user_b = Users.create({
             'name': 'Callback Intruder B',
             'login': 'callback_intruder_b@example.com',
-            'email': 'callback_intruder_b@example.com',
-        })
+            'email': 'callback_intruder_b@example.com', 'company_id': self.env.company.id, 'company_ids': [(6, 0, [self.env.company.id])]})
         self.coworker = self.env['ai.coworker'].create({
             'name': 'Callback Owner Test',
         })
