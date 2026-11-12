@@ -564,23 +564,24 @@ class AICoworkerInitType(models.Model):
                     if quest.employee_id else False)
                 if partner:
                     vals['partner_id'] = partner.id
-                    # PARTNERN BESTÄMMER BOLAGET.
-                    #
-                    # FYND 2026-11-12 (ledningssystem_copy): utan
-                    # company_id/company_ids fäller res.users._check_company
-                    # varje skapande med "Företag X finns inte bland de
-                    # tillåtna företagen". 36 fel i sviten kom härifrån,
-                    # via _repair_missing_chat_users -> _ensure_chat_user.
-                    #
-                    # Det är en riktig produktionsbugg, inte bara ett
-                    # testproblem: i en miljö där standardbolaget inte
-                    # råkar matcha användarens tillåtna bolag kraschar
-                    # chat-användarskapandet tyst (felet fångas och loggas
-                    # av _repair_missing_chat_users).
-                    if partner.company_id:
-                        vals['company_id'] = partner.company_id.id
-                        vals['company_ids'] = [
-                            (6, 0, [partner.company_id.id])]
+                # VÄLJ ETT BOLAG SOM ÄR TILLÅTET.
+                #
+                # FYND 2026-11-12 (ledningssystem_copy): utan
+                # company_id/company_ids fäller res.users._check_company
+                # varje skapande med "Företag X finns inte bland de
+                # tillåtna företagen". 36 fel i sviten kom härifrån, via
+                # _repair_missing_chat_users -> _ensure_chat_user.
+                #
+                # Partnerns company_id kan ligga utanför den körande
+                # användarens lista, så vi kopierar den inte blint —
+                # det flyttar bara felet ett steg.
+                allowed = self.env.user.company_ids
+                cand = (partner.company_id if partner else False) \
+                    or self.env.company
+                if cand not in allowed:
+                    cand = allowed[:1] or cand
+                vals['company_id'] = cand.id
+                vals['company_ids'] = [(6, 0, [cand.id])]
                 user = self.env['res.users'].with_context(
                     no_reset_password=True).create(vals)
             self.chat_user_id = user.id

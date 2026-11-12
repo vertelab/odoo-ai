@@ -6430,14 +6430,21 @@ class AICoworker(models.Model):
                         vals = {'name': coworker.name, 'login': login}
                         if partner:
                             vals['partner_id'] = partner.id
-                            if partner.company_id:
-                                vals['company_id'] = partner.company_id.id
-                                vals['company_ids'] = [
-                                    (6, 0, [partner.company_id.id])]
-                        else:
-                            _c = self.env.company
-                            vals['company_id'] = _c.id
-                            vals['company_ids'] = [(6, 0, [_c.id])]
+                        # VÄLJ ETT BOLAG SOM ÄR TILLÅTET.
+                        #
+                        # Partnerns company_id kan vara ett bolag som den
+                        # körande användaren inte har tillgång till (mätt:
+                        # Maja Bergs partner har YourCompany id 1, medan
+                        # admin har {1,2,3,4} efter fixen — men i en annan
+                        # databas kan listan vara snävare). Att kopiera
+                        # partnerns bolag blint flyttar bara felet.
+                        allowed = self.env.user.company_ids
+                        cand = (partner.company_id if partner else False) \
+                            or self.env.company
+                        if cand not in allowed:
+                            cand = allowed[:1] or cand
+                        vals['company_id'] = cand.id
+                        vals['company_ids'] = [(6, 0, [cand.id])]
                         user = self.env['res.users'].with_context(
                             no_reset_password=True).create(vals)
                     coworker.sudo().chat_user_id = user.id
