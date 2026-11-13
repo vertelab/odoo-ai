@@ -119,3 +119,42 @@ pytz
 # ── ai_agent_core — optional (LibreOffice headless for legacy formats) ───
 # Install via apt: libreoffice-core
 # Handles: .doc, .xls, .ppt, .rtf
+
+# ── Saknade beroenden — inventering 2026-11-13 ──────────────────────────────
+# Se /srv/salt/odoo/REQUIREMENTS-AUDIT-2026-11-13.md.
+#
+# ai_core/providers/__init__.py importerar leverantörs-SDK:erna INUTI
+# get_llm()/check_health() — dvs lazy. Ett saknat paket fäller därför inte
+# registryt, men valet av provider i UI:t ger ModuleNotFoundError.
+# Provider-implarna finns för Anthropic, Ollama och Mistral.
+#
+# OBS: langchain-anthropic/-ollama/-mistralai och mistralai är AVKOMMENTERADE
+# med flit. De behövs bara om den providern faktiskt används, och de drar in
+# tunga beroenden i VARJE container (repo_apply installerar för alla kunder).
+# anthropic är aktiverad eftersom bifrost-flottan använder Anthropic direkt.
+anthropic
+#langchain-anthropic
+#langchain-ollama
+#langchain-mistralai
+#mistralai
+
+# agent_pi, ai_agent_core — NATS-transport (pi_mesh). Importeras i try/except
+# men mesh-funktionerna är döda utan paketet.
+nats-py
+
+# ai_agent_core — ai_identity.py importerar yaml på modulnivå (hård).
+PyYAML
+
+# ai_agent_core — pypdf används som fallback när PyPDF2 inte klarar filen
+# (importeras i try/except; PyPDF2 ovan räcker för grundfallet).
+pypdf
+
+# ai_agent_mcp — FastApiMCP (importeras på modulnivå i fastapi_mcp.py).
+# fastapi-mcp>=0.4,<0.5 står redan ovan; fastapi självt kommer via
+# OCA/rest-framework men deklareras här eftersom ai_agent_mcp importerar
+# fastapi.routing direkt.
+fastapi
+
+# ai_agent_trend — crawl4ai (importeras på modulnivå i ai_trend.py).
+# Tung modul (playwright); installeras bara om trendmodulen används.
+#crawl4ai
