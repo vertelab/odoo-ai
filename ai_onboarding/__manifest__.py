@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI: Assistant Onboarding',
-    'version': '18.0.1.0.0',
+    'version': '1.0.0',
     'summary': 'Onboardingskurs: co-pilot, coworker och AI i vardagen',
     'description': """
 Lär dig använda AI-assistenten: fråga, delegera och granska — med människan i kontrollen.

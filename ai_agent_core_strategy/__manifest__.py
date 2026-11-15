@@ -1,6 +1,6 @@
 {
     'name': 'AI: Strategy Skills',
-    'version': '18.0.1.0.0',
+    'version': '1.0.0',
     'summary': '21 AI skills, 5 agents, 3 quests for business strategy — BMC, SWOT, OKR, Porter, and more.',
     'description': '''
 AI Agent Core — Strategy Skills
