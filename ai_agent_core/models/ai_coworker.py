@@ -628,7 +628,7 @@ class AICoworker(models.Model):
             company = rec.company_id or self.env.company
             domain = (
                 (alias.alias_domain if alias else False)
-                or self.env['ir.config_parameter'].sudo().get_param(
+                or self.env['ir.config_parameter'].sudo().get_str(
                     'mail.catchall.domain')
                 or company.alias_domain_name
                 or (company.email or '').split('@')[-1] or ''
@@ -1199,8 +1199,8 @@ class AICoworker(models.Model):
         """
         import json as _json
         icp = self.env['ir.config_parameter'].sudo()
-        url = icp.get_param('bifrost.signal_url', '')
-        key = icp.get_param('bifrost.signal_key', '')
+        url = icp.get_str('bifrost.signal_url', '')
+        key = icp.get_str('bifrost.signal_key', '')
         if not url or not key:
             return False
 
@@ -1263,7 +1263,7 @@ class AICoworker(models.Model):
         if not prov_burn:
             return False
         local_burn = self.burn_rate_mtokens_day or 0.0
-        tolerance = float(self.env['ir.config_parameter'].sudo().get_param(
+        tolerance = float(self.env['ir.config_parameter'].sudo().get_str(
             'bifrost.conflict_tolerance', '20'))
         if local_burn > 0 and abs(prov_burn - local_burn) / local_burn * 100.0 > tolerance:
             self._push_signal('burn_rate_conflict', {
@@ -1276,14 +1276,14 @@ class AICoworker(models.Model):
     def _detect_budget_change(self):
         """Push budget_changed when monthly_cap_mtokens changes ≥ threshold (default 50%)."""
         icp = self.env['ir.config_parameter'].sudo()
-        threshold = float(icp.get_param('bifrost.budget_change_threshold', '50'))
+        threshold = float(icp.get_str('bifrost.budget_change_threshold', '50'))
         key = f'bifrost.cap_snapshot_{self.id}'
-        raw = icp.get_param(key, '')
+        raw = icp.get_str(key, '')
         old = float(raw) if raw else 0.0
         new = self.monthly_cap_mtokens or 0
         if old and new and old != new and abs(new - old) / old * 100.0 >= threshold:
             self._push_signal('budget_changed', {'old_budget': old, 'new_budget': new})
-        icp.set_param(key, str(new))
+        icp.set_str(key, str(new))
         return new
 
     @api.model
@@ -1452,6 +1452,7 @@ class AICoworker(models.Model):
         readonly=True)
     watch_trg_field_ref = fields.Many2oneReference(
         string='Trigger Reference',
+        model_field='watch_trg_field_ref_model_name',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Fält-ref för on_stage_set/on_tag_set.')
     watch_trg_date_id = fields.Many2one(
@@ -4144,7 +4145,7 @@ class AICoworker(models.Model):
         Returnerar ai.model-record eller tom records.
         """
         self.ensure_one()
-        default_model_id = self.env['ir.config_parameter'].sudo().get_param(
+        default_model_id = self.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.default_model_id', '')
         if default_model_id and default_model_id.isdigit():
             model = self.env['ai.model'].browse(int(default_model_id))
@@ -5414,7 +5415,7 @@ class AICoworker(models.Model):
         Returns:
             int: Antal agenter som fick en modell.
         """
-        param = self.env['ir.config_parameter'].sudo().get_param(
+        param = self.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.default_model_id')
         if not param:
             _logger.warning(
@@ -7766,7 +7767,7 @@ class AICoworker(models.Model):
         if window_minutes is None:
             try:
                 window_minutes = int(self.env['ir.config_parameter'].sudo()
-                    .get_param(
+                    .get_str(
                         'ai_agent_core.delegation_liveness_window_minutes',
                         '30'))
             except Exception:
@@ -7894,7 +7895,7 @@ class AICoworker(models.Model):
         depth = self._delegation_depth() + 1
         try:
             max_depth = int(self.env['ir.config_parameter'].sudo()
-                .get_param('ai_agent_core.delegation_max_depth', '3'))
+                .get_str('ai_agent_core.delegation_max_depth', '3'))
         except Exception:
             max_depth = 3
         if depth > max_depth:
@@ -7905,7 +7906,7 @@ class AICoworker(models.Model):
         # D8: dygnskvot per (beställare, mottagare).
         try:
             quota = int(self.env['ir.config_parameter'].sudo()
-                .get_param(
+                .get_str(
                     'ai_agent_core.delegation_max_per_recipient_per_day',
                     '10'))
         except Exception:
@@ -8241,7 +8242,7 @@ class AICoworker(models.Model):
                 '(task-åldring)', len(stale_tasks), age_min)
 
         import json as _json
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'ai_agent_core.run_metrics',
             _json.dumps({'window_hours': window_hours,
                          'by_init_type': by_init,
@@ -8261,15 +8262,15 @@ class AICoworker(models.Model):
 
         # Check system setting
         icp = self.env['ir.config_parameter'].sudo()
-        enabled = icp.get_param('ai_agent_core.heartbeat_enabled', 'True')
+        enabled = icp.get_str('ai_agent_core.heartbeat_enabled', 'True')
         if enabled != 'True':
             return
 
-        interval = int(icp.get_param('ai_agent_core.heartbeat_interval', '5'))
+        interval = int(icp.get_str('ai_agent_core.heartbeat_interval', '5'))
         # Begränsa antalet coworkers per tick (5.10): en cykel ska inte
         # bearbeta hela listan. Coworkers som står över tas i ett senare tick
         # (5.11) — rotation via senaste heartbeat först.
-        per_tick = int(icp.get_param('ai_agent_core.heartbeat_per_tick', '20'))
+        per_tick = int(icp.get_str('ai_agent_core.heartbeat_per_tick', '20'))
 
         coworkers = self.search([
             ('active', '=', True),

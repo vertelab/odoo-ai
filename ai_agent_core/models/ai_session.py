@@ -1598,7 +1598,7 @@ class AICoworkerSession(models.Model):
         """
         if idle_minutes is None:
             idle_minutes = int(
-                self.env['ir.config_parameter'].sudo().get_param(
+                self.env['ir.config_parameter'].sudo().get_str(
                     'ai_agent_core.session_idle_minutes', '60') or 60)
         cutoff = fields.Datetime.now() - timedelta(minutes=idle_minutes)
         domain = [

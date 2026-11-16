@@ -164,7 +164,7 @@ class AIOkfDashboard(models.TransientModel):
         stale_counts = dict(self.env.cr.fetchall())
 
         # 3. Storlek (opt-in via ir.config_parameter) — pg_column_size på embedding
-        show_size = self.env['ir.config_parameter'].sudo().get_param(
+        show_size = self.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.dashboard_size_estimate', 'False') == 'True'
         size_map = {}
         if show_size:

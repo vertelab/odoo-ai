@@ -209,6 +209,7 @@ class AICoworkerInitType(models.Model):
         related='base_automation_id.trg_field_ref_model_name', readonly=True)
     watch_trg_field_ref = fields.Many2oneReference(
         string='Trigger Reference',
+        model_field='watch_trg_field_ref_model_name',
         related='base_automation_id.trg_field_ref', readonly=False,
         help='Fält-ref för on_stage_set/on_tag_set.')
     watch_trg_date_id = fields.Many2one(

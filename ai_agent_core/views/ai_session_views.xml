@@ -28,7 +28,7 @@
                 <filter name="has_multi_record" string="With selection"
                         domain="[('ai_record_ids','!=',False)]"/>
                 <separator/>
-                <group expand="0" string="Gruppera efter">
+                <group>
                     <filter name="group_started" string="Started"
                             context="{'group_by':'create_date'}"/>
                     <filter name="group_ended" string="Ended"
@@ -299,7 +299,7 @@
                 <filter name="this_month" string="Denna månad (30d)"
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=30))]"/>
                 <separator/>
-                <group expand="0" string="Gruppera efter">
+                <group>
                     <filter name="group_date" string="Datum"
                             context="{'group_by':'create_date'}"/>
                     <filter name="group_role" string="Roll"

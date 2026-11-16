@@ -27,7 +27,7 @@ Depends on:
     'website': 'https://vertel.se',
     'depends': ['ai_agent_core'],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/pi_mesh_data.xml',
         'views/pi_mesh_agent_views.xml',
         'views/pi_mesh_message_views.xml',

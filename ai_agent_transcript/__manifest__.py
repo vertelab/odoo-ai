@@ -49,7 +49,7 @@
         'ai_agent_core',
     ],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/ai_composer_data.xml',
         'views/ai_composer_views.xml',
         'views/ai_session_views.xml',

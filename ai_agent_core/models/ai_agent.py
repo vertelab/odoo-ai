@@ -197,7 +197,7 @@ class AIAgent(models.Model):
             raise ValidationError(
                 'Extern körning får inte köras som systemuser (D5).')
 
-        base_url = self.env['ir.config_parameter'].sudo().get_param(
+        base_url = self.env['ir.config_parameter'].sudo().get_str(
             'web.base.url', 'http://localhost:8069')
 
         # Nyckeln skapas som den UPPLÖSTA användaren: `_generate` binder
@@ -369,7 +369,7 @@ class AIAgent(models.Model):
         hellre inga verktyg än odoo-verktyg ingen valt. En varning loggas så
         felet blir synligt i stället för att tyst ge fel verktyg.
         """
-        param = self.env['ir.config_parameter'].sudo().get_param(
+        param = self.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.default_tool_ids', '')
         names = [n.strip() for n in param.split(',') if n.strip()]
         if names:

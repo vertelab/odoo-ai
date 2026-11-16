@@ -30,7 +30,7 @@ class AICoworkerHtmlEditorBridge(HTML_Editor):
         """
         # Check if bridge is enabled
         IrConfig = request.env['ir.config_parameter'].sudo()
-        quest_id = IrConfig.get_param('ai_coworker_bridge.html_editor_quest_id')
+        quest_id = IrConfig.get_str('ai_coworker_bridge.html_editor_quest_id')
 
         if quest_id:
             try:

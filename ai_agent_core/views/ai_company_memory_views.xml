@@ -61,7 +61,7 @@
                     <separator/>
                     <filter name="archived" string="Archived"
                             domain="[('archived', '=', True)]"/>
-                    <group expand="0" string="Group By">
+                    <group>
                         <filter name="group_category" string="Category"
                                 context="{'group_by': 'category'}"/>
                         <filter name="group_source" string="Source"

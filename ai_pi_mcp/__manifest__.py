@@ -63,7 +63,7 @@ Pi MCP Developer Server
         'web',
     ],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
     ],
     'installable': True,
     'application': False,

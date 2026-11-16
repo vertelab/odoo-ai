@@ -679,7 +679,7 @@ def post_init_hook(env):
             _logger.info('Bulk indexed res.company into AGE graph')
 
         # 5. Set version marker
-        env['ir.config_parameter'].sudo().set_param(
+        env['ir.config_parameter'].sudo().set_str(
             'odoomind.version', '1')
         _logger.info('Odoo Mind graph initialized')
 
@@ -742,7 +742,7 @@ def _ensure_default_model(env):
     kostnadsbeslut i smyg (agent-model-resolution D3).
     """
     param = 'ai_agent_core.default_model_id'
-    existing = env['ir.config_parameter'].sudo().get_param(param)
+    existing = env['ir.config_parameter'].sudo().get_str(param)
     if existing:
         model = env['ai.model'].sudo().browse(int(existing))
         if model.exists():
@@ -760,5 +760,5 @@ def _ensure_default_model(env):
             'Agenter utan model_id kan inte köra.')
         return
 
-    env['ir.config_parameter'].sudo().set_param(param, str(model.id))
+    env['ir.config_parameter'].sudo().set_str(param, str(model.id))
     _logger.info('Default-modell satt till %s (id=%d)', model.name, model.id)

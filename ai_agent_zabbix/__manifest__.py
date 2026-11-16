@@ -26,7 +26,7 @@ AI Agent Zabbix
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_zabbix',
     'depends': ['ai_agent_core'],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/zabbix_data.xml',
         'views/ai_zabbix_views.xml',
     ],

@@ -120,7 +120,7 @@ class AICoworkerHITL(models.Model):
     def _expire_stale(self, days=None):
         """Cron: utgångna öppna requests → state=expired, decision=timeout."""
         if days is None:
-            param = self.env['ir.config_parameter'].sudo().get_param(
+            param = self.env['ir.config_parameter'].sudo().get_str(
                 'ai_agent_core.hitl_expire_days', '7')
             try:
                 days = int(param)
@@ -228,7 +228,7 @@ class AICoworkerHITL(models.Model):
         self.ensure_one()
         if self.is_auto_proposal:
             return False
-        param = self.env['ir.config_parameter'].sudo().get_param(
+        param = self.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.hitl_trust_n', '3')
         try:
             n = int(param)

@@ -91,7 +91,11 @@ and cost-effective AI systems that drive innovation and efficiency across their 
 
 
   "security/ai_agent_security.xml",
+        # #if VERSION >= "20.0"
+        "security/ir.access.csv",
+        # #else
         "security/ir.model.access.csv",
+        # #endif
         "data/server_action.xml",
         "data/ai_memory_cron.xml",
         "data/data.xml",

@@ -51,7 +51,7 @@ DEFAULT_MAX_RSS_MB = 50        # D9: bas-RSS vid idle < ~50 MB
 
 def get_param(env, key, default=None):
     """Läs en parameter ur ir.config_parameter (aldrig pillar — ingen hemlighet)."""
-    val = env['ir.config_parameter'].sudo().get_param(key, default)
+    val = env['ir.config_parameter'].sudo().get_str(key, default)
     return val
 
 

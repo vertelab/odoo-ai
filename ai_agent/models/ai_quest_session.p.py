@@ -224,7 +224,11 @@ class AIQuestSession(models.Model):
 
     @api.model
     def _get_db_uuid(self):
+        # #if VERSION >= "20.0"
+        return self.env['ir.config_parameter'].sudo().get_str('database.uuid')
+        # #else
         return self.env['ir.config_parameter'].sudo().get_param('database.uuid')
+        # #endif
 
     @api.model
     def _get_db_name(self):

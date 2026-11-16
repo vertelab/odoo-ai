@@ -564,7 +564,7 @@ class ToolSelector:
             icp = env["ir.config_parameter"].sudo()
 
             def get(key, default):
-                v = icp.get_param(key, None)
+                v = icp.get_str(key, None)
                 if v not in (None, ""):
                     return v
                 return cls._conf(key, default)

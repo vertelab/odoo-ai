@@ -31,11 +31,11 @@ class PiMeshController(http.Controller):
     def _authorized(self):
         """Kontrollera Bearer-token. True om anropet får skriva."""
         params = request.env['ir.config_parameter'].sudo()
-        if params.get_param('pi_mesh.webhook_enabled', 'True') not in (
+        if params.get_str('pi_mesh.webhook_enabled', 'True') not in (
             'True', 'true', '1',
         ):
             return False
-        expected = params.get_param('pi_mesh.webhook_token', '')
+        expected = params.get_str('pi_mesh.webhook_token', '')
         auth = request.httprequest.headers.get('Authorization', '')
         provided = auth[7:] if auth.startswith('Bearer ') else ''
         if not expected or not hmac.compare_digest(provided, expected):

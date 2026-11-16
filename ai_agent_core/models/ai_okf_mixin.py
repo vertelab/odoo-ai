@@ -526,7 +526,7 @@ class AIOkfMixin(models.AbstractModel):
         Default 2000 — samma tal `ai.memory.mixin` använde, så ärvningen är
         beteende-bevarande.
         """
-        raw = self.env['ir.config_parameter'].sudo().get_param(
+        raw = self.env['ir.config_parameter'].sudo().get_str(
             SUMMARY_MAX_CHARS_PARAM, SUMMARY_MAX_CHARS_DEFAULT)
         try:
             value = int(raw)
@@ -1066,7 +1066,7 @@ class AIOkfMixin(models.AbstractModel):
         models = [m for m in self._okf_indexable_models() if m in self.env]
         start = 0
         if models:
-            raw = self.env['ir.config_parameter'].sudo().get_param(
+            raw = self.env['ir.config_parameter'].sudo().get_str(
                 rotation_param, '0')
             try:
                 start = int(raw) % len(models)
@@ -1116,7 +1116,7 @@ class AIOkfMixin(models.AbstractModel):
 
         # Nästa varv börjar på modellen efter den sista vi hann med.
         if models:
-            self.env['ir.config_parameter'].sudo().set_param(
+            self.env['ir.config_parameter'].sudo().set_str(
                 rotation_param, str((start + consumed) % len(models)))
 
         if skipped_for_time:

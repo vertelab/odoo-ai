@@ -43,7 +43,7 @@ agent_pi — Pi Agent Infrastructure
         'python': ['nats', 'markdown'],
     },
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/pi_skill_data.xml',
         'data/svensk_bokforing_skills.xml',
         'data/pm_skills.xml',

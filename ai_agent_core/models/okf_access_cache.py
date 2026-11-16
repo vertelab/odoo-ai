@@ -14,7 +14,8 @@ _logger = logging.getLogger(__name__)
 
 
 class IrRule(models.Model):
-    _inherit = 'ir.rule'
+    # 20.0: ir.rule ersatt av ir.access
+    _inherit = 'ir.access'
 
     @api.model_create_multi
     def create(self, vals_list):

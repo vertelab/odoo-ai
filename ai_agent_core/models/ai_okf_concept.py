@@ -1828,8 +1828,8 @@ class AIOkfConcept(models.Model):
         if not Model:
             return []
         try:
-            return self.env['ir.rule']._compute_domain(
-                model_name, mode='read')
+            # 20.0: ir.rule -> ir.access; domänen via modellens _access_domain
+            return Model._access_domain('read')
         except Exception as e:
             _logger.warning('OKF ir.rule domain failed for %s: %s',
                             model_name, e)
@@ -1862,16 +1862,16 @@ class AIOkfConcept(models.Model):
 
         Anropas via hook på ir.rule/followers/groups-ändringar.
         """
-        self.env['ir.config_parameter'].set_param(
+        self.env['ir.config_parameter'].set_str(
             'okf.access_cache_version',
-            str(int(self.env['ir.config_parameter'].get_param(
+            str(int(self.env['ir.config_parameter'].get_str(
                 'okf.access_cache_version', '0')) + 1))
         return True
 
     @api.model
     def _get_access_cache_version(self):
         """Nuvarande cache-version (ogiltigförklaringsräknare)."""
-        return self.env['ir.config_parameter'].get_param(
+        return self.env['ir.config_parameter'].get_str(
             'okf.access_cache_version', '0')
 
     # ════════════════════════════════════════════
@@ -1985,7 +1985,7 @@ class AIOkfConcept(models.Model):
             results.append('categories: %s' % n)
 
         # 6.5 — legacy read-only
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'okf.legacy_readonly', 'True')
         results.append('legacy: read-only')
         return '; '.join(results)

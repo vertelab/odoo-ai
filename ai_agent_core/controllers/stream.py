@@ -494,9 +494,9 @@ class AIStreamController(http.Controller):
         # Användarens grupper för PermissionEngine (defense-in-depth)
         gen_user_group_ids = tuple(request.env.user.groups_id.ids)
         # NATS executor config (tool-executor-nats)
-        nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
+        nats_api_secret = request.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.api_secret', '')
-        nats_max_retries = int(request.env['ir.config_parameter'].sudo().get_param(
+        nats_max_retries = int(request.env['ir.config_parameter'].sudo().get_str(
             'pi.nats.max_retries', '3'))
         if quest and quest.exists():
             try:
@@ -1336,8 +1336,8 @@ class AIStreamController(http.Controller):
                         if company.company_mission and request.env.user.has_group('base.group_system'):
                             # Check thresholds
                             config = request.env['ir.config_parameter'].sudo()
-                            interval = int(config.get_param('company.mission_review_interval_days', '30'))
-                            confidence_threshold = float(config.get_param('company.mission_confidence_threshold', '0.7'))
+                            interval = int(config.get_str('company.mission_review_interval_days', '30'))
+                            confidence_threshold = float(config.get_str('company.mission_confidence_threshold', '0.7'))
                             last_review = company.company_mission_last_review or company.company_values_last_review
                             if not last_review or (fields.Datetime.now() - last_review).days >= interval:
                                 # Thread the detection — don't block the response
@@ -2308,7 +2308,7 @@ def _get_callback_secret():
       3. Hardcoded default (development only — should never ship to prod)
     """
     try:
-        param = request.env['ir.config_parameter'].sudo().get_param(
+        param = request.env['ir.config_parameter'].sudo().get_str(
             CALLBACK_SECRET_PARAM)
         if param:
             return param

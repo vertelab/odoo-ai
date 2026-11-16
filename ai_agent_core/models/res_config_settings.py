@@ -76,7 +76,7 @@ class ResConfigSettings(models.TransientModel):
     @api.model
     def _google_api_key(self):
         """Returnera Google-nyckeln: config-parameter, annars env, annars ''."""
-        val = self.env['ir.config_parameter'].sudo().get_param(
+        val = self.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.google_api_key', '')
         return val or os.environ.get('GOOGLE_API_KEY', '')
 
@@ -308,9 +308,9 @@ class ResConfigSettings(models.TransientModel):
         # Säkerställ gateway-token (config-parametern); _ensure_gateway_token
         # finns inte på res.company — skapa direkt om den saknas.
         icp = self.env['ir.config_parameter'].sudo()
-        if not icp.get_param('ai_agent_core.gateway_token'):
+        if not icp.get_str('ai_agent_core.gateway_token'):
             import secrets
-            icp.set_param('ai_agent_core.gateway_token',
+            icp.set_str('ai_agent_core.gateway_token',
                           secrets.token_hex(32))
         company = self.env.company
 
@@ -464,7 +464,7 @@ class ResConfigSettings(models.TransientModel):
     def action_refresh_gateway_token(self):
         """Generate a new gateway token — old one stops working immediately."""
         import secrets
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'ai_agent_core.gateway_token', secrets.token_hex(32))
         return {
             'type': 'ir.actions.client',

@@ -116,10 +116,10 @@
                                         <t t-if="!coworker.heartbeat_enabled">
                                             <span class="text-muted" title="Heartbeat avstängt">○</span>
                                         </t>
-                                        <strong><t t-esc="coworker.name"/></strong>
+                                        <strong><t t-out="coworker.name"/></strong>
                                     </span>
                                     <span class="badge bg-warning text-dark">
-                                        <t t-esc="coworker.session_line_count or '0'"/> tokens
+                                        <t t-out="coworker.session_line_count or '0'"/> tokens
                                     </span>
                                 </div>
                                 <div class="mt-1 small text-muted d-flex justify-content-between">
@@ -133,7 +133,7 @@
                                     </span>
                                     <span>
                                         <t t-if="coworker.last_heartbeat">
-                                            💓 <t t-esc="coworker.last_heartbeat"/>
+                                            💓 <t t-out="coworker.last_heartbeat"/>
                                         </t>
                                         <t t-if="!coworker.last_heartbeat">
                                             ⏳ Väntar

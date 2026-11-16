@@ -20,7 +20,7 @@ Gamification AI Bridge
     'depends': ['ai_agent_core', 'gamification'],
     'data': [
         'data/badge_rules.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
     ],
     'installable': True,
     'auto_install': False,

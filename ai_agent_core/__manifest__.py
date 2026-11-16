@@ -34,7 +34,7 @@
     ],
     'data': [
         'security/ai_groups.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'security/ai_hitl_rules.xml',
         'views/ai_actions.xml',
         'views/ai_okf_record_views.xml',

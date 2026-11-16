@@ -131,11 +131,11 @@ class ResUsers(models.Model):
 
         # Get identity template from system settings
         if not identity_template:
-            enabled = self.env['ir.config_parameter'].sudo().get_param(
+            enabled = self.env['ir.config_parameter'].sudo().get_str(
                 'ai_agent_core.personal_companion_enabled', 'False')
             if enabled != 'True':
                 return False
-            template_id = self.env['ir.config_parameter'].sudo().get_param(
+            template_id = self.env['ir.config_parameter'].sudo().get_str(
                 'ai_agent_core.personal_companion_identity_id', '0')
             if template_id and template_id != '0':
                 identity_template = self.env['ai.identity'].browse(int(template_id))

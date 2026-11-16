@@ -110,7 +110,7 @@ class PiMeshMessage(models.Model):
 
     @api.model
     def _retention_days(self):
-        raw = self.env['ir.config_parameter'].sudo().get_param(
+        raw = self.env['ir.config_parameter'].sudo().get_str(
             'pi_mesh.message_retention_days', DEFAULT_RETENTION_DAYS,
         )
         try:

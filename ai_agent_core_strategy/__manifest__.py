@@ -17,7 +17,7 @@ AI Agent Core — Strategy Skills
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core_strategy',
     'license': 'AGPL-3',
     'depends': ['ai_agent_core'],
-    'data': ['security/ir.model.access.csv'],
+    'data': ['security/ir.access.csv'],
     'post_init_hook': 'post_init_hook',
     'installable': True,
     'auto_install': False,

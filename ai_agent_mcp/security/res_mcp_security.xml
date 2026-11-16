@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="res_mcp_rule_company" model="ir.rule">
+    <!-- 20.0: ir.rule -> ir.access (model_id/group_id/operation/domain) -->
+    <record id="res_mcp_rule_company" model="ir.access">
         <field name="name">Res MCP own company rule</field>
         <field name="model_id" ref="model_res_mcp"/>
-        <field name="domain_force">['|',('company_id', '=', False),('company_id', '=', user.company_id.id)]</field>
-        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
-        <field name="global" eval="False"/>
+        <field name="group_id" ref="base.group_user"/>
+        <field name="operation">crud</field>
+        <field name="domain">['|',('company_id', '=', False),('company_id', '=', user.company_id.id)]</field>
     </record>
 </odoo>

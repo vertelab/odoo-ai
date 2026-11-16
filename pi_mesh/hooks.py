@@ -17,8 +17,8 @@ _logger = logging.getLogger(__name__)
 def post_init_hook(env):
     """Generera webhook-token om den saknas."""
     params = env['ir.config_parameter'].sudo()
-    if not params.get_param('pi_mesh.webhook_token'):
+    if not params.get_str('pi_mesh.webhook_token'):
         token = secrets.token_urlsafe(32)
-        params.set_param('pi_mesh.webhook_token', token)
+        params.set_str('pi_mesh.webhook_token', token)
         _logger.info('pi_mesh: webhook-token genererad')
-    params.set_param('pi_mesh.webhook_enabled', 'True')
+    params.set_str('pi_mesh.webhook_enabled', 'True')

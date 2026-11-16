@@ -46,7 +46,7 @@ class AICoworkerMailTestWizard(models.TransientModel):
             if not fn:
                 # Fallback: vissa klienter/program lägger filnamnet i
                 # Content-Type-parametern (t.ex. "application/pdf; filename=..")
-                fn = part.get_param('filename') or part.get_param('name')
+                fn = part.get_str('filename') or part.get_str('name')
             ctype = part.get_content_type()
             if fn:
                 payload = part.get_payload(decode=True)

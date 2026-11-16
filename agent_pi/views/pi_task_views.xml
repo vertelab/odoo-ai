@@ -181,7 +181,7 @@
           <filter name="high_priority" string="High Priority"
             domain="[('priority','>=','2')]"/>
           <separator/>
-          <group expand="0" string="Group By">
+          <group>
             <filter name="group_state" string="State" context="{'group_by':'state'}"/>
             <filter name="group_agent" string="Agent" context="{'group_by':'agent_id'}"/>
             <filter name="group_priority" string="Priority" context="{'group_by':'priority'}"/>

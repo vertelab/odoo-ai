@@ -49,7 +49,11 @@
         <filter name="platform_youtube" string="YouTube" domain="[('platform','=','youtube')]" />
         <filter name="platform_linkedin" string="LinkedIn" domain="[('platform','=','linkedin')]" />
         <!-- Group By options -->
+        <!-- #if VERSION >= "19.0" -->
+        <group>
+        <!-- #else -->
         <group expand="1" string="Group By">
+        <!-- #endif -->
           <filter name="group_by_ai_memory" string="AI Memory" context="{'group_by':'ai_memory_id'}" />
           <filter name="group_by_topic" string="Topic" context="{'group_by':'topic'}" />
           <filter name="group_by_platform" string="Platform" context="{'group_by':'platform'}" />

@@ -119,7 +119,7 @@
                             <t t-foreach="quests" t-as="q">
                                 <div class="coworker-item" t-att-data-id="q.id" t-att-data-name="q.name">
                                     <span class="coworker-icon">🎯</span>
-                                    <t t-esc="q.name"/>
+                                    <t t-out="q.name"/>
                                 </div>
                             </t>
                         </div>

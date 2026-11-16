@@ -30,7 +30,7 @@ class PiNatsClient(models.AbstractModel):
         return (
             self.env["ir.config_parameter"]
             .sudo()
-            .get_param("pi.nats_url", "nats://localhost:4222")
+            .get_str("pi.nats_url", "nats://localhost:4222")
         )
 
     @api.model
@@ -39,7 +39,7 @@ class PiNatsClient(models.AbstractModel):
         return (
             self.env["ir.config_parameter"]
             .sudo()
-            .get_param("pi.nats_jetstream_enabled", "True")
+            .get_str("pi.nats_jetstream_enabled", "True")
             .lower() == "true"
         )
 

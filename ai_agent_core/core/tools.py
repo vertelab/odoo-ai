@@ -2405,7 +2405,7 @@ def _tool_odoo_call_method(env, model='', id=None, ids=None, record_id=None,
         return json.dumps({"error": f"Method '{method}' is not allowed"})
     if not (method.startswith('action_') or method.startswith('button_')):
         try:
-            whitelist = env['ir.config_parameter'].get_param(
+            whitelist = env['ir.config_parameter'].get_str(
                 'ai_agent_core.call_method_whitelist', '') or ''
             allowed = {m.strip() for m in whitelist.split(',') if m.strip()}
         except Exception:

@@ -54,7 +54,7 @@ class McpController(http.Controller):
     # ------------------------------------------------------------------
 
     def _get_param(self, key, default=None):
-        return request.env['ir.config_parameter'].sudo().get_param(key, default)
+        return request.env['ir.config_parameter'].sudo().get_str(key, default)
 
     def _is_enabled(self):
         return self._get_param('ai_pi_mcp.enabled', 'False') == 'True'

@@ -137,7 +137,7 @@
                 <filter string="Error" name="error" domain="[('status','=','error')]"/>
                 <separator/>
                 <filter string="Favorites" name="favorite" domain="[('is_favorite','=',True)]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Status" name="group_status" context="{'group_by':'status'}"/>
                     <filter string="Type" name="group_type" context="{'group_by':'init_type'}"/>
                 </group>

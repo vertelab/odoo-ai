@@ -47,7 +47,7 @@
     'depends': [
         'ai_agent',
     ],
-    'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
+    'data': ["security/ir.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
     # PENSIONERAD (ai-memory-pgvector T6.2, 2026-10-30).
     #
     # Modulen får inte installeras. Skälen:

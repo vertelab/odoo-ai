@@ -198,10 +198,10 @@ class AIProvider(models.Model):
         ], limit=1)
         if not model:
             return False
-        param = self.env['ir.config_parameter'].sudo().get_param(
+        param = self.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.default_model_id')
         if str(model.id) != param:
-            self.env['ir.config_parameter'].sudo().set_param(
+            self.env['ir.config_parameter'].sudo().set_str(
                 'ai_agent_core.default_model_id', model.id)
             return True
         return False
@@ -234,8 +234,8 @@ class AIProvider(models.Model):
     def _bifrost_base_url(self):
         """Bifrost-gatewayens bas-URL från konfiguration (8081 = combo-adapter)."""
         url = (
-            self.env['ir.config_parameter'].get_param('bifrost.combo_adapter_url')
-            or self.env['ir.config_parameter'].get_param('bifrost.api_url')
+            self.env['ir.config_parameter'].get_str('bifrost.combo_adapter_url')
+            or self.env['ir.config_parameter'].get_str('bifrost.api_url')
             or 'http://192.168.11.150:8081'
         )
         return url.rstrip('/') + '/v1'
@@ -262,7 +262,7 @@ class AIProvider(models.Model):
             if self.api_key:
                 headers['Authorization'] = f'Bearer {self.api_key}'
             else:
-                admin_key = self.env['ir.config_parameter'].get_param(
+                admin_key = self.env['ir.config_parameter'].get_str(
                     'bifrost.admin_api_key', '')
                 headers['X-Virtual-Key'] = admin_key or ''
         elif self.api_key:
@@ -306,7 +306,7 @@ class AIProvider(models.Model):
             if self.api_key:
                 headers['Authorization'] = f'Bearer {self.api_key}'
             else:
-                headers['X-Virtual-Key'] = self.env['ir.config_parameter'].get_param(
+                headers['X-Virtual-Key'] = self.env['ir.config_parameter'].get_str(
                     'bifrost.admin_api_key', '')
         elif self.api_key:
             headers['Authorization'] = f'Bearer {self.api_key}'
@@ -775,7 +775,7 @@ class AIProvider(models.Model):
         # Fallback: bifrost med nyckel. `api_key` kan vara tom på raden även
         # när gatewayen fungerar (nyckeln kan komma från ir.config_parameter)
         # — därför kontrolleras båda innan vi ger upp.
-        admin = self.env['ir.config_parameter'].sudo().get_param(
+        admin = self.env['ir.config_parameter'].sudo().get_str(
             'bifrost.admin_api_key', '')
         for cand in Provider.search([
                 ('active', '=', True), ('provider_type', '=', 'bifrost')]):
@@ -819,7 +819,7 @@ class AIProvider(models.Model):
         """
         self.ensure_one()
         headers = {'Content-Type': 'application/json'}
-        vk = self.api_key or self.env['ir.config_parameter'].get_param(
+        vk = self.api_key or self.env['ir.config_parameter'].get_str(
             'bifrost.admin_api_key', '') or ''
         if self.provider_type == 'bifrost':
             headers['x-bf-vk'] = vk

@@ -887,7 +887,7 @@ def resolve_provider_from_model(ai_model):
     api_key = provider.api_key or ''
     if not api_key and getattr(provider, 'is_bifrost', False):
         api_key = (
-            provider.env['ir.config_parameter'].sudo().get_param(
+            provider.env['ir.config_parameter'].sudo().get_str(
                 'bifrost.admin_api_key', ''
             )
             or ''
@@ -960,7 +960,7 @@ def get_default_provider(env=None):
                 return None, None
             env = request.env
 
-        param = env['ir.config_parameter'].sudo().get_param(
+        param = env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.default_model_id'
         )
         if not param:

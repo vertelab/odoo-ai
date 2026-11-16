@@ -140,7 +140,7 @@ class Department(models.Model):
         - health_zero_tokens_days (default 30)
         """
         icp = self.env['ir.config_parameter'].sudo()
-        get = lambda k, d: int(icp.get_param('odoomind.okf.' + k, str(d)))
+        get = lambda k, d: int(icp.get_str('odoomind.okf.' + k, str(d)))
         stale_days = get('health_heartbeat_stale_days', 7)
         active_ratio = get('health_active_ratio', 50) / 100.0
         no_session_days = get('health_no_session_days', 30)

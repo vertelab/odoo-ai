@@ -76,9 +76,9 @@ class CompanyIdentityEvolution(models.Model):
     def _check_thresholds(self, company):
         """Check if we can ask about mission/values updates."""
         config = self.env['ir.config_parameter'].sudo()
-        interval = int(config.get_param('company.mission_review_interval_days', '30'))
-        threshold = float(config.get_param('company.mission_confidence_threshold', '0.7'))
-        max_requests = int(config.get_param('company.mission_max_requests_per_user', '3'))
+        interval = int(config.get_str('company.mission_review_interval_days', '30'))
+        threshold = float(config.get_str('company.mission_confidence_threshold', '0.7'))
+        max_requests = int(config.get_str('company.mission_max_requests_per_user', '3'))
 
         last_review = company.company_mission_last_review
         if last_review:

@@ -64,7 +64,7 @@ Context Injection for AI Quests
         'mail',
     ],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'views/ai_quest_views.xml',
         'views/ai_quest_session_views.xml',
         'views/res_config_settings_views.xml',

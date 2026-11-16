@@ -192,7 +192,7 @@ class AIQuestSession(models.Model):
 
     @api.model
     def _get_db_uuid(self):
-        return self.env['ir.config_parameter'].sudo().get_param('database.uuid')
+        return self.env['ir.config_parameter'].sudo().get_str('database.uuid')
 
     @api.model
     def _get_db_name(self):
