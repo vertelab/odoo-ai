@@ -281,6 +281,116 @@ class AIProvider(models.Model):
         except Exception:
             return default
 
+    # -- Effektiv API-nyckel (provider-key-fallback) --
+    #
+    # Generisk för ALLA providertyper — ingen leverantör nämns i uppslaget:
+    #
+    #   1. api_key på recordet      (satt via UI vinner alltid)
+    #   2. ai_provider_api_key      (odoo.conf, Salt/keykeep-ägt)
+    #   3. ingen nyckel → fel om providern kräver en
+    #
+    # Uppslaget är HÄRLETT, aldrig en kopia: en rotation i odoo.conf slår
+    # igenom utan att recordet skrivs om. Reconcile kopierar därför inte
+    # config-nyckeln till api_key — en kopia i databasen skulle vinna över
+    # en nyare config-nyckel.
+
+    @staticmethod
+    def _config_key():
+        """Nyckeln ur odoo.conf (`ai_provider_api_key`), eller tom sträng."""
+        return AIProvider._config_get('ai_provider_api_key') or ''
+
+    @staticmethod
+    def _config_model_list():
+        """Modell-/combolistan ur odoo.conf (`ai_provider_list`).
+
+        Kommaseparerad, t.ex. `OR+deepseek,OR+deepseek1`. Salt skriver den
+        från kundens `combo_entitlements` — den är alltså kundens AVSEDDA
+        uppsättning, inte en härledning ur gatewayens katalog.
+
+        VARFÖR DEN MÅSTE LÄSAS (drift 2026-11-16): `/v1/models` på en
+        combo-adapter är entitlement-filtrerad och kan svara 200 med en TOM
+        lista fastän nyckeln har combos. Utan listan blev resultatet
+        "0 modeller" trots att conf uttryckligen angav två combos. Att
+        härleda kundens modeller ur en filtrerad katalog är att gissa;
+        conf är kontraktet.
+        """
+        raw = AIProvider._config_get('ai_provider_list') or ''
+        return [m.strip() for m in raw.split(',') if m.strip()]
+
+    def _effective_api_key(self):
+        """Providerns nyckel — eller tom sträng när den inte används.
+
+        `is_key_required` GATAR användningen: är flaggan av används ingen
+        nyckel alls, varken från recordet eller odoo.conf. Det är hela
+        poängen med flaggan — en lokal Ollama ska inte skicka en
+        Bifrost-nyckel till localhost, och en provider som inte använder
+        nyckel ska inte tvingas ha en.
+
+        Är flaggan på: recordets `api_key` först, annars `odoo.conf`.
+        Returnerar en sträng — aldrig False/None.
+        """
+        self.ensure_one()
+        if not self.is_key_required:
+            return ''
+        return self.api_key or self._config_key() or ''
+
+    def _key_source(self):
+        """Varifrån den effektiva nyckeln kommer — för UI, aldrig värdet.
+
+        `record` | `config` | `none`. Loggning och badge använder detta;
+        nyckelvärdet får aldrig hamna i loggen.
+        """
+        self.ensure_one()
+        if not self.is_key_required:
+            return 'not-required'
+        if self.api_key:
+            return 'record'
+        if self._config_key():
+            return 'config'
+        return 'none'
+
+    def _require_api_key(self):
+        """Kastar UserError om providern kräver en nyckel som inte finns.
+
+        Regeln är `is_key_required` — är flaggan av krävs ingen nyckel och
+        inget fel ges. Ett ställe för regeln; anropas av importen. Felet
+        namnger båda källorna, eftersom "API key required" utan kontext
+        skickade utredningen i två dagar i FYND 2026-10-02.
+        """
+        self.ensure_one()
+        if not self.is_key_required:
+            return
+        if self._effective_api_key():
+            return
+        raise UserError(_(
+            "No API key for provider '%(provider)s' — set it on the provider "
+            "or as ai_provider_api_key in odoo.conf.",
+            provider=self.name))
+
+    #: Källan som badge/etikett i formuläret (provider-key-fallback D4).
+    #: Ett tomt api_key-fält med en nyckel i odoo.conf fick tidigare se ut
+    #: som "ingen nyckel" — det var därför felet kunde stå i månader.
+    KEY_STATES = [
+        ('record', 'På providern'),
+        ('config', 'odoo.conf (ai_provider_api_key)'),
+        ('none', 'Ingen nyckel'),
+        ('not-required', 'Används inte'),
+    ]
+
+    # OBS: ingen @api.depends — källan härleds ur odoo.conf (utanför ORM:en).
+    # Ett beroende på `api_key` skulle vara vilseledande, eftersom fältet
+    # ändras när config ändras utan att recordet skrivs.
+    key_state = fields.Selection(
+        KEY_STATES, compute='_compute_key_state', store=False,
+        string='Nyckelns källa',
+        help='Varifrån providerns API-nyckel hämtas: providern eller '
+             'odoo.conf. Värdet visas aldrig.',
+    )
+
+    def _compute_key_state(self):
+        for rec in self:
+            rec.key_state = rec._key_source()
+
     @api.model
     def _reconcile_from_config(self):
         """Find-or-create provider från odoo.conf-params (idempotent).
@@ -292,6 +402,11 @@ class AIProvider(models.Model):
         if not endpoint:
             return self.browse(), False
         endpoint = endpoint.rstrip('/')
+        # provider-key-fallback D6: nyckeln läses HÄR bara för att avgöra om
+        # providern är nyckelförsedd (is_key_required) — den skrivs ALDRIG
+        # till api_key. Tidigare kopierades den hit, vilket gjorde att en
+        # manuellt satt nyckel tyst försvann vid nästa highstate och att en
+        # gammal kopia kunde vinna över en ny config-nyckel.
         api_key = self._config_get('ai_provider_api_key')
         provider = self.search([('base_url', '=', endpoint)], limit=1)
         if not provider:
@@ -299,7 +414,10 @@ class AIProvider(models.Model):
                 'name': self._config_get('ai_provider_name', 'AI Provider (config)'),
                 'provider_type': 'custom',
                 'base_url': endpoint,
-                'api_key': api_key,
+                # api_key sätts MEDVETET INTE här (D6): nyckeln löses ur
+                # config vid anropet. Att skriva den hit vore att lagra
+                # samma hemlighet på två ställen — och den kopia som ligger
+                # i databasen vinner över en nyare config-nyckel.
                 'api_style': 'openai',
                 'is_key_required': bool(api_key),
                 'auto_sync': True,
@@ -308,8 +426,10 @@ class AIProvider(models.Model):
             _logger.info('Provider created from config: %s (%s)', provider.name, endpoint)
             return provider, True
         vals = {}
-        if provider.api_key != api_key:
-            vals['api_key'] = api_key
+        # Config-nyckel → providern ÄR nyckelförsedd (D7). Sätt flaggan så att
+        # formuläret inte döljer nyckelfältet och importen inte avvisas.
+        if api_key and not provider.is_key_required:
+            vals['is_key_required'] = True
         if not provider.auto_sync:
             vals['auto_sync'] = True
         if provider.status != 'confirmed':
@@ -363,8 +483,11 @@ class AIProvider(models.Model):
         self.ensure_one()
         if not self.base_url:
             raise UserError(_('Set a base URL first'))
-        if self.is_key_required and not self.api_key:
-            raise UserError(_('API key required for this provider'))
+        # Validera mot den EFFEKTIVA nyckeln (record → odoo.conf), inte mot
+        # recordets tomma fält. Här låg buggen: en provider vars nyckel bara
+        # fanns i odoo.conf avvisades med "API key required" — importen
+        # kördes aldrig och felet pekade på fältet i stället för conf.
+        self._require_api_key()
 
         # Fetch from provider API
         count = self._fetch_models_from_api()
@@ -407,20 +530,22 @@ class AIProvider(models.Model):
                 'Provider %s is temporarily disconnected after a gateway rejection. Try again in a while.') % self.name)
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
+        # Nyckeln löses enligt provider-key-fallback D1 (record → odoo.conf →
+        # bifrost-admin). Samma uppslag som chatt/embeddings/TTS använder —
+        # att läsa `self.api_key` här gav en annan nyckel än anropet och
+        # gjorde att importen avvisades trots att config hade nyckeln.
+        key = self._effective_api_key()
         if self.provider_type == 'bifrost':
             # /v1/models på combo-adaptern är entitlement-baserad — returnerar
-            # de combos/modeller som NYCKELN (provider.api_key) har rätt till.
-            # Admin-nyckeln (bifrost.admin_api_key) är bara för /admin/* och
-            # ger tom lista här (0 modeller). Använd providerns egen VK-nyckel
-            # först; fallback till admin-nyckeln bara om api_key saknas.
-            if self.api_key:
-                headers['Authorization'] = f'Bearer {self.api_key}'
+            # de combos/modeller som NYCKELN har rätt till. Admin-nyckeln är
+            # bara för /admin/* och ger tom lista här (0 modeller), men den
+            # ligger sist i uppslaget: en kund-VK vinner alltid.
+            if key:
+                headers['Authorization'] = f'Bearer {key}'
             else:
-                admin_key = self.env['ir.config_parameter'].get_param(
-                    'bifrost.admin_api_key', '')
-                headers['X-Virtual-Key'] = admin_key or ''
-        elif self.api_key:
-            headers['Authorization'] = f'Bearer {self.api_key}'
+                headers['X-Virtual-Key'] = ''
+        elif key:
+            headers['Authorization'] = f'Bearer {key}'
 
         try:
             ctx = ssl.create_default_context()
@@ -451,6 +576,69 @@ class AIProvider(models.Model):
             self._breaker_clear()
 
         models = data.get('data', data if isinstance(data, list) else [])
+
+        # ── `ai_provider_list` är kontraktet (drift 2026-11-16) ─────────
+        #
+        # `/v1/models` på en combo-adapter är entitlement-filtrerad och kan
+        # svara 200 med en TOM lista fastän nyckeln har combos. Att härleda
+        # kundens uppsättning ur den katalogen är att gissa.
+        #
+        # `ai_provider_list` i odoo.conf är Salt-skriven från kundens
+        # `combo_entitlements` — den säger vad kunden SKA ha. Därför:
+        #   • tom katalog + lista i conf → importera listan (conf vinner)
+        #   • katalog finns               → filtrera på listan om den är satt
+        #   • ingen lista, ingen katalog  → fel (nyckeln är oregistrerad)
+        catalog_ids = [
+            m.get('id', '') for m in models
+            if isinstance(m, dict) and m.get('id')]
+        configured = self._config_model_list()
+
+        if not catalog_ids and configured:
+            _logger.info(
+                'Empty catalog from %s but ai_provider_list names %d '
+                'model(s) — importing from odoo.conf: %s',
+                self.name, len(configured), ', '.join(configured))
+            catalog_ids = configured
+        elif configured and catalog_ids:
+            # Listan är kundens avsedda uppsättning — filtrera bort allt
+            # annat som gatewayen råkar exponera för nyckeln.
+            filtered = [m for m in catalog_ids if m in configured]
+            if filtered:
+                if len(filtered) != len(catalog_ids):
+                    _logger.info(
+                        'Catalog from %s had %d model(s); ai_provider_list '
+                        'narrows it to %d',
+                        self.name, len(catalog_ids), len(filtered))
+                catalog_ids = filtered
+            else:
+                _logger.warning(
+                    'ai_provider_list names %s but the catalog from %s has '
+                    'none of them — using ai_provider_list anyway',
+                    ', '.join(configured), self.name)
+                catalog_ids = configured
+        elif not catalog_ids and key:
+            # Varken katalog eller lista, men providern har en nyckel:
+            # nyckeln autentiserar men är oregistrerad. Det ska sägas rakt ut
+            # i stället för att tyst rapportera "0 modeller" (FYND 2026-10-02).
+            source = self._key_source() if hasattr(
+                self, '_key_source') else 'record'
+            _logger.warning(
+                'Empty model catalog from %s (HTTP 200, 0 models) and no '
+                'ai_provider_list in odoo.conf. key_source=%s',
+                self.name, source)
+            raise UserError(_(
+                'The provider answered but returned no models.\n\n'
+                'The catalog is empty and odoo.conf has no '
+                'ai_provider_list — there is nothing to import.\n\n'
+                'Key source: %(key_source)s.\n'
+                'Either register the combos on the key (a model call would '
+                'answer 403 "combo is not entitled for this virtual key"), '
+                'or set ai_provider_list in odoo.conf.',
+                key_source=source))
+
+        # Ersätt den råa listan med den (eventuellt conf-styrda) uppsättningen.
+        models = [{'id': mid} for mid in catalog_ids]
+
         # Cacha katalognamnen så driftkontrollen delar denna hämtning (D2).
         self._catalog_cache_set(
             'catalog_names',
@@ -485,14 +673,14 @@ class AIProvider(models.Model):
         if cached is not None:
             return cached
         headers = {}
+        key = self._effective_api_key()
         if self.provider_type == 'bifrost':
-            if self.api_key:
-                headers['Authorization'] = f'Bearer {self.api_key}'
+            if key:
+                headers['Authorization'] = f'Bearer {key}'
             else:
-                headers['X-Virtual-Key'] = self.env['ir.config_parameter'].get_param(
-                    'bifrost.admin_api_key', '')
-        elif self.api_key:
-            headers['Authorization'] = f'Bearer {self.api_key}'
+                headers['X-Virtual-Key'] = ''
+        elif key:
+            headers['Authorization'] = f'Bearer {key}'
         url = self.base_url.rstrip('/') + '/config'
         try:
             ctx = ssl.create_default_context()
@@ -612,8 +800,12 @@ class AIProvider(models.Model):
             return None, False
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
-        if self.api_key:
-            headers['Authorization'] = f'Bearer {self.api_key}'
+        # provider-key-fallback D1: samma nyckel som importen använder. Utan
+        # detta saknade driftkontrollen fallback helt och tystnade (checked=
+        # False) för varje provider vars nyckel bara fanns i odoo.conf.
+        key = self._effective_api_key()
+        if key:
+            headers['Authorization'] = f'Bearer {key}'
         try:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
@@ -638,6 +830,18 @@ class AIProvider(models.Model):
         items = data.get('data', data if isinstance(data, list) else [])
         names = [m.get('id', '') for m in items if isinstance(m, dict)]
         names = [n for n in names if n]
+        # Tom katalog på en nyckelförsedd provider = nyckeln är oregistrerad,
+        # inte "inget att jämföra". Returnera ok=False så att driftkontrollen
+        # säger "kunde inte kontrollera" i stället för att felaktigt rapportera
+        # HELA registret som borta ur katalogen (drift 2026-11-16).
+        if not names and key:
+            _logger.warning(
+                'Empty catalog from %s on the drift check (HTTP 200, 0 '
+                'models) — the key is not entitled to anything '
+                '(key_source=%s). Skipping the drift comparison.',
+                self.name,
+                self._key_source() if hasattr(self, '_key_source') else '?')
+            return None, False
         # Cacha resultatet så driftkontrollen och importen delar en hämtning
         # per provider i stället för ett anrop per modell (D2).
         self._catalog_cache_set('catalog_names', names)
@@ -949,10 +1153,12 @@ class AIProvider(models.Model):
                 model = (asr_model.api_name or asr_model.name
                          if asr_model else 'tts-1')
             headers = {'Content-Type': 'application/json'}
-            if self.api_key:
-                headers['Authorization'] = 'Bearer %s' % self.api_key
+            # provider-key-fallback D1: samma nyckel som chatt/import använder.
+            tts_key = self._effective_api_key()
+            if tts_key:
+                headers['Authorization'] = 'Bearer %s' % tts_key
             if self.is_bifrost:
-                headers['X-Virtual-Key'] = self.api_key or ''
+                headers['X-Virtual-Key'] = tts_key
             resp = requests.post(
                 url,
                 json={
@@ -1015,8 +1221,8 @@ class AIProvider(models.Model):
         Ordningen är avsiktlig:
 
           1. En aktiv provider som uttryckligen markerats `can_embed`.
-          2. En aktiv bifrost-provider med nyckel (Bifrost är den enda
-             gatewayen; en tom nyckel ger 401, inte en vektor).
+          2. En aktiv provider som har en effektiv nyckel (en nyckellös
+             provider ger 401, inte en vektor).
           3. Ingen — anroparen ska då hoppa över vektorn och säga varför.
 
         Att returnera en provider som saknar `can_embed` vore att upprepa
@@ -1027,14 +1233,12 @@ class AIProvider(models.Model):
             ('active', '=', True), ('can_embed', '=', True)], limit=1)
         if explicit:
             return explicit
-        # Fallback: bifrost med nyckel. `api_key` kan vara tom på raden även
-        # när gatewayen fungerar (nyckeln kan komma från ir.config_parameter)
-        # — därför kontrolleras båda innan vi ger upp.
-        admin = self.env['ir.config_parameter'].sudo().get_param(
-            'bifrost.admin_api_key', '')
-        for cand in Provider.search([
-                ('active', '=', True), ('provider_type', '=', 'bifrost')]):
-            if cand.api_key or admin:
+        # Fallback: första provider med en effektiv nyckel — generiskt, inte
+        # Bifrost-specifikt (provider-key-fallback). `_effective_api_key()`
+        # läser recordet och odoo.conf, så en nyckel som bara finns i conf
+        # räknas.
+        for cand in Provider.search([('active', '=', True)]):
+            if cand._effective_api_key():
                 return cand
         return Provider.browse()
 
@@ -1069,17 +1273,18 @@ class AIProvider(models.Model):
         avbrott, vilket är precis det mönster detta change arbetar bort.
         `x-bf-vk` är det namn som bevisats fungera.
 
-        VK:n hämtas ur providerns `api_key`, med fallback till
-        `bifrost.admin_api_key` (ir.config_parameter).
+        VK:n löses enligt provider-key-fallback D1 (record → odoo.conf →
+        bifrost-admin) — samma uppslag som chatt och import. Tidigare lästes
+        bara `api_key` + admin-nyckeln, vilket gav tom VK för en provider vars
+        nyckel bara fanns i `odoo.conf`.
         """
         self.ensure_one()
         headers = {'Content-Type': 'application/json'}
-        vk = self.api_key or self.env['ir.config_parameter'].get_param(
-            'bifrost.admin_api_key', '') or ''
+        vk = self._effective_api_key()
         if self.provider_type == 'bifrost':
             headers['x-bf-vk'] = vk
-        elif self.api_key:
-            headers['Authorization'] = 'Bearer %s' % self.api_key
+        elif vk:
+            headers['Authorization'] = 'Bearer %s' % vk
         return headers
 
     def _embedding_endpoint(self):
@@ -1397,7 +1602,11 @@ class AIProviderWizard(models.TransientModel):
         if 'bifrost' in name_lower or '192.168.11.150' in url_lower:
             vals['provider_type'] = 'bifrost'
             vals['base_url'] = self._bifrost_base_url()
-            vals['is_key_required'] = False
+            # provider-key-fallback D7: Bifrost KRÄVER en nyckel (VK). Att
+            # sätta False här gjorde att formuläret dolde nyckelfältet för
+            # varje provider som skapades via wizarden — samma fälla som den
+            # seedade data-raden hade.
+            vals['is_key_required'] = True
         elif 'berget' in url_lower or 'berget' in name_lower:
             vals['provider_type'] = 'custom'
             vals['base_url'] = 'https://berget.ai/v1'

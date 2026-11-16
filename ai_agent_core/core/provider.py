@@ -690,8 +690,15 @@ class AIProvider:
     ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        #: True när providern kräver en nyckel men ingen kunde lösas. Sätts
+        #: av resolve_provider_from_model så att chat/chat_stream kan kasta
+        #: ett begripligt fel i stället för att skicka ett nyckellöst anrop
+        #: som ger 403 "combo is not entitled" (FYND 2026-10-02).
+        self.key_missing = False
         if not self.api_key:
-            _logger.warning("AIProvider: no API key on the record.")
+            # Bara ATT nyckeln saknas loggas — aldrig värdet (provider-key-
+            # fallback: källan syns i ai.provider.key_state, aldrig strängen).
+            _logger.warning("AIProvider: no API key resolved for this provider.")
 
         self.is_bifrost = is_bifrost
         self.api_style = api_style or "openai"
@@ -838,6 +845,18 @@ class AIProvider:
         sessionsidentiteten får INTE sättas vid klient-skapandet — den
         skickas här och läggs till ovanpå klientens bas-headers.
         """
+        if self.key_missing:
+            # provider-key-fallback: nyckeln saknas och providern kräver en.
+            # Felet kastas HÄR — vid anropet — inte i uppslaget. Annars gick
+            # anropet ut utan Authorization/X-Virtual-Key och gatewayen
+            # svarade 402/403 med ett meddelande som såg ut som en
+            # rättighetsfråga (FYND 2026-10-02).
+            raise ProviderError(
+                "No API key for provider '%s' — set it on the provider or as "
+                'ai_provider_api_key in odoo.conf.' % (self.base_url or '?',),
+                retryable=False,
+            )
+
         if not model:
             # bifrost-client-provisioning D6: ingen provider/modell konfigurerad
             # är en FELSITUATION — aldrig tyst hårdkodad fallback-sträng.
@@ -877,6 +896,14 @@ class AIProvider:
 
         extra_headers: se `chat()` — sätts per anrop, aldrig på klienten.
         """
+        if self.key_missing:
+            # Samma guard som chat() — en streaming-körning utan nyckel ska
+            # inte heller gå ut och få 403 (provider-key-fallback).
+            raise ProviderError(
+                "No API key for provider '%s' — set it on the provider or as "
+                'ai_provider_api_key in odoo.conf.' % (self.base_url or '?',),
+                retryable=False,
+            )
         if not model:
             # D6: felsituation — ingen tyst hårdkodad fallback.
             raise ProviderError(
@@ -1460,27 +1487,22 @@ def resolve_provider_from_model(ai_model):
         _logger.warning("Model %s has no provider configured", ai_model.name)
         return None
 
-    # Bifrost: providerns api_key är den virtuella nyckeln (VK) och skickas som
-    # X-Virtual-Key. Saknas den faller vi tillbaka på admin-nyckeln — SAMMA
-    # regel som ai.provider.fetch_models() redan tillämpar. Utan denna fallback
-    # skickades ingen X-Virtual-Key alls och Bifrost svarade 403
-    # "combo is not entitled for this virtual key" — ett fel som ser ut som en
-    # rättighetsfråga men i själva verket är en tom sträng.
-    api_key = provider.api_key or ''
-    if not api_key and getattr(provider, 'is_bifrost', False):
-        api_key = (
-            provider.env['ir.config_parameter'].sudo().get_param(
-                'bifrost.admin_api_key', ''
-            )
-            or ''
-        )
-        if api_key:
-            _logger.debug(
-                "Bifrost provider %s has no api_key — using bifrost.admin_api_key",
-                provider.name,
-            )
+    # Nyckeln löses av RECORDET — samma generiska uppslag (record →
+    # odoo.conf) som import, embeddings och TTS använder. Den rena klassen
+    # nedan tar emot en färdig sträng och vet inga config-nycklar: gränsen
+    # hålls, Odoo-recordet löser upp.
+    #
+    # VALIDERAS INTE här: det här är en uppslagsfunktion, inte en anropsväg.
+    # Att kasta här fällde varje konstruktion som bara vill lösa upp ett
+    # record. I stället sätts `key_missing`, och chat/chat_stream kastar
+    # felet när anropet faktiskt görs — då går inget nyckellöst anrop ut och
+    # användaren får ett begripligt fel i stället för 403.
+    api_key = provider._effective_api_key() if hasattr(
+        provider, '_effective_api_key') else (provider.api_key or '')
+    key_missing = bool(
+        not api_key and getattr(provider, 'is_key_required', False))
 
-    return AIProvider(
+    instance = AIProvider(
         base_url=provider.base_url or '',
         api_key=api_key,
         is_bifrost=bool(getattr(provider, 'is_bifrost', False)),
@@ -1490,6 +1512,8 @@ def resolve_provider_from_model(ai_model):
         # aldrig — retry-antalet var hårdkodat 3 i dekoratorn.
         retry_count=getattr(provider, 'retry_count', 3) or 3,
     )
+    instance.key_missing = key_missing
+    return instance
 
 
 def resolve_provider_from_coworker(coworker, agent_rel=None):

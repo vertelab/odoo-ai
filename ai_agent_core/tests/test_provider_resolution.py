@@ -14,6 +14,8 @@ import os
 
 from odoo.tests.common import TransactionCase
 
+from ._config_param_guard import ConfigParamGuardedCase
+
 from odoo.addons.ai_agent_core.models.ai_provider import PROVIDER_TYPES
 from odoo.addons.ai_agent_core.core.provider import (
     AIProvider,
@@ -479,11 +481,22 @@ class TestConfigProvisioning(TransactionCase):
         self.assertTrue(provider)
         self.assertTrue(changed)
         self.assertEqual(provider.base_url, 'http://192.0.2.10:9999/v1')
-        self.assertEqual(provider.api_key, 'bf-vk-test')
         self.assertTrue(provider.auto_sync)
         self.assertEqual(provider.status, 'confirmed')
         self.assertEqual(provider.provider_type, 'custom')
         self.assertFalse(provider.is_bifrost)
+        # provider-key-fallback D6: config-nyckeln KOPIERAS INTE till
+        # recordet. Den löses vid anropet (record → odoo.conf). Att kopiera
+        # hit var mekanismen som gjorde att en manuellt satt nyckel tyst
+        # försvann vid nästa highstate.
+        # Odoo normaliserar ett aldrig satt Char till False, inte '' — jämför
+        # på sanning, inte på typ.
+        self.assertFalse(provider.api_key,
+                         'config-nyckeln får inte kopieras till api_key')
+        self.assertEqual(provider._effective_api_key(), 'bf-vk-test',
+                         'nyckeln ska ändå lösas ur config')
+        # D7: en provider vars nyckel finns i config är nyckelförsedd.
+        self.assertTrue(provider.is_key_required)
 
     def test_reconcile_idempotent(self):
         self._set(ai_provider_endpoint='http://gw:8081/v1',
@@ -495,6 +508,34 @@ class TestConfigProvisioning(TransactionCase):
         self.assertEqual(
             self.env['ai.provider'].search_count(
                 [('base_url', '=', 'http://gw:8081/v1')]), 1)
+
+    def test_reconcile_sets_is_key_required_without_copying(self):
+        """D6+D7: config-nyckel sätter flaggan men lämnar api_key tomt."""
+        self._set(ai_provider_endpoint='http://192.0.2.11:9999/v1',
+                  ai_provider_api_key='bf-vk-flag')
+        provider = self.env['ai.provider'].create({
+            'name': 'P flag', 'provider_type': 'custom',
+            'base_url': 'http://192.0.2.11:9999/v1',
+            'api_key': '', 'is_key_required': False,
+        })
+        reconciled, changed = self.env['ai.provider']._reconcile_from_config()
+        self.assertEqual(reconciled.id, provider.id)
+        self.assertTrue(changed)
+        self.assertTrue(provider.is_key_required)
+        self.assertFalse(provider.api_key)
+
+    def test_reconcile_does_not_overwrite_record_key(self):
+        """En nyckel satt i UI får ALDRIG skrivas över av config."""
+        self._set(ai_provider_endpoint='http://192.0.2.12:9999/v1',
+                  ai_provider_api_key='bf-vk-from-config')
+        provider = self.env['ai.provider'].create({
+            'name': 'P manual', 'provider_type': 'custom',
+            'base_url': 'http://192.0.2.12:9999/v1',
+            'api_key': 'sk-manual-nyckel', 'is_key_required': True,
+        })
+        self.env['ai.provider']._reconcile_from_config()
+        self.assertEqual(provider.api_key, 'sk-manual-nyckel')
+        self.assertEqual(provider._effective_api_key(), 'sk-manual-nyckel')
 
     def test_reconcile_no_config_returns_empty(self):
         # Testet måste aktivt TÖMMA nyckeln: `_config_get` läser
@@ -629,3 +670,380 @@ class TestModelSelection(TransactionCase):
                     if any(b in line for b in banned):
                         hits.append(f'{path}:{i}')
         self.assertEqual(hits, [])
+
+
+class TestEffectiveApiKey(ConfigParamGuardedCase):
+    """provider-key-fallback D1: nyckeluppslagets fyra scenarier.
+
+    Ordningen är kontraktet: record → ai_provider_api_key (odoo.conf) →
+    ingen nyckel. Testerna
+    pinnar hela ordningen, inte bara att fallbacken finns — det var
+    avsaknaden av en gemensam ordning som gjorde att de fem anropsvägarna
+    drev isär.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from odoo.tools import config as odoo_config
+        self._odoo_config = odoo_config
+        self._saved = {
+            k: odoo_config.get(k) for k in (
+                'ai_provider_api_key', 'ai_provider_endpoint')
+        }
+        self.ICP = self.env['ir.config_parameter'].sudo()
+        self.ICP.set_param('bifrost.admin_api_key', '')
+        self.config_key = 'sk-bf-config-0000-1111-2222-333344445555'
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                self._odoo_config.pop(k, None)
+            else:
+                self._odoo_config[k] = v
+        super().tearDown()
+
+    def _provider(self, **kw):
+        vals = {
+            'name': 'P', 'provider_type': 'custom',
+            'base_url': 'http://192.0.2.77:9999/v1',
+        }
+        vals.update(kw)
+        return self.env['ai.provider'].create(vals)
+
+    def test_config_key_used_when_record_empty(self):
+        """Tomt api_key → ai_provider_api_key ur odoo.conf används."""
+        self._odoo_config['ai_provider_api_key'] = self.config_key
+        p = self._provider(api_key='')
+        self.assertEqual(p._effective_api_key(), self.config_key)
+        self.assertEqual(p._key_source(), 'config')
+        # Uppslaget är härlett: recordet skrivs inte om.
+        self.assertFalse(p.api_key)
+
+    def test_own_key_wins_over_config(self):
+        """Egen nyckel på recordet vinner över odoo.conf."""
+        self._odoo_config['ai_provider_api_key'] = self.config_key
+        own = 'sk-bf-vk-egen-aaaa-bbbb-cccc-ddddeeeeffff'
+        p = self._provider(api_key=own)
+        self.assertEqual(p._effective_api_key(), own)
+        self.assertEqual(p._key_source(), 'record')
+
+    def test_admin_key_is_never_used(self):
+        """bifrost.admin_api_key ingår INTE i uppslaget — för någon typ.
+
+        Nyckeluppslaget är generiskt: record → odoo.conf → fel. Admin-
+        nyckeln används av /admin/*-ytan och ska inte kunna bli en providers
+        anropsnyckel via en bakväg.
+        """
+        self._odoo_config['ai_provider_api_key'] = ''
+        self.ICP.set_param('bifrost.admin_api_key', 'sk-bf-admin-only')
+        for typ, bifrost in (('custom', False), ('bifrost', True)):
+            p = self._provider(
+                provider_type=typ, is_bifrost=bifrost, api_key='')
+            self.assertEqual(p._effective_api_key(), '',
+                             '%s fick admin-nyckeln' % typ)
+            self.assertEqual(p._key_source(), 'none')
+
+    def test_no_key_anywhere(self):
+        """Ingen nyckel någonstans → tom sträng och källan 'none'."""
+        self._odoo_config['ai_provider_api_key'] = ''
+        p = self._provider(api_key='')
+        self.assertEqual(p._effective_api_key(), '')
+        self.assertEqual(p._key_source(), 'none')
+
+    def test_not_required_gates_the_config_key(self):
+        """is_key_required=False → INGEN nyckel används, inte ens ur conf.
+
+        Detta är flaggans hela poäng: en lokal Ollama ska inte skicka
+        Bifrosts VK till localhost. Utan gaten blev `is_key_required`
+        verkningslös och varje nyckellös provider fick conf-nyckeln på
+        köpet.
+        """
+        self._odoo_config['ai_provider_api_key'] = self.config_key
+        p = self._provider(api_key='', is_key_required=False)
+        self.assertEqual(p._effective_api_key(), '',
+                         'conf-nyckeln läckte till en provider utan nyckelkrav')
+        self.assertEqual(p._key_source(), 'not-required')
+
+    def test_not_required_gates_the_record_key_too(self):
+        """Även en nyckel på recordet ignoreras när flaggan är av."""
+        self._odoo_config['ai_provider_api_key'] = ''
+        p = self._provider(api_key='sk-satt-men-avstangd',
+                           is_key_required=False)
+        self.assertEqual(p._effective_api_key(), '')
+        self.assertEqual(p._key_source(), 'not-required')
+
+    def test_required_uses_config_key(self):
+        """is_key_required=True → conf-nyckeln används (regressionen)."""
+        self._odoo_config['ai_provider_api_key'] = self.config_key
+        p = self._provider(api_key='', is_key_required=True)
+        self.assertEqual(p._effective_api_key(), self.config_key)
+        self.assertEqual(p._key_source(), 'config')
+
+
+class TestFetchModelsWithConfigKey(ConfigParamGuardedCase):
+    """provider-key-fallback D5: import validerar mot EFFEKTIV nyckel.
+
+    Regressionen: `action_fetch_models` krävde `self.api_key`, så en provider
+    vars nyckel bara fanns i odoo.conf avvisades med "API key required" och
+    katalogen uppdaterades aldrig. Testet mockar HTTP-lagret — det som prövas
+    är valideringen och att rätt nyckel når headern, inte nätverket.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from odoo.tools import config as odoo_config
+        self._odoo_config = odoo_config
+        # Nolla ai_provider_list: detta test provar NYCKELN, inte listan.
+        self._saved = {k: odoo_config.get(k) for k in (
+            'ai_provider_api_key', 'ai_provider_list')}
+        self._odoo_config['ai_provider_list'] = ''
+        self.config_key = 'sk-bf-config-import-test'
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                self._odoo_config.pop(k, None)
+            else:
+                self._odoo_config[k] = v
+        super().tearDown()
+
+    def test_fetch_models_uses_config_key(self):
+        """Tomt api_key + nyckel i odoo.conf → importen körs och lyckas."""
+        from unittest.mock import patch, MagicMock
+        self._odoo_config['ai_provider_api_key'] = self.config_key
+        provider = self.env['ai.provider'].create({
+            'name': 'Config Key Provider',
+            'provider_type': 'custom',
+            'base_url': 'http://192.0.2.88:9999/v1',
+            'api_key': '',
+            'is_key_required': True,
+        })
+        sent = {}
+
+        def fake_urlopen(req, timeout=None, context=None):
+            sent['headers'] = dict(req.headers)
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(
+                {'data': [{'id': 'test-model-a'}]}).encode()
+            resp.__enter__ = lambda self_: resp
+            resp.__exit__ = lambda self_, *a: False
+            return resp
+
+        with patch('urllib.request.urlopen', fake_urlopen), \
+                patch.object(type(provider), '_fetch_config_map',
+                             lambda self_: {}):
+            provider.action_fetch_models()
+
+        auth = {k.lower(): v for k, v in sent['headers'].items()}.get(
+            'authorization', '')
+        self.assertIn(self.config_key, auth,
+                      'config-nyckeln ska nå Authorization-headern')
+        self.assertTrue(
+            self.env['ai.model'].search_count([
+                ('provider', '=', provider.id), ('name', '=', 'test-model-a')]),
+            'modellen ska ha importerats')
+
+    def test_fetch_models_without_any_key_names_both_sources(self):
+        """Ingen nyckel någonstans → felet namnger båda källorna."""
+        from odoo.exceptions import UserError
+        self._odoo_config['ai_provider_api_key'] = ''
+        provider = self.env['ai.provider'].create({
+            'name': 'Keyless Provider',
+            'provider_type': 'custom',
+            'base_url': 'http://192.0.2.89:9999/v1',
+            'api_key': '',
+            'is_key_required': True,
+        })
+        with self.assertRaises(UserError) as ctx:
+            provider.action_fetch_models()
+        msg = str(ctx.exception)
+        self.assertIn('ai_provider_api_key', msg)
+        self.assertIn('odoo.conf', msg)
+
+
+class TestEmptyCatalogIsAnError(ConfigParamGuardedCase):
+    """Tom katalog på en nyckelförsedd provider är ett FEL (drift 2026-11-16).
+
+    En gateway svarar 200 med `{"data": []}` när nyckeln autentiserar men
+    inte är knuten till några modeller/combos. Symptomet var: `key_state`
+    grönt, "Models Synced: 0 models", ingen ledtråd. Den verkliga orsaken
+    (403 combo_forbidden) syns först när man ringer modellen.
+
+    Tysta nollor är den sortens "ser ut som att det fungerar" som kostade
+    två dagar i FYND 2026-10-02.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from odoo.tools import config as odoo_config
+        self._odoo_config = odoo_config
+        # BADA nycklarna: testet provar felvagen nar varken katalog eller
+        # ai_provider_list finns. Utan att nolla listan lacker maskinens
+        # odoo.conf in och testet importerar conf-listan i stallet.
+        self._saved = {k: odoo_config.get(k) for k in (
+            'ai_provider_api_key', 'ai_provider_list')}
+        self._odoo_config['ai_provider_list'] = ''
+        self.config_key = 'sk-bf-oregistrerad-nyckel'
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                self._odoo_config.pop(k, None)
+            else:
+                self._odoo_config[k] = v
+        super().tearDown()
+
+    def _provider(self, **kw):
+        vals = {
+            'name': 'Empty Catalog Test', 'provider_type': 'bifrost',
+            'base_url': 'http://192.0.2.123:8081/v1',
+            'is_bifrost': True, 'api_key': '', 'is_key_required': True,
+        }
+        vals.update(kw)
+        return self.env['ai.provider'].create(vals)
+
+    def _mock_urlopen(self, payload):
+        from unittest.mock import patch, MagicMock
+
+        def fake(req, timeout=None, context=None):
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(payload).encode()
+            resp.__enter__ = lambda self_: resp
+            resp.__exit__ = lambda self_, *a: False
+            return resp
+        return patch('urllib.request.urlopen', fake)
+
+    def test_empty_catalog_with_key_raises(self):
+        """200 med tom data + nyckel → UserError som namnger orsaken."""
+        from odoo.exceptions import UserError
+        self._odoo_config['ai_provider_api_key'] = self.config_key
+        p = self._provider()
+        with self._mock_urlopen({'object': 'list', 'data': []}):
+            with self.assertRaises(UserError) as ctx:
+                p.action_fetch_models()
+        msg = str(ctx.exception)
+        self.assertIn('no models', msg)
+        self.assertIn('not entitled', msg)
+        self.assertIn('config', msg, 'felkällan ska anges')
+
+    def test_empty_catalog_without_key_does_not_raise(self):
+        """Nyckellös provider (t.ex. Ollama) med tom katalog är inte ett fel."""
+        self._odoo_config['ai_provider_api_key'] = ''
+        p = self._provider(
+            name='Local', provider_type='ollama', is_bifrost=False,
+            base_url='http://localhost:11434/v1', is_key_required=False)
+        with self._mock_urlopen({'object': 'list', 'data': []}):
+            count = p.action_fetch_models()['params']['message']
+        self.assertIn('0 models', count)
+
+    def test_drift_check_skips_empty_catalog(self):
+        """Driftkontrollen ska säga "kunde inte", inte "allt är borta"."""
+        self._odoo_config['ai_provider_api_key'] = self.config_key
+        p = self._provider()
+        with self._mock_urlopen({'object': 'list', 'data': []}):
+            drift = p._catalog_drift()
+        self.assertFalse(drift['checked'],
+                         'tom katalog får inte räknas som genomförd kontroll')
+        self.assertEqual(drift['missing_in_catalog'], [])
+
+
+class TestProviderListFromConfig(ConfigParamGuardedCase):
+    """`ai_provider_list` är kontraktet för vilka modeller som ska importeras.
+
+    Drift 2026-11-16: conf angav `ai_provider_list = OR+deepseek,OR+deepseek1`
+    men katalogen `/v1/models` svarade 200 med tom lista (combo-adaptern
+    filtrerar på entitlements). Resultatet blev "0 modeller" trots att
+    conf uttryckligen angav två combos.
+
+    Listan lästes aldrig av koden — den var dokumentation. Nu är den
+    kontraktet: conf vinner över en tom/filtrerad katalog.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from odoo.tools import config as odoo_config
+        self._odoo_config = odoo_config
+        self._keys = ('ai_provider_api_key', 'ai_provider_list')
+        self._saved = {k: odoo_config.get(k) for k in self._keys}
+        self._odoo_config['ai_provider_api_key'] = 'sk-bf-test'
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                self._odoo_config.pop(k, None)
+            else:
+                self._odoo_config[k] = v
+        super().tearDown()
+
+    def _provider(self, **kw):
+        vals = {
+            'name': 'List Provider', 'provider_type': 'bifrost',
+            'base_url': 'http://192.0.2.200:8081/v1',
+            'is_bifrost': True, 'api_key': '', 'is_key_required': True,
+        }
+        vals.update(kw)
+        return self.env['ai.provider'].create(vals)
+
+    def _mock(self, payload):
+        from unittest.mock import patch, MagicMock
+
+        def fake(req, timeout=None, context=None):
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(payload).encode()
+            resp.__enter__ = lambda self_: resp
+            resp.__exit__ = lambda self_, *a: False
+            return resp
+        return patch('urllib.request.urlopen', fake)
+
+    def _patch_config_map(self):
+        """Hoppa över /v1/config-hämtningen (prövar inte den här)."""
+        from unittest.mock import patch
+        from odoo.addons.ai_agent_core.models.ai_provider import AIProvider
+        return patch.object(AIProvider, '_fetch_config_map', return_value={})
+
+    def test_config_list_parsed(self):
+        """Listan kommasepareras och trimmas."""
+        self._odoo_config['ai_provider_list'] = 'OR+deepseek, OR+deepseek1 ,cheap'
+        self.assertEqual(
+            self.env['ai.provider']._config_model_list(),
+            ['OR+deepseek', 'OR+deepseek1', 'cheap'])
+
+    def test_config_list_empty(self):
+        self._odoo_config['ai_provider_list'] = ''
+        self.assertEqual(self.env['ai.provider']._config_model_list(), [])
+
+    def test_empty_catalog_imports_from_config_list(self):
+        """Tom katalog + lista i conf → listan importeras (inte 0 modeller)."""
+        self._odoo_config['ai_provider_list'] = 'OR+deepseek,OR+deepseek1'
+        p = self._provider()
+        with self._mock({'object': 'list', 'data': []}), \
+                self._patch_config_map():
+            p.action_fetch_models()
+        names = sorted(self.env['ai.model'].search(
+            [('provider', '=', p.id)]).mapped('name'))
+        self.assertEqual(names, ['OR+deepseek', 'OR+deepseek1'],
+                         'conf-listan ska ha importerats')
+
+    def test_catalog_is_narrowed_by_config_list(self):
+        """Katalog med fler modeller än conf → conf vinner."""
+        self._odoo_config['ai_provider_list'] = 'OR+deepseek'
+        p = self._provider()
+        with self._mock({'object': 'list', 'data': [
+                {'id': 'OR+deepseek'}, {'id': 'cheap'}, {'id': 'moderate'}]}), \
+                self._patch_config_map():
+            p.action_fetch_models()
+        names = self.env['ai.model'].search(
+            [('provider', '=', p.id)]).mapped('name')
+        self.assertEqual(names, ['OR+deepseek'])
+
+    def test_empty_catalog_without_list_raises(self):
+        """Varken katalog eller lista → fel som namnger båda vägarna."""
+        from odoo.exceptions import UserError
+        self._odoo_config['ai_provider_list'] = ''
+        p = self._provider()
+        with self._mock({'object': 'list', 'data': []}):
+            with self.assertRaises(UserError) as ctx:
+                p.action_fetch_models()
+        msg = str(ctx.exception)
+        self.assertIn('ai_provider_list', msg)
+        self.assertIn('no models', msg)

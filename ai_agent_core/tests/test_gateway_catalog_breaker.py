@@ -78,7 +78,18 @@ class TestCatalogCacheAndBreaker(common.TransactionCase):
                          'Andra anropet ska läsa cachen, inte hämta igen')
 
     def test_empty_catalog_is_cached(self):
-        """(b) Tom men hämtad katalog cachas som hämtad."""
+        """(b) Tom men hämtad katalog cachas som hämtad — nyckellös provider.
+
+        Semantiken "tom är hämtad, inte misslyckad" gäller en provider som
+        inte använder nyckel (t.ex. lokal Ollama vars katalog är tom på
+        riktigt). Har providern en nyckel är tom katalog i stället ett
+        konfigurationsfel — se TestEmptyCatalogIsAnError (drift 2026-11-16).
+
+        Testet använder därför en nyckellös provider: det prövar
+        CACHE-semantiken, inte entitlement-kontrollen.
+        """
+        self.provider.api_key = ''
+        self.provider.is_key_required = False
         calls = []
 
         class FakeResp:

@@ -48,6 +48,10 @@
                 <field name="provider_type"/>
                 <field name="base_url" optional="hide"/>
                 <field name="model_count"/>
+                <field name="key_state" widget="badge" optional="show"
+                       decoration-success="key_state in ('record', 'config')"
+                       decoration-muted="key_state == 'not-required'"
+                       decoration-danger="key_state == 'none'"/>
                 <field name="auto_sync" optional="show"/>
                 <field name="last_checked"/>
                 <field name="status" widget="badge"/>
@@ -101,12 +105,24 @@
                         <field name="provider_type"/>
                         <field name="active" invisible="1"/>
                         <field name="base_url" widget="url"/>
-                        <field name="is_key_required"/>
                     </group>
-                    <group string="API Key" invisible="not is_key_required">
-                        <field name="api_key" password="True"/>
+                    <!-- provider-key-fallback D4: fältet är ALLTID synligt.
+                         Det var `invisible="not is_key_required"` som gjorde
+                         att en provider med is_key_required=False (t.ex. den
+                         seedade Bifrost-raden) inte kunde få en nyckel alls —
+                         och inte gick att se att den saknade en. Badge:n visar
+                         var nyckeln kommer ifrån, aldrig värdet. -->
+                    <group string="API Key">
+                        <field name="api_key" password="True"
+                               placeholder="Leave empty to use ai_provider_api_key from odoo.conf"/>
+                        <field name="key_state" widget="badge"
+                               decoration-success="key_state in ('record', 'config')"
+                               decoration-muted="key_state == 'not-required'"
+                               decoration-danger="key_state == 'none'"/>
                     </group>
                     <group string="Advanced">
+                        <field name="is_key_required"
+                               help="Whether this provider may be used without a key. Controls validation — not whether the field above is shown."/>
                         <field name="timeout"/>
                         <field name="retry_count"/>
                         <field name="auto_sync"/>
