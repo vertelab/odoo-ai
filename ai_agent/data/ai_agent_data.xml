@@ -147,7 +147,7 @@
     <field name="binding_view_types">list,form,calendar,kanban,pivot</field>
     <field name="binding_model_id" ref="ai_agent.model_ai_quest"/>
 <!--
-    <field name="groups_id"  eval="[(4, ref('base.group_user'))]"/>
+    <field name="group_ids"  eval="[(4, ref('base.group_user'))]"/>
 -->
     <field name="state">code</field>
     <field name="code"><![CDATA[

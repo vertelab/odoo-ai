@@ -37,7 +37,7 @@ class DelegationTestBase(TransactionCase):
             'name': 'Delegation Owner %s' % n,
             'login': 'deleg_owner_%s' % n,
             'password': 'x',
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
         # Coworkers.

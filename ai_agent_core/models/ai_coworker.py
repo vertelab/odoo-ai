@@ -14,7 +14,7 @@ def _quest_is_accessible(quest, user):
     if user.has_group('base.group_system'):
         return True
     if quest.group_ids:
-        user_grp = set(user.groups_id.ids)
+        user_grp = set(user.group_ids.ids)
         quest_grp = set(quest.group_ids.ids)
         if not (user_grp & quest_grp):
             return False
@@ -6148,7 +6148,7 @@ class AICoworker(models.Model):
 
         - access_user explicit → den användarens grupper
         - session med riktig (icke-superuser, icke-public) användare →
-          session.user_id.groups_id
+          session.user_id.group_ids
         - annars (cron/webhook/mail, sudo-skapade sessioner) → coworkerns
           egna group_ids (icke-interaktiv policy)
         """
@@ -6162,12 +6162,12 @@ class AICoworker(models.Model):
         if self.env.context.get('_ai_force_coworker_groups'):
             return self.group_ids.ids
         if access_user:
-            return access_user.groups_id.ids
+            return access_user.group_ids.ids
         u = session and session.user_id
         if (u and u.id != SUPERUSER_ID
                 and (u.has_group('base.group_user')
                      or u.has_group('base.group_portal'))):
-            return u.groups_id.ids
+            return u.group_ids.ids
         return self.group_ids.ids
 
     def _session_tool_ids(self, access_groups=None, force_agent=None):

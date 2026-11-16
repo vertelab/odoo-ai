@@ -21,13 +21,13 @@ class TestCoworkerHITL(TransactionCase):
             'name': 'HITL Godkännare',
             'login': 'hitl_approver_%s' % self.env['res.users'].search_count([]),
             'password': 'approver-pass',
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.stranger = self.env['res.users'].create({
             'name': 'HITL Främling',
             'login': 'hitl_stranger_%s' % self.env['res.users'].search_count([]),
             'password': 'stranger-pass',
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
     def _session(self, user=None):

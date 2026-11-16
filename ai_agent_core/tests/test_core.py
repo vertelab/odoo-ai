@@ -1078,7 +1078,7 @@ class TestQuestAccessControl(unittest.TestCase):
             if not quest.show_in_chat:
                 return False
             if quest.group_ids:
-                user_grp = set(user.groups_id.ids)
+                user_grp = set(user.group_ids.ids)
                 quest_grp = set(quest.group_ids.ids)
                 if not (user_grp & quest_grp):
                     return False
@@ -1107,8 +1107,8 @@ class TestQuestAccessControl(unittest.TestCase):
         regular = MagicMock()
         regular.id = 2
         regular.has_group = MagicMock(return_value=False)
-        regular.groups_id = MagicMock()
-        regular.groups_id.ids = []
+        regular.group_ids = MagicMock()
+        regular.group_ids.ids = []
 
         # Regular user has access when no restrictions
         # quest.group_ids is falsy list → no restriction
@@ -1133,11 +1133,11 @@ class TestQuestAccessControl(unittest.TestCase):
         quest.user_ids = []
 
         # User not in group → denied
-        regular.groups_id.ids = [20]
+        regular.group_ids.ids = [20]
         self.assertFalse(_quest_is_accessible(quest, regular))
 
         # User in group → allowed
-        regular.groups_id.ids = [10]
+        regular.group_ids.ids = [10]
         self.assertTrue(_quest_is_accessible(quest, regular))
 
         # Add user restriction

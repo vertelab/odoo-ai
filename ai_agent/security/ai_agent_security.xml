@@ -19,9 +19,16 @@
 <field name="parent_id"></field>
         </record> -->
 
-       <record id="group_ai_agent_developer" model="res.groups">
-            <field name="name">AI Agent Developer</field>
+        <!-- Odoo 19: res.groups.category_id -> privilege_id (res.groups.privilege) -->
+        <record id="privilege_ai_orchestration" model="res.groups.privilege">
+            <field name="name">AI Orchestration</field>
+            <field name="sequence">120</field>
             <field name="category_id" ref="base.module_category_ai_orchestration"/>
+        </record>
+
+        <record id="group_ai_agent_developer" model="res.groups">
+            <field name="name">AI Agent Developer</field>
+            <field name="privilege_id" ref="privilege_ai_orchestration"/>
             <field name="implied_ids" eval="[(6, 0, [ref('base.group_user')])]"/>
             <field name="comment">The user will be able to approve document created by employees.</field>
         </record>
@@ -30,6 +37,7 @@
             <field name="name">AI Agent Manager</field>
             <field name="comment">The user will have access to the human resources configuration as well as statistic reports.</field>
             <field name="category_id" ref="base.module_category_ai_orchestration"/>
+            <field name="privilege_id" ref="privilege_ai_orchestration"/>
             <field name="implied_ids" eval="[(6, 0, [ref('base.group_user')])]"/>
         </record>
 
@@ -37,6 +45,7 @@
             <field name="name">AI Agent Supervisor</field>
             <field name="comment">The user will have access to the human resources configuration as well as statistic reports.</field>
             <field name="category_id" ref="base.module_category_ai_orchestration"/>
+            <field name="privilege_id" ref="privilege_ai_orchestration"/>
             <field name="implied_ids" eval="[(6, 0, [ref('base.group_user'), ref('group_ai_agent_manager')])]"/>
             <field name="users" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
         </record>

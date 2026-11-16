@@ -147,7 +147,11 @@
     <field name="binding_view_types">list,form,calendar,kanban,pivot</field>
     <field name="binding_model_id" ref="ai_agent.model_ai_quest"/>
 <!--
+    <!-- #if VERSION >= "19.0" -->
+    <field name="group_ids"  eval="[(4, ref('base.group_user'))]"/>
+    <!-- #else -->
     <field name="groups_id"  eval="[(4, ref('base.group_user'))]"/>
+    <!-- #endif -->
 -->
     <field name="state">code</field>
     <field name="code"><![CDATA[
