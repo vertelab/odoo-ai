@@ -2413,12 +2413,28 @@ class AICoworkerSession(models.Model):
             'facts, decisions and open questions are what matter.\n\n'
             '--- CONVERSATION ---\n%s' % (headings, transcript))
 
-    def _final_summary_transcript(self, lines, max_chars=12000):
+    def _final_summary_transcript(self, lines, max_chars=6000):
         """Bygg konversationsunderlaget för eftermälet.
 
         Till skillnad från `_learn_from_session` (som bara såg de sista
         40 raderna) täcker detta hela sessionen, trunkerad bakifrån så att
         slutet — där utfallet finns — alltid kommer med.
+
+        `max_chars=6000`, inte 12000 (mätt 2026-11-16). En lång kontext får
+        resonemangsmodellen (deepseek-reasoner) att bränna HELA
+        `max_tokens`-budgeten på resonemang och lämna 0 tecken svar:
+
+            transkript 12000 tecken, max_tokens 4096
+              -> finish_reason='length', output_tokens=4096, text=''
+            transkript  6000 tecken, max_tokens 4096
+              -> finish_reason='stop',   output_tokens=3380, text=1845
+            transkript  3000 tecken, max_tokens 4096
+              -> finish_reason='stop',   output_tokens=4074, text=2228
+
+        Ett tomt svar gjorde att sessionen aldrig fick ett eftermäle — hur
+        många gånger cronen än försökte — och att varje försök kostade
+        ~20 s. Det var hela orsaken till att idle-cronen tog 3–4 minuter
+        per varv.
         """
         parts = []
         for ln in lines:
@@ -2651,14 +2667,66 @@ class AICoworkerSession(models.Model):
                 or get_default_model_name()
             # En enda provider-chat, ingen loop — se _run_title_llm ovan.
             # B7: stäng providern — annars lämnas httpx-tasken pending.
-            result = _run_provider(
-                provider.chat(
-                    model=model_name,
-                    messages=[Message(role=Role.USER,
-                                      content=self._final_summary_prompt(transcript))],
-                    max_tokens=2048),
-                provider)
-            return (result.text or '').strip()[:4000] or None
+            # max_tokens=4096, inte 2048 (2026-11-16).
+            #
+            # MÄTT: med 2048 kom svaret tillbaka TOMT med
+            # `finish_reason='length'` och `output_tokens=2048` — exakt
+            # budgeten. Modellen (deepseek-reasoner via Bifrost) lägger
+            # resonemanget i samma budget som svaret, och 2048 räckte bara
+            # till resonemang. Följden var att `_write_final_summary` fick
+            # `None`, lämnade `summary_message_count` orörd och returnerade
+            # None — så sessionen fick ALDRIG ett eftermäle, hur många
+            # gånger cronen än försökte.
+            #
+            # Det var också därför idle-cronen tog 3–4 minuter per varv: 20
+            # sessioner × ~14 s LLM-anrop som ändå gav tomt. Med 4096 kom
+            # 2230 tecken och `finish_reason='stop'`.
+            #
+            # 8192 gav marginellt mer text (2464 tecken) för dubbla tiden —
+            # 4096 är den nivå som faktiskt behövs.
+            # RETRY VID TOMT SVAR (mätt 2026-11-16).
+            #
+            # En resonemangsmodell (deepseek-reasoner via Bifrost) lägger
+            # resonemanget i SAMMA `max_tokens`-budget som svaret. Räcker
+            # budgeten bara till resonemang kommer `finish_reason='length'`
+            # med `text=''` tillbaka — och det är ICKE-DETERMINISTISKT:
+            # samma indata gav 1069, 1424 och 0 tecken på tre försök
+            # (temperature 0.7). Att bara höja budgeten räcker alltså inte.
+            #
+            # Ett försök med tomt svar är inte ett permanent fel — det är
+            # otur med resonemangets längd. Vi försöker igen, och höjer
+            # budgeten på andra försöket så att resonemang + svar får plats.
+            #
+            # Utan retry blev följden att sessionen aldrig fick ett
+            # eftermäle hur många gånger cronen än körde, och att varje
+            # försök kostade ~20-30 s. Det var hela orsaken till att
+            # idle-cronen tog 3-4 minuter per varv.
+            prompt = self._final_summary_prompt(transcript)
+            text = ''
+            for attempt, budget in enumerate((4096, 8192), start=1):
+                result = _run_provider(
+                    provider.chat(
+                        model=model_name,
+                        messages=[Message(role=Role.USER, content=prompt)],
+                        max_tokens=budget),
+                    provider)
+                text = (result.text or '').strip()
+                if text:
+                    break
+                _logger.info(
+                    'Aftermath: empty LLM reply for session %s (attempt '
+                    '%d/%d, finish_reason=%s, output_tokens=%s) — retrying',
+                    self.id, attempt, 2,
+                    getattr(result, 'finish_reason', '?'),
+                    getattr(result, 'output_tokens', '?'))
+            if not text:
+                _logger.warning(
+                    'Aftermath: empty LLM reply for session %s after 2 '
+                    'attempts — giving up this round, the session keeps '
+                    'summary_message_count so the next cron run retries',
+                    self.id)
+                return None
+            return text[:4000]
         except Exception as e:
             _logger.warning(
                 'Aftermath: summary failed for session %s: %s',
@@ -2666,7 +2734,7 @@ class AICoworkerSession(models.Model):
             return None
 
     @api.model
-    def _cron_close_idle_sessions(self, idle_minutes=None, batch_size=20,
+    def _cron_close_idle_sessions(self, idle_minutes=None, batch_size=None,
                                   extra_domain=None):
         """Stäng övergivna sessioner och skriv deras eftermäle (D4, 4.4).
 
@@ -2682,7 +2750,22 @@ class AICoworkerSession(models.Model):
 
         `extra_domain` används av tester för att begränsa batchen — i
         drift finns det alltid äldre sessioner som annars fyller batchen.
+
+        BATCH-STORLEKEN ÄR ETT TIDSBUDGET-VAL (2026-11-16). Varje session
+        med nytt innehåll kostar ett LLM-anrop, mätt till ~14 s. Med det
+        gamla `batch_size=20` tog ett varv 3–4 minuter — längre än
+        `cron_tick`s `limit_time_real` på 1200 s när kön var djup, och
+        min-ticken hann aldrig köra något annat. Tick 991 nådde
+        `failure_count=158` och dog på timeout var 20:e minut.
+
+        Nu: 5 per varv (≈70 s), konfigurerbart via
+        `ai_agent_core.session_close_batch`. En djup kö töms över flera
+        varv i stället för att blockera schemaläggningen — 15-minuters-
+        intervallet ger ~20 sessioner i timmen, vilket räcker gott.
         """
+        if batch_size is None:
+            batch_size = int(self.env['ir.config_parameter'].sudo().get_param(
+                'ai_agent_core.session_close_batch', '5') or 5)
         if idle_minutes is None:
             idle_minutes = int(
                 self.env['ir.config_parameter'].sudo().get_param(
