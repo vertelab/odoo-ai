@@ -42,3 +42,30 @@ måste uppfylla följande innan den räknas som klar:
 - [ ] README-uppdatering i domänrepon
 
 Referens: `AUDIT-ai-bridge-modules.md` (inventering av alla `_ai`-moduler).
+
+## Porteringsstatus
+
+18.0 är baseline. 19.0/20.0 visar om p-filen har ett villkor för utgåvan
+— inte om grenen finns. Blockerare är `depends` som saknas i 20.0
+(kärna + alla 20.0-grenar).
+
+| Modul | Beskrivning | Manifest | p-fil | 19.0 | 20.0 | Blockerare |
+|---|---|---|---|---|---|---|
+| agent_pi | Distributed Pi Coding Agent orchestration via NATS. | 1.0.0 | 1 | — | — | — |
+| ai_agent | AI Agent orchestration | 1.0 | 76 | — | — | `web_widget_mermaid_field` |
+| ai_agent_context | Injects record data and chatter history as context into A... | 1.1.0 | 1 | — | — | — |
+| ai_agent_core | AI Agent Core — Org-stomme, heartbeat, onboarding, task-s... | 1.303 | 12 | ✓ | ✓ | — |
+| ai_agent_core_academic | Academic paper writing pipeline — 8-agent team for resear... | 1.0.0 | 1 | — | — | — |
+| ai_agent_core_strategy | 21 AI skills, 5 agents, 3 quests for business strategy — ... | 1.0.0 | 1 | — | — | — |
+| ai_agent_hr | Agent Orchestration HR | 0.3 | 10 | — | — | — |
+| ai_agent_mcp | Adds MCP Power to AI Agent and AI Quests | 1.0 | 17 | — | ✓ | `fastapi` |
+| ai_agent_pgvector | Ao Orchestration and memory using pg_vector | 1.0.3 | 18 | — | ✓ | — |
+| ai_agent_transcript | Powerbox-style AI interaction with transcript/context inj... | 1.0.7 | 1 | — | — | — |
+| ai_agent_trend | Agent for analysing trends and create material for blogs ... | 0.3 | 14 | — | ✓ | — |
+| ai_agent_zabbix | Zabbix integration for AI agent monitoring. | 1.0.0 | 1 | — | — | — |
+| ai_core | Provider abstraction, model discovery, rate limiting, tok... | 1.0.0 | 1 | — | — | — |
+| ai_mail_e_avrop | Mailbox for AI. | 1.0.1 | 1 | — | — | — |
+| ai_onboarding | Onboardingskurs: co-pilot, coworker och AI i vardagen | 1.0.0 | 0 | — | — | — |
+| ai_pi_mcp | Standalone MCP streamable-HTTP server for Pi system devel... | 1.0.0 | 1 | — | — | — |
+| gamification_ai | Connect gamification (badges, challenges) with AI persona... | 1.0.0 | 1 | — | — | — |
+| pi_mesh | Historik och överblick för Pi-agenternas mesh | 1.6.0 | 1 | — | — | — |
