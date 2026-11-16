@@ -25,7 +25,11 @@
         'ai_agent_pgvector',
     ],
     'data': [
+        # #if VERSION >= "20.0"
+        'security/ir.access.csv',
+        # #else
         'security/ir.model.access.csv',
+        # #endif
         'views/ai_trend_views.xml', 
         'views/res_config_settings_views.xml',
     ],

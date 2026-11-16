@@ -41,7 +41,11 @@
         'data/tools_data.xml',
         'data/ai_agent_data.xml',
         'data/ai_quest_data.xml',
+        # #if VERSION >= "20.0"
+        "security/ir.access.csv",
+        # #else
         "security/ir.model.access.csv",
+        # #endif
         "security/res_mcp_security.xml",
         "views/res_mcp_views.xml",
         'views/ai_quest_view.xml',
