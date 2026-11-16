@@ -1848,7 +1848,6 @@ class AIOkfConcept(models.Model):
         Model = self.env[model_name]
         try:
             query = Model._where_calc(domain)
-            from odoo.osv import expression
             where_clause, params = query.get_sql()
             return where_clause, params
         except Exception as e:
