@@ -29,7 +29,7 @@ class TestBifrostKeyResolution(TransactionCase):
         super().setUp()
         self.ICP = self.env['ir.config_parameter'].sudo()
         self.admin_key = 'sk-bf-testadmin-0000-1111-2222-333344445555'
-        self.ICP.set_param('bifrost.admin_api_key', self.admin_key)
+        self.ICP.set_str('bifrost.admin_api_key', self.admin_key)
 
         self.provider = self.env['ai.provider'].create({
             'name': 'Bifrost Test',
@@ -101,7 +101,7 @@ class TestBifrostKeyResolution(TransactionCase):
 
     def test_missing_admin_key_leaves_key_empty(self):
         """Saknas båda nycklarna ska api_key vara tom — inte krascha."""
-        self.ICP.set_param('bifrost.admin_api_key', '')
+        self.ICP.set_str('bifrost.admin_api_key', '')
         resolved = self._resolve()
         self.assertIsNotNone(resolved)
         self.assertEqual(resolved.api_key, '')

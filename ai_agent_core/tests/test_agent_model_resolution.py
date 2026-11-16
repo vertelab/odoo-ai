@@ -29,7 +29,7 @@ class TestDefaultModel(ConfigParamGuardedCase):
             [('key', '=', self.param)]).unlink()
         _ensure_default_model(self.env)
 
-        value = self.env['ir.config_parameter'].sudo().get_param(self.param)
+        value = self.env['ir.config_parameter'].sudo().get_str(self.param)
         self.assertTrue(value, 'default_model_id sattes inte')
         self.assertTrue(self.Model.browse(int(value)).exists())
 
@@ -38,9 +38,9 @@ class TestDefaultModel(ConfigParamGuardedCase):
         from odoo.addons.ai_agent_core.hooks import _ensure_default_model
 
         _ensure_default_model(self.env)
-        first = self.env['ir.config_parameter'].sudo().get_param(self.param)
+        first = self.env['ir.config_parameter'].sudo().get_str(self.param)
         _ensure_default_model(self.env)
-        second = self.env['ir.config_parameter'].sudo().get_param(self.param)
+        second = self.env['ir.config_parameter'].sudo().get_str(self.param)
         self.assertEqual(first, second)
 
     def test_get_default_provider_without_request(self):

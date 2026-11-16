@@ -22,11 +22,11 @@ def migrate(cr, version):
     env = api.Environment(cr, SUPERUSER_ID, {})
     params = env['ir.config_parameter'].sudo()
 
-    if not params.get_param('pi_mesh.webhook_token'):
+    if not params.get_str('pi_mesh.webhook_token'):
         token = secrets.token_urlsafe(32)
-        params.set_param('pi_mesh.webhook_token', token)
+        params.set_str('pi_mesh.webhook_token', token)
         _logger.info('pi_mesh migration: webhook-token genererad')
 
-    if not params.get_param('pi_mesh.webhook_enabled'):
-        params.set_param('pi_mesh.webhook_enabled', 'True')
+    if not params.get_str('pi_mesh.webhook_enabled'):
+        params.set_str('pi_mesh.webhook_enabled', 'True')
         _logger.info('pi_mesh migration: webhook aktiverad')

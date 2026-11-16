@@ -177,12 +177,12 @@ class TestSummaryChain(_OkfTestModel):
     def test_max_chars_comes_from_parameter(self):
         """F3.2: gränsen är en systemparameter, default 2000."""
         self.assertEqual(self.Mixin._okf_summary_max_chars(), 2000)
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'ai_agent_core.okf_summary_max_chars', '500')
         self.assertEqual(self.Mixin._okf_summary_max_chars(), 500)
 
     def test_bad_parameter_falls_back_to_default(self):
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'ai_agent_core.okf_summary_max_chars', 'inte-ett-tal')
         self.assertEqual(self.Mixin._okf_summary_max_chars(), 2000)
 

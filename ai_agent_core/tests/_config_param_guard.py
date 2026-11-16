@@ -3,7 +3,7 @@
 
 VARFÖR (FYND 2026-09-23):
 
-`ir.config_parameter.get_param()` är `@ormcache('key')` — värdet cachas i
+`ir.config_parameter.get_str()` är `@ormcache('key')` — värdet cachas i
 registryt. `TransactionCase` rullar tillbaka DB-transaktionen efter varje
 test, men **cachen rensas inte**. Ett test som skriver en parameter via
 `set_values()`/`set_param()` lämnar därför kvar sitt värde i cachen, och

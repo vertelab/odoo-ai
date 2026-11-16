@@ -504,7 +504,7 @@ class TestConfigProvisioning(TransactionCase):
         applied = self.env['ai.provider']._apply_default_model_from_config()
         self.assertTrue(applied)
         self.assertEqual(
-            self.env['ir.config_parameter'].sudo().get_param(
+            self.env['ir.config_parameter'].sudo().get_str(
                 'ai_agent_core.default_model_id'), str(model.id))
         # idempotent
         applied2 = self.env['ai.provider']._apply_default_model_from_config()

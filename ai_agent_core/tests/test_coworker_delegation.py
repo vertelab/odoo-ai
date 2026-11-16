@@ -215,7 +215,7 @@ class TestDelegationCreate(DelegationTestBase):
         self.assertEqual(child.parent_task_id, parent)
 
     def test_depth_cap_blocks_chain(self):
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'ai_agent_core.delegation_max_depth', '1')
         env, sess = self._requester_env(self.chief)
         parent = env._delegate_task_to(self.worker, 'Steg 1')
@@ -225,7 +225,7 @@ class TestDelegationCreate(DelegationTestBase):
         self.assertIn('maxdjup', str(cm.exception))
 
     def test_quota_blocks(self):
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'ai_agent_core.delegation_max_per_recipient_per_day', '1')
         env, _ = self._requester_env(self.chief)
         env._delegate_task_to(self.worker, 'Första')

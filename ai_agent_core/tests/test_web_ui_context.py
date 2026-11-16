@@ -171,7 +171,7 @@ class TestGoogleKeySource(common.TransactionCase):
     def test_config_parameter_is_used(self):
         """4.4: nyckel i config-parametern används utan miljövariabel."""
         params = self.env['ir.config_parameter'].sudo()
-        params.set_param('ai_agent_core.google_api_key', 'AIza-test-nyckel')
+        params.set_str('ai_agent_core.google_api_key', 'AIza-test-nyckel')
         key = self.env['res.config.settings']._google_api_key()
         self.assertEqual(key, 'AIza-test-nyckel')
 
@@ -179,7 +179,7 @@ class TestGoogleKeySource(common.TransactionCase):
         """4.4: utan config-nyckel används miljövariabeln."""
         import os
         params = self.env['ir.config_parameter'].sudo()
-        params.set_param('ai_agent_core.google_api_key', '')
+        params.set_str('ai_agent_core.google_api_key', '')
         old = os.environ.get('GOOGLE_API_KEY')
         os.environ['GOOGLE_API_KEY'] = 'env-nyckel'
         try:

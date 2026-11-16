@@ -22,8 +22,8 @@ class TestAiPushTriggers(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         icp = cls.env['ir.config_parameter'].sudo()
-        icp.set_param('mail.web_push_vapid_private_key', 'priv')
-        icp.set_param('mail.web_push_vapid_public_key', 'pub')
+        icp.set_str('mail.web_push_vapid_private_key', 'priv')
+        icp.set_str('mail.web_push_vapid_public_key', 'pub')
         cls.user = cls.env['res.users'].create({
             'name': 'Push Bob',
             'login': 'push_bob_%s' % cls.env['ir.sequence'].next_by_code('res.users') or '1',
@@ -80,8 +80,8 @@ class TestAiPushTriggers(TransactionCase):
 
     def test_silent_without_vapid_keys(self):
         icp = self.env['ir.config_parameter'].sudo()
-        icp.set_param('mail.web_push_vapid_private_key', '')
-        icp.set_param('mail.web_push_vapid_public_key', '')
+        icp.set_str('mail.web_push_vapid_private_key', '')
+        icp.set_str('mail.web_push_vapid_public_key', '')
         session = self.env['ai.coworker.session'].create({'user_id': self.user.id})
         before = self._push_count()
         session.mark_done()  # ska inte kasta

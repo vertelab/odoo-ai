@@ -127,7 +127,7 @@ def _archive_legacy(env):
     """6.5: gamla modeller behålls som read-only (inga nya skrivningar)."""
     # Sätt config-flagga som gör legacy-indexerare inaktiva
     icp = env['ir.config_parameter'].sudo()
-    icp.set_param('okf.legacy_readonly', 'True')
+    icp.set_str('okf.legacy_readonly', 'True')
     _logger.info('OKF migration: legacy-modeller markerade read-only')
 
 

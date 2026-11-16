@@ -190,7 +190,7 @@ class TestRemoteReachability(TransactionCase):
         OBS: parametern sätts i DRIFT, inte i en testdatabas. Är den inte
         satt är frågan inte besvarad, inte besvarad nekande.
         """
-        return self.env['ir.config_parameter'].sudo().get_param(
+        return self.env['ir.config_parameter'].sudo().get_str(
             'saltstack.api_url', '') or None
 
     def test_salt_api_reachable(self):
@@ -235,7 +235,7 @@ class TestRemoteReachability(TransactionCase):
         — annars är fjärrvägen stängd av en osatt parameter, inte av en
         verklig begränsning.
         """
-        configured = self.env['ir.config_parameter'].sudo().get_param(
+        configured = self.env['ir.config_parameter'].sudo().get_str(
             'saltstack.api_url', '')
         if not configured:
             self.skipTest(

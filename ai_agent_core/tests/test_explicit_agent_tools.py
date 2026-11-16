@@ -187,7 +187,7 @@ class TestDefaultToolIds(TransactionCase):
         ICP = self.env['ir.config_parameter'].sudo()
         rec = self.env['ai.tool'].search(
             [('builtin_name', '=', 'odoo_calculator')], limit=1)
-        old_param = ICP.get_param('ai_agent_core.default_tool_ids', '')
+        old_param = ICP.get_str('ai_agent_core.default_tool_ids', '')
         try:
             settings = Settings.create({
                 'ai_default_tool_ids': [(6, 0, rec.ids)],
@@ -206,7 +206,7 @@ class TestDefaultToolIds(TransactionCase):
             # (cachen rensas av set_param, men vi måste sätta tillbaka
             # ursprungsvärdet först).
             if old_param:
-                ICP.set_param('ai_agent_core.default_tool_ids', old_param)
+                ICP.set_str('ai_agent_core.default_tool_ids', old_param)
             else:
                 ICP.search([
                     ('key', '=', 'ai_agent_core.default_tool_ids'),

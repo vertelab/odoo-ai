@@ -181,7 +181,7 @@ class TestCoworkerHITL(TransactionCase):
             hitl.with_user(self.approver).action_approve()
 
     def test_auto_proposal_after_n_approvals(self):
-        self.env['ir.config_parameter'].set_param(
+        self.env['ir.config_parameter'].set_str(
             'ai_agent_core.hitl_trust_n', '3')
         self._approve_n(3)
         proposal = self.HITL.search([
@@ -193,7 +193,7 @@ class TestCoworkerHITL(TransactionCase):
         self.assertEqual(proposal.object_type, 'helpdesk.ticket')
 
     def test_no_duplicate_auto_proposal(self):
-        self.env['ir.config_parameter'].set_param(
+        self.env['ir.config_parameter'].set_str(
             'ai_agent_core.hitl_trust_n', '3')
         self._approve_n(3)
         # 4:e godkännandet — NYTT ärende (start=200), annars återanvänder
@@ -206,7 +206,7 @@ class TestCoworkerHITL(TransactionCase):
         self.assertEqual(count, 1)
 
     def test_approved_proposal_creates_standing_rule(self):
-        self.env['ir.config_parameter'].set_param(
+        self.env['ir.config_parameter'].set_str(
             'ai_agent_core.hitl_trust_n', '1')
         self._approve_n(1)
         proposal = self.HITL.search([
@@ -220,7 +220,7 @@ class TestCoworkerHITL(TransactionCase):
         self.assertIn('helpdesk.ticket', rule)
 
     def test_rejected_proposal_resets_counter(self):
-        self.env['ir.config_parameter'].set_param(
+        self.env['ir.config_parameter'].set_str(
             'ai_agent_core.hitl_trust_n', '3')
         self._approve_n(3)
         proposal = self.HITL.search([
