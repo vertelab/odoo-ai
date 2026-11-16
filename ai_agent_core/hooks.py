@@ -7,6 +7,86 @@ import re
 _logger = logging.getLogger(__name__)
 
 
+def _check_postgres_extensions(env):
+    """Ge ett begripligt fel när pgvector/AGE saknas — i stället för traceback.
+
+    VARFÖR DEN FINNS (fynd 2026-11-16): ``ai.okf.concept`` har ett
+    ``PgVector``-fält vars ``column_type`` är ``('vector', 'vector')``.
+    ``_auto_init()`` skickar den typen rakt till ``CREATE TABLE``, så om
+    extensionen ``vector`` inte är installerad i databasen får användaren en
+    rå psycopg2-traceback i webbläsaren:
+
+        psycopg2.errors.UndefinedObject: type "vector" does not exist
+        LINE 1: ..."embedding" vector, PR...
+                                   ^
+        at makeErrorFromResponse (...web.assets_web.min.js...)
+
+    Felet säger inget om orsaken (extensionen) eller åtgärden (installera
+    den), och tracebacken pekar på Odoos SQL-lager i stället för på
+    miljön. En modul som kräver en PostgreSQL-extension ska säga DET.
+
+    Platsen är ``pre_init_hook``: den körs FÖRE ``registry.init_models()``
+    (odoo/modules/loading.py:190-206), alltså innan tabellen skapas och
+    innan det otympliga felet kan uppstå. Att lägga kontrollen i
+    ``post_init_hook`` hade varit för sent — modulen hade redan fallit.
+
+    Kontrollen är icke-destruktiv: den läser bara. Den FÖRSÖKER inte skapa
+    extensionerna — ``CREATE EXTENSION`` kräver superuser och app-rollen är
+    det inte, så ett försök hade bara gett ett andra, förvirrande fel.
+    """
+    from odoo.exceptions import UserError
+
+    cr = env.cr
+    cr.execute(
+        "SELECT extname FROM pg_extension WHERE extname IN ('vector', 'age')")
+    installed = {row[0] for row in cr.fetchall()}
+
+    missing = [e for e in ('vector', 'age') if e not in installed]
+    if not missing:
+        return
+
+    # `vector` är fatal: kolumntypen kan inte skapas alls (CREATE TABLE faller).
+    # `age` är INTE fatal vid tabellskapandet — grafen degraderar tyst — så
+    # den rapporteras som varning och blockerar inte installationen.
+    if 'vector' in missing:
+        raise UserError(_okf_missing_extension_message(env, 'vector'))
+
+    _logger.warning(
+        'PostgreSQL-extensionen "age" saknas i databasen %s. Odoo Mind-grafen '
+        'kommer att vara avstängd (synken loggar varningar och hoppar över). '
+        'Aktivera med: ALTER DATABASE "%s" SET session_preload_libraries = '
+        "'age'; CREATE EXTENSION age;", env.cr.dbname, env.cr.dbname)
+
+
+def _okf_missing_extension_message(env, extension):
+    """Bygg åtgärdsinriktat felmeddelande för en saknad extension."""
+    dbname = env.cr.dbname
+
+    if extension == 'vector':
+        return (
+            'PostgreSQL-extensionen "vector" (pgvector) saknas i databasen '
+            '"%s".\n\n'
+            'ai_agent_core lagrar embedding-vektorer i en kolumn av typen '
+            'vector(1024). Utan extensionen kan tabellen inte skapas, och '
+            'installationen avbryts.\n\n'
+            'Åtgärda på databasservern (kräver superuser - extensionen är '
+            'inte trusted):\n\n'
+            '    CREATE EXTENSION IF NOT EXISTS vector;\n\n'
+            'Kör helst hela steget via checkmodule, som gör detta åt dig:\n\n'
+            '    checkmodule -d %s -m ai_agent_core\n\n'
+            'Saknas paketet på värden:\n\n'
+            '    apt-get install postgresql-16-pgvector\n'
+            "    salt '<db-minion>' state.apply postgres.extensions_activate\n\n"
+            'Kontrollera läget med:\n\n'
+            '    psql -d %s -c "SELECT extname, extversion FROM pg_extension;"'
+            % (dbname, dbname, dbname)
+        )
+
+    return (
+        'PostgreSQL-extensionen "%s" saknas i databasen "%s".' % (extension, dbname)
+    )
+
+
 def pre_init_hook_check_conflicts(env):
     """Förhindra installation om inkompatibel modul (ai_agent) är installerad.
 
@@ -26,6 +106,12 @@ def pre_init_hook_check_conflicts(env):
         raise UserError(
             'ai_agent_core cannot be installed alongside ai_agent.\n\nThey define the same models/views (ai.tool, view_ai_tool_*,\naction_ai_tool) and are incompatible. Uninstall ai_agent first (Apps → ai_agent → Uninstall).'
         )
+
+    # PostgreSQL-extensionerna. Körs sist i hooken så att konfliktspärren
+    # ovan hinner ge sitt (mer specifika) fel först — men fortfarande FÖRE
+    # registry.init_models(), som är där "type vector does not exist" annars
+    # kastas som en rå psycopg2-traceback.
+    _check_postgres_extensions(env)
 
 
 # ── Delad vektor-kolumnhjälpare ──────────────────────────────────────────
