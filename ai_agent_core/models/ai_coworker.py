@@ -4845,6 +4845,10 @@ class AICoworker(models.Model):
         3. Bind xmlids (coworker, lead-agent, länk) via ir.model.data
         4. Döp om lead-agenten "Allmän assistent" → "Allmän kärna"
         5. Säkerställ web_ui-init aktiverad (chatten kräver enabled)
+        6. Sätt bolagets default när den är tom (färsk installation får
+           annars ingen default alls — /ai/chat föll tillbaka på "första
+           web_ui-coworker", vilket kunde bli en branschcoworker)
+        7. Säkerställ sequence lägre än branschcoworkers (tyst tiebreak)
         """
         IrModelData = self.env['ir.model.data'].sudo()
         xmlid = IrModelData.search([
@@ -4876,6 +4880,48 @@ class AICoworker(models.Model):
                 })
 
         _bind('coworker_default_assistent', 'ai.coworker', keep.id)
+
+        # 3b. Ordningen i chat-väljaren: default-medarbetaren ska stå först.
+        #
+        # ai.coworker.sequence har default 10. En branschcoworker som inte
+        # sätter fältet hamnar också på 10, och då avgör `name asc` — t.ex.
+        # "3-vägsmatcharen" före "Allmän assistent". Sekvensen låser inte
+        # defaulten (bolagsfältet gör det, steg 3c), men den tar bort den
+        # tysta tiebreak-vägen.
+        #
+        # Skrivs BARA när värdet är kvar på modellens default: har en
+        # användare sorterat om listan medvetet ska den inte tvingas tillbaka.
+        if keep.sequence == 10:
+            keep.write({'sequence': 1})
+            _logger.info(
+                'Set default coworker sequence -> 1 (%s)', keep.name)
+
+        # 3c. Bolagets default-medarbetare sätts när den är tom.
+        #
+        # Färsk installation: data-XML:en skapar posten men ingen kodväg
+        # satte res.company.ai_default_coworker_id. Migrationen
+        # 18.0.2.0.31 täcker uppgraderingar, inte install. Följden i drift:
+        # /ai/chat föll tillbaka på web_ui_quests[0] (sorterad på sequence,
+        # name) och /ai/stream utan coworker_id svarade 400.
+        #
+        # Ett REDAN SATT värde lämnas orört — även om det pekar på en
+        # branschcoworker. Det är ett organisationsbeslut, inte ett fel att
+        # "rätta". Bara env.company berörs (samma bolag som
+        # _ai_default_coworker() läser).
+        #
+        # try/except: en misslyckad bolagsskrivning får inte fälla
+        # data-XML-inläsningen — resten av adoptionen (agenter, kanaler,
+        # minne) är viktigare än default-valet.
+        try:
+            company = self.env.company
+            if company and not company.ai_default_coworker_id:
+                company.sudo().write({'ai_default_coworker_id': keep.id})
+                _logger.info(
+                    'Set company default coworker -> %s (company %s)',
+                    keep.name, company.name)
+        except Exception as exc:  # noqa: BLE001 — adoptionen får inte krascha
+            _logger.warning(
+                'Could not set company default coworker (non-fatal): %s', exc)
 
         # 4. Lead-agent + länk
         link = self.env['ai.coworker.agent'].sudo().search([

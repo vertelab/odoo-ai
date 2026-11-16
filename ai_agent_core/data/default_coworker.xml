@@ -28,6 +28,16 @@
 
         <record id="coworker_default_assistent" model="ai.coworker">
             <field name="name">Allmän assistent</field>
+            <!-- sequence 1: default-medarbetaren ska stå FÖRST i chat-väljaren.
+                 ai.coworker.sequence har default 10, och en branschcoworker
+                 som inte sätter fältet hamnar också på 10 — då avgör
+                 name asc, och t.ex. "3-vägsmatcharen" sorteras före
+                 "Allmän assistent". Sekvensen låser inte defaulten
+                 (res.company.ai_default_coworker_id gör det), men den tar
+                 bort den tysta tiebreak-vägen. Noupdate: fältet skrivs bara
+                 vid skapande; befintliga databaser säkras i
+                 _ensure_default_coworker(). -->
+            <field name="sequence" eval="1"/>
             <field name="description">Allmän AI-assistent. Hjälper med frågor, styr upp organisationen, och tipsar om förbättringar via kaizen.</field>
             <!-- Legacy-fältet init_type behålls för bakåtkompatibilitet
                  (migrationskod läser det). Sanningen om vilka kanaler som
