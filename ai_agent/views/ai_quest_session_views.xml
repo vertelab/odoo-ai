@@ -32,7 +32,7 @@
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
                     <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
-                    <group>
+                    <group expand="0" string="Group By">
                         <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
                         <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
                         <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}" />
@@ -137,7 +137,7 @@
                     <field name="model_id" />
                     <field name="object_id" />
                     <field name="datetime" />
-                    <group>
+                    <group expand="0" string="Group By">
                         <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
                         <filter string="AI Session" name="group_by_ai_session" context="{'group_by': 'ai_session_id'}" />
                         <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}" />

@@ -42,11 +42,7 @@
                     <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
                     <filter string="My Quests" name="my_quest" domain="[('user_id', '=', uid)]" help="My Quests" />
                     <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
-                    <!-- #if VERSION >= "19.0" -->
-                    <group>
-                    <!-- #else -->
                     <group expand="0" string="Group By">
-                    <!-- #endif -->
                         <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
                         <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}" />
                         <filter string="Owner" name="group_by_user" context="{'group_by': 'user_id'}" />
@@ -496,11 +492,7 @@
                                                         <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
                                                     </span>
                                                     <span class="o_text_overflow" t-att-title="record.name.value">
-                                                        <!-- #if VERSION >= "20.0" -->
-                                                        <t t-out="record.name.value" />
-                                                        <!-- #else -->
                                                         <t t-esc="record.name.value" />
-                                                        <!-- #endif -->
                                                     </span>
                                                 </div>
                                                 <field name="session_ids" widget="many2many_tags" options="{'color_field': 'color'}" />

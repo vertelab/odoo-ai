@@ -6,7 +6,7 @@ from markupsafe import Markup
 import markdownify
 import logging
 from langchain_core.messages import AIMessage
-from odoo import fields, models, tools, _
+from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 from odoo.tools.mail import html2plaintext
 
@@ -25,7 +25,7 @@ class MailChannel(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="Quest", help="")
     ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session', string="Session", help="")
 
-    # api.returns borttagen i Odoo 20
+    @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
         message = super(MailChannel, self).message_post(**kwargs)
         self.send_ai_message(message)

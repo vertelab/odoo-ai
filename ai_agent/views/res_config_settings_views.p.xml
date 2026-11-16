@@ -44,11 +44,7 @@
       <field name="res_model">res.config.settings</field>
       <field name="view_id" ref="res_config_settings_view_form" />
       <field name="view_mode">form</field>
-      <!-- #if VERSION >= "20.0" -->
-      <field name="target">current</field>
-      <!-- #else -->
       <field name="target">inline</field>
-      <!-- #endif -->
       <field name="context">{'module' : 'ai_agent', 'bin_size': False}</field>
     </record>
     
