@@ -92,7 +92,7 @@
                 <separator/>
                 <filter string="Archived" name="inactive"
                         domain="[('active','=',False)]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Category" name="group_category"
                             context="{'group_by':'category'}"/>
                     <filter string="Source" name="group_source"

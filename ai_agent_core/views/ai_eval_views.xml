@@ -56,7 +56,7 @@
                 <field name="input"/>
                 <filter name="filter_inactive" string="Archived"
                         domain="[('active', '=', False)]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter name="group_coworker" string="Coworker"
                             context="{'group_by': 'coworker_id'}"/>
                     <filter name="group_category" string="Category"

@@ -143,7 +143,7 @@
           <filter name="offline" string="Offline" domain="[('state','=','offline')]"/>
           <filter name="error" string="Error" domain="[('state','=','error')]"/>
           <separator/>
-          <group expand="0" string="Group By">
+          <group>
             <filter name="group_state" string="State" context="{'group_by':'state'}"/>
             <filter name="group_type" string="Type" context="{'group_by':'agent_type'}"/>
           </group>

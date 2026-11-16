@@ -81,7 +81,11 @@
             <filter string="Error" domain="[('status', '=', 'error')]"/>
             <filter string="Debug mode" domain="[('debug', '=', True)]"/>
             <filter string="Favorite" domain="[('is_favorite', '=', True)]"/>
+            <!-- #if VERSION >= "19.0" -->
+            <group>
+            <!-- #else -->
             <group expand="0" string="Group By">
+            <!-- #endif -->
             <filter string="Status" name="group_by_status" context="{'group_by':'status'}"/>
             <filter string="Company" name="group_by_company" context="{'group_by':'company_id'}"/>
             </group>

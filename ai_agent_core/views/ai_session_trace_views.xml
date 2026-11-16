@@ -108,7 +108,7 @@
                 <filter name="errors" string="Errors"
                         domain="[('finish_reason','in',['error','timeout'])]"/>
                 <separator/>
-                <group expand="1" string="Group By">
+                <group>
                     <filter name="group_agent" string="Agent"
                             context="{'group_by':'agent_id'}"/>
                     <filter name="group_kind" string="Kind"
@@ -224,7 +224,7 @@
                 <filter name="subagent" string="Nested (subagent)"
                         domain="[('parent_tool_call_id','!=',False)]"/>
                 <separator/>
-                <group expand="1" string="Group By">
+                <group>
                     <filter name="group_tool" string="Verktyg"
                             context="{'group_by':'tool_name'}"/>
                     <filter name="group_executor" string="Executor"
@@ -295,7 +295,7 @@
                 <filter name="errors" string="Errors"
                         domain="[('reason','in',['error','timeout'])]"/>
                 <separator/>
-                <group expand="1" string="Group By">
+                <group>
                     <filter name="group_reason" string="Reason"
                             context="{'group_by':'reason'}"/>
                     <filter name="group_day" string="Day"

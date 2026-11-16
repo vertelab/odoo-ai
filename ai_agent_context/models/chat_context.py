@@ -7,7 +7,7 @@
 
 import logging
 
-from odoo import models, fields, api
+from odoo import models, fields
 from odoo.http import request as http_request
 
 _logger = logging.getLogger(__name__)
@@ -42,8 +42,6 @@ class DiscussChannel(models.Model):
     )
 
     # ── message_post() auto-capture ──────────────────────────────────
-
-    @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
         """Auto-capture context when a message is posted to this channel.
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Agent — SEO & GEO',
-    'version': '18.0.1.0.0',
+    'version': '1.0.0',
     'category': 'Marketing',
     'summary': 'SEO & GEO-specialist: agent, skills och verktyg för sökmotor- '
                'och generativ motor-optimering (llms.txt, JSON-LD, SERP).',

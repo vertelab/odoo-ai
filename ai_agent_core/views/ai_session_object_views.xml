@@ -68,7 +68,7 @@
                         domain="[('operation','=','updated')]"/>
                 <filter name="deleted" string="Raderade"
                         domain="[('operation','=','deleted')]"/>
-                <group expand="0" string="Gruppera efter">
+                <group>
                     <filter name="group_res_model" string="Modell"
                             context="{'group_by':'res_model'}"/>
                     <filter name="group_operation" string="Operation"

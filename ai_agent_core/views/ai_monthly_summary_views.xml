@@ -68,7 +68,7 @@
                 <filter string="This Month" name="this_month"
                         domain="[('month', '=', context_today().strftime('%Y-%m'))]"/>
                 <separator/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Medarbetare" name="group_quest" context="{'group_by':'coworker_id'}"/>
                     <filter string="Month" name="group_month" context="{'group_by':'month'}"/>
                 </group>

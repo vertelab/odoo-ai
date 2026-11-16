@@ -4,7 +4,7 @@
 
 {
     "name": "AI: LLM Provider Abstraction",
-    "version": "18.0.1.0.0",
+    "version": "1.0.0",
     "summary": "Provider abstraction, model discovery, rate limiting, token tracking",
     "category": "AI",
     "author": "Vertel Sverige AB",

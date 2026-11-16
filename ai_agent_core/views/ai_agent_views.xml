@@ -126,7 +126,7 @@
                 <filter string="Without Model" name="no_model"
                         domain="[('model_id','=',False)]"/>
 
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Status" name="group_status"
                             context="{'group_by':'status'}"/>
                     <filter string="Model" name="group_model"

@@ -15,7 +15,7 @@
         <field name="name">Settings</field>
         <field name="res_model">res.config.settings</field>
         <field name="view_mode">form</field>
-        <field name="target">inline</field>
+        <field name="target">current</field>
         <field name="context">{'module':'ai_agent_core'}</field>
     </record>
     <record id="action_ai_coworker" model="ir.actions.act_window">

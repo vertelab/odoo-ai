@@ -3,7 +3,7 @@
 
 import logging
 
-from odoo import models, fields, api
+from odoo import models, fields
 from odoo.http import request as http_request
 
 _logger = logging.getLogger(__name__)
@@ -54,8 +54,6 @@ class DiscussChannel(models.Model):
         help='Vytypen (form, list, kanban, ...).')
 
     # ── Automatisk capture vid varje meddelande ────────────────────────
-
-    @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
         """Fånga användarens vy-kontext innan meddelandet skapas.
 

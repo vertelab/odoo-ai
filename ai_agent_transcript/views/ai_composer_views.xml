@@ -62,7 +62,7 @@
                 <field name="focused_models"/>
                 <field name="coworker_id"/>
                 <filter name="active" string="Active" domain="[('active', '=', True)]"/>
-                <group string="Group By" name="groupby">
+                <group>
                     <filter name="by_interface" string="Interface Key"
                             context="{'group_by': 'interface_key'}"/>
                     <filter name="by_quest" string="AI Quest"

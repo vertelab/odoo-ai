@@ -86,7 +86,7 @@
                         domain="[('is_auto_proposal', '=', True)]"/>
                 <filter name="has_session" string="Med session"
                         domain="[('session_id', '!=', False)]"/>
-                <group expand="0" string="Gruppera">
+                <group>
                     <filter name="g_state" string="Status" domain="[]"
                             context="{'group_by': 'state'}"/>
                     <filter name="g_risk" string="Risk" domain="[]"

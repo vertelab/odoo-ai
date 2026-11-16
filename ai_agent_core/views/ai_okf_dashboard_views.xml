@@ -105,7 +105,7 @@
         <field name="res_model">ai.okf.dashboard</field>
         <field name="view_mode">form</field>
         <field name="view_id" ref="view_ai_okf_dashboard_form"/>
-        <field name="target">inline</field>
+        <field name="target">current</field>
         <field name="help" type="html">
             <p><strong>🧠 Odoo Mind Dashboard</strong></p>
             <p>The administrator monitoring surface: graph, memory, cron jobs
