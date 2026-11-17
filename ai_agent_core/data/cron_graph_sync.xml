@@ -11,9 +11,14 @@
             <field name="module">ai_agent_core</field>
             <field name="model_name">graph.node.definition</field>
             <field name="method_name">_sync_all</field>
-            <field name="interval_number">5</field>
-            <field name="interval_type">minutes</field>
+            <!-- CADENCE `hour`, inte var 5:e minut (2026-11-16).
+                 Synken tar 210 s — mätt i drift. Den hann alltså aldrig
+                 bli klar inom min-tickens 5-minutersfönster utan låg och
+                 blockerade. En graf behöver inte synkas var 5:e minut;
+                 en gång i timmen är gott nog. -->
+            <field name="cadence">hour</field>
             <field name="sequence">20</field>
+            <field name="timeout_seconds">600</field>
             <field name="active" eval="True"/>
         </record>
     </data>

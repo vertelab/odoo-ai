@@ -27,9 +27,19 @@
             <field name="module">ai_agent_core</field>
             <field name="model_name">ai.coworker.session</field>
             <field name="method_name">_cron_close_idle_sessions</field>
-            <field name="interval_number">15</field>
-            <field name="interval_type">minutes</field>
+            <!-- CADENCE `hour`, inte interval 15 minuter (2026-11-16).
+                 Varje varv kostar ett LLM-anrop per session (5 per varv,
+                 ~25 s styck = ~125 s). Det överskrider min-tickens
+                 utrymme och blockerade HELA schemaläggningen: tick 991
+                 nådde failure_count 162 och dog på limit_time_real.
+
+                 15-minutersintervallet var dessutom overkill — en session
+                 som legat overksam i 60 minuter har ingen brådska att
+                 stängas inom 15. En gång i timmen räcker, och då hinner
+                 varvet bli klart. -->
+            <field name="cadence">hour</field>
             <field name="sequence">7</field>
+            <field name="timeout_seconds">600</field>
             <field name="active" eval="True"/>
         </record>
     </data>
