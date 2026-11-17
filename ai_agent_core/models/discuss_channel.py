@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Discuss channel extensions for Buzz workspace support."""
 
+import json
 import logging
 
 from odoo import models, fields
@@ -196,6 +197,47 @@ class DiscussChannel(models.Model):
             pass  # best-effort: tyst fallback — se etiketteringsregeln
 
         return result
+
+    def _store_ai_context_snapshot(self, model, res_id, res_ids, record_data):
+        """Lägg frontend-serialiserade fältvärden på kanalens session.
+
+        Ligger på modellen (inte i controllern) så att den kan testas utan
+        HTTP-request: `request.env` finns inte i ett TransactionCase.
+
+        Fältvärdena från browsern vinner över backend-serialisering — de
+        bär osparade ändringar som användaren ser men som ännu inte
+        skrivits till DB.
+        """
+        self.ensure_one()
+        if not model or not record_data:
+            return False
+        coworkers = self.ai_coworker_ids | self.ai_coworker_id
+        if not coworkers:
+            return False
+        session = self.env['ai.coworker.session'].sudo().search(
+            [('coworker_id', 'in', coworkers.ids), ('status', '=', 'active')],
+            limit=1, order='create_date desc')
+        if not session:
+            return False
+        payload = record_data if isinstance(record_data, str) else \
+            json.dumps(record_data, default=str, ensure_ascii=False)
+        vals = {'ai_record_model': model}
+        if res_ids and len(res_ids) > 1:
+            vals.update({
+                'ai_record_id': False,
+                'ai_record_ids': [int(x) for x in res_ids],
+            })
+        elif res_id:
+            vals.update({
+                'ai_record_id': int(res_id),
+                'ai_record_ids': False,
+            })
+        else:
+            return False
+        if payload:
+            vals['ai_record_json'] = payload
+        session.sudo().write(vals)
+        return True
 
     def _get_ai_context_record(self):
         """Returnera aktuell record (eller markering) för denna kanal.

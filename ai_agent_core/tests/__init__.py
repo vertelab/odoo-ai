@@ -127,6 +127,7 @@ from . import test_stream_scope_bindings
 from . import test_explicit_agent_tools
 from . import test_builtin_fallback_removal
 from . import test_record_context
+from . import test_context_bridge
 from . import test_agent_identity
 # Workspace/PARA + L2/L3 distillation. This file was never imported, which is
 # why the _add()/ensure_one() regression in executive_summary.py (nightly
