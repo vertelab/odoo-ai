@@ -1720,6 +1720,31 @@ class AICoworker(models.Model):
         return self.init_type_ids.filtered(
             lambda it: it.init_type == itype and it.enabled)[:1]
 
+    def _is_web_ui_coworker(self):
+        """Ska den här coworkern gå att välja i webbklientens chat?
+
+        EN sanning för frågan, så att väljaren, default-valet och datafilerna
+        inte kan ge olika svar. Bakgrund (drift 2026-11-16): `/ai/chat`
+        filtrerade på `init_type_ids` (init_type='web_ui' och enabled) medan
+        `init_web_ui`-booleans är det som datafilerna och formuläret sätter.
+        Två coworkers hade dubblettrader (en enabled=False och en enabled=True)
+        och en TOM boolean — `filtered(...)` släppte ändå igenom dem eftersom
+        den såg den ena enabled-raden. Resultatet: coworkers som inte är
+        markerade för web-UI dök upp i väljaren.
+
+        Regeln är booleans, inte raderna: `init_web_ui` är kryssrutan
+        användaren ser, och `_sync_init_types_from_booleans()` speglar den till
+        raderna. Rader som glidit isär är ett symtom, inte sanningen.
+
+        Booleans är den ENDA sanningen — ingen fallback till raderna. En rad
+        som säger enabled=True utan att kryssrutan är satt är precis den
+        divergens som gjorde felet möjligt; att lita på raden vore att
+        återinföra buggen. Datafiler som vill ha coworkern i web-UI:t sätter
+        `init_web_ui` (se data/default_coworker.xml).
+        """
+        self.ensure_one()
+        return bool(self.init_web_ui)
+
     # ── Initiering: en Boolean per typ (kryssruta). Vanliga Boolean-fält
     #    gör att invisible på konfig-fälten fungerar direkt i onchange —
     #    mycket pålitligare än many2many_checkboxes + computed has_*.
