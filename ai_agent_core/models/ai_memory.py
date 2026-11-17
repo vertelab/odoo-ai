@@ -6,6 +6,7 @@ import os
 
 from odoo import models, fields, api
 
+from ..core.tools import attachment_bytes
 from ..fields.pg_vector import PgVector
 from .ai_okf_concept import EMBEDDING_DIM as _OKF_EMBEDDING_DIM
 
@@ -393,7 +394,7 @@ class AIMemory(models.Model):
                     self.name, att.create_uid.login)
                 return None
 
-            data = b64.b64decode(att.datas)
+            data = attachment_bytes(att)
             embeddings = self._get_embeddings()
             if not embeddings:
                 return None
@@ -462,12 +463,11 @@ class AIMemory(models.Model):
 
         # 1. Källfilen
         att = self.source_attachment_id
-        if att and att.datas:
+        if att:
             try:
-                import base64 as b64
                 import io
-                raw = b64.b64decode(att.datas)
-                if (att.mimetype or '').endswith('pdf'):
+                raw = attachment_bytes(att)
+                if raw and (att.mimetype or '').endswith('pdf'):
                     import pymupdf
                     pdf = pymupdf.open(stream=raw, filetype='pdf')
                     docs = [
@@ -480,7 +480,7 @@ class AIMemory(models.Model):
                     pdf.close()
                     if docs:
                         return docs
-                else:
+                elif raw:
                     text = raw.decode('utf-8', errors='replace')
                     if text.strip():
                         return [Document(

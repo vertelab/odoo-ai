@@ -4184,7 +4184,8 @@ class PICallbackController(http.Controller):
             if art.get('name') and art.get('data'):
                 request.env['ir.attachment'].sudo().create({
                     'name': art['name'],
-                    'datas': art['data'],
+                    # 20.0: `datas` is gone; `raw` takes bytes, not base64.
+                    'raw': base64.b64decode(art['data']),
                     'res_model': 'ai.coworker.session',
                     'res_id': session.id,
                 })

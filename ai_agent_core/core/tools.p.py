@@ -1,0 +1,4829 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+"""
+Tool System — without LangChain (TOOL-001, TOOL-005).
+
+TOOL-001: Tool dataclass — no LangChain BaseTool inheritance.
+TOOL-005: Tool serialization to OpenAI + Anthropic format.
+
+Tools are plain Python objects. The AgentLoop calls tool.execute().
+Serialization is lazy — only when needed for API calls.
+"""
+
+import json
+import logging
+import time as _time
+from dataclasses import dataclass, field
+from typing import Any, Callable, Awaitable, List, Dict, Optional
+
+from odoo.addons.ai_agent_core.core.extract import (
+    extract_meta_refresh,
+    extract_pdf,
+    extract_readable,
+    extract_youtube,
+    is_pdf,
+    youtube_video_id,
+)
+from odoo.addons.ai_agent_core.core.ssrf import (
+    MAX_REDIRECTS,
+    REDIRECT_STATUSES,
+    SsrfBlocked,
+    validate_redirect,
+    validate_url,
+)
+
+_logger = logging.getLogger(__name__)
+
+#: Total tidsbudget för web_search:s leverantörskedja (webui-stream-feedback
+#: 5.1). Kedjan DDGS×2 + DDG HTML + Bing + Brave har 20 s timeout VAR —
+#: värsta fallet var ~80 s, tillräckligt för att chatten ska ge upp innan
+#: första träffen. Budgeten styr helheten, inte den enskilda leverantören.
+_WEB_SEARCH_BUDGET = 15.0
+
+# ---------------------------------------------------------------------------
+# Tool (TOOL-001)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Tool:
+    """A tool that an agent can call.
+
+    No LangChain inheritance. No framework wrapper.
+    Just name + description + JSON Schema + handler.
+    """
+
+    name: str
+    description: str
+    parameters: Dict  # JSON Schema for parameters
+    handler: Optional[Callable[..., Awaitable[str]]] = None
+    risk_level: str = "read_only"  # safe | read_only | write | destructive | execute
+    source: str = "custom"  # odoo_model | mcp | custom
+
+    # Trovärdigheten hos det verktyget RETURNERAR (untrusted-tool-output D1).
+    #
+    #   trusted   — systemprompten och annat vi själva skrivit
+    #   tool      — data ur Odoo: betrodd i den meningen att en användare med
+    #               behörighet redan kan se den, men inte en instruktion
+    #   untrusted — innehåll från internet (webbsidor, sökträffar, RSS)
+    #
+    # Fältet sätts vid verktygets DEFINITION, inte vid konsumtion: att avgöra
+    # trovärdighet i `loop.py` hade krävt att loopen kände varje verktygs
+    # semantik — och då glöms ett nytt verktyg bort. Här syns valet i
+    # registreringen, och `tests/test_structural_gates.py` kräver att varje
+    # verktyg med `web`-förmåga är `untrusted`.
+    trust: str = "tool"  # trusted | tool | untrusted
+
+    # Executor routing (tool-executor-nats)
+    executor: str = "local"  # "local" | "nats" | "mcp"
+    capabilities: List[str] = field(default_factory=list)  # e.g. ["browser", "web", "infra"]
+    nats_subject: str = "pi.task.do"
+    nats_skills: str = ""
+    nats_timeout: int = 30
+    # NATS-agentens id som sträng (tom = ingen styrning). `loop.py` läser
+    # fältet med `getattr(tool, 'nats_agent', '')`, så det måste finnas här —
+    # annars kastar `to_core_tool()` TypeError på ett giltigt värde.
+    nats_agent: str = ""
+
+    # Access-grupper (ai-tool-access-capabilities): Odoo group ids som får
+    # använda verktyget. Tom = obegränsat. PermissionEngine nekar anrop när
+    # användarens grupper inte korsar dessa (defense-in-depth).
+    group_ids: List[int] = field(default_factory=list)
+
+    # Risk level thresholds for approval (HITL-005)
+    RISK_LEVELS = {
+        "safe": 0,
+        "read_only": 1,
+        "write": 2,
+        "destructive": 3,
+        "execute": 4,
+    }
+
+    def needs_human_approval(self, threshold: int = 2) -> bool:
+        """Check if this tool requires human approval at given threshold."""
+        level = self.RISK_LEVELS.get(self.risk_level, 1)
+        if self.risk_level in ("destructive", "execute"):
+            return True  # Always require approval for destructive/execute
+        return level >= threshold
+
+    async def execute(self, **kwargs) -> str:
+        """Execute the tool with given parameters. Returns result as string.
+
+        For NATS-executor tools (handler=None), returns an error —
+        actual execution happens via _execute_via_nats in AgentLoop.
+        """
+        if self.handler is None:
+            return f"Tool '{self.name}' requires remote executor ({self.executor})"
+        try:
+            return await self.handler(**kwargs)
+        except ToolError as e:
+            # Strukturerat, åtgärdbart fel (2.1) — bevara vägledningen.
+            if not e.tool_name:
+                e.tool_name = self.name
+            return e.to_text()
+        except Exception as e:
+            return f"Tool error ({self.name}): {e}"
+
+    # -- Serialization (TOOL-005) --
+
+    def to_openai(self) -> dict:
+        """Serialize to OpenAI function-calling format."""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
+
+    def to_anthropic(self) -> dict:
+        """Serialize to Anthropic tool-use format."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.parameters,
+        }
+
+
+# ---------------------------------------------------------------------------
+# ToolRegistry
+# ---------------------------------------------------------------------------
+
+class ToolRegistry:
+    """Collects and looks up tools by name.
+
+    Tools are registered at session start from multiple sources:
+    - OdooModelTools (auto-generated per registered model)
+    - MCPTools (discovered from MCP servers)
+    - CustomTools (user-defined via ai.tool)
+    """
+
+    def __init__(self):
+        self._tools: dict[str, Tool] = {}
+
+    def register(self, tool: Tool) -> None:
+        """Register a tool. Overwrites if name already exists."""
+        self._tools[tool.name] = tool
+
+    def register_many(self, tools: list[Tool]) -> None:
+        for t in tools:
+            self.register(t)
+
+    def get(self, name: str) -> Tool | None:
+        return self._tools.get(name)
+
+    def list(self) -> list[Tool]:
+        return list(self._tools.values())
+
+    def to_openai(self) -> list[dict]:
+        return [t.to_openai() for t in self._tools.values()]
+
+    def to_anthropic(self) -> list[dict]:
+        return [t.to_anthropic() for t in self._tools.values()]
+
+    def __len__(self) -> int:
+        return len(self._tools)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._tools
+
+
+# ---------------------------------------------------------------------------
+# Built-in tools for testing
+# ---------------------------------------------------------------------------
+
+async def _tool_calculator(expression: str) -> str:
+    """Evaluate a mathematical expression. Test tool."""
+    allowed = set("0123456789+-*/.() ")
+    if not expression or not expression.strip():
+        return _missing_argument_error(
+            'expression', 'a mathematical expression',
+            example='2 + 2 * 3', tool_name='odoo_calculator').to_json()
+    bad = sorted({c for c in expression if c not in allowed})
+    if bad:
+        return _invalid_value_error(
+            'expression',
+            'only digits and + - * / . ( ) are allowed',
+            ''.join(bad),
+            example='2 + 2 * 3',
+            tool_name='odoo_calculator').to_json()
+    try:
+        result = eval(expression, {"__builtins__": {}})
+        return str(result)
+    except Exception as e:
+        return _internal_error(
+            'odoo_calculator', e,
+            hint='the expression could not be evaluated').to_json()
+
+
+def _parse_feed_xml(text):
+    """Parse RSS 2.0 or Atom into normalized dicts.
+
+    Stdlib-only (xml.etree) so the tool works without feedparser — the
+    runtime spec requires an agent to start without third-party deps.
+    Returns [{title, url, published, summary}].
+    """
+    import xml.etree.ElementTree as ET
+
+    def _strip_ns(tag):
+        return tag.rsplit('}', 1)[-1] if '}' in tag else tag
+
+    items = []
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return items
+
+    # RSS: rss > channel > item ; Atom: feed > entry
+    nodes = [e for e in root.iter() if _strip_ns(e.tag) in ('item', 'entry')]
+    for node in nodes:
+        rec = {'title': '', 'url': '', 'published': '', 'summary': ''}
+        for child in node:
+            tag = _strip_ns(child.tag)
+            if tag == 'title' and not rec['title']:
+                rec['title'] = (child.text or '').strip()
+            elif tag == 'link' and not rec['url']:
+                # Atom: <link href="..."/> ; RSS: <link>...</link>
+                rec['url'] = (child.get('href') or child.text or '').strip()
+            elif tag in ('pubDate', 'published', 'updated') and not rec['published']:
+                rec['published'] = (child.text or '').strip()
+            elif tag in ('description', 'summary') and not rec['summary']:
+                rec['summary'] = (child.text or '').strip()
+        if rec['title'] or rec['url']:
+            items.append(rec)
+    return items
+
+
+async def _tool_news_fetch(url: str = "", limit: int = 20) -> str:
+    """Fetch and parse an RSS/Atom feed. Returns normalized items.
+
+    Model-agnostic: takes a URL directly and returns data. The agent owns
+    the source list (in its skill); the tool knows nothing about news
+    models. This is the same class of tool as web_search/fetch_url.
+    """
+    if not url or not url.strip():
+        return _missing_argument_error(
+            'url', 'a feed URL starting with http:// or https://',
+            example='https://www.svt.se/nyheter/rss.xml',
+            tool_name='news_fetch').to_json()
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return _invalid_value_error(
+            'url', 'a URL starting with http:// or https://', url,
+            example='https://www.svt.se/nyheter/rss.xml',
+            tool_name='news_fetch').to_json()
+    try:
+        limit = max(1, min(int(limit or 20), 100))
+    except (TypeError, ValueError):
+        limit = 20
+
+    try:
+        import httpx
+        # Cert-validering är PÅ. Den tidigare verify=False-fallbacken dolde
+        # det verkliga felet genom att göra om anropet osäkert så fort
+        # något gick fel — inklusive 404 och timeout.
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            r = await client.get(
+                url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
+        r.raise_for_status()
+        items = _parse_feed_xml(r.text)
+    except ImportError as e:
+        return _internal_error(
+            'news_fetch', e,
+            hint='install the missing dependency: pip install httpx').to_json()
+    except Exception as e:
+        return _internal_error('news_fetch', e).to_json()
+
+    if not items:
+        return "No items found in the feed at %s." % url
+
+    lines = ["Feed: %s" % url]
+    for i, it in enumerate(items[:limit]):
+        lines.append("%d. %s\n   %s\n   %s" % (
+            i + 1, it['title'] or '?', it['published'] or '', it['url'] or ''))
+    return "\n".join(lines)
+
+
+async def _tool_news_digest(env, topic: str = "", count: int = 10,
+                            digest_text: str = "") -> str:
+    """Read or write the user's cached news digest in ai.personal.memory.
+
+    The digest follows the PERSON (res.users), like all personal memory.
+    - Without digest_text: read today's cached digest (fast, no LLM call).
+    - With digest_text: store it as a memory for today (the agent writes).
+
+    Topic filters the cached digest's items on their topic tags.
+
+    `env` is injected by wrap_tools_with_env (first parameter, like
+    _tool_odoo_search) — not a module global.
+    """
+    try:
+        count = max(1, min(int(count or 10), 50))
+    except (TypeError, ValueError):
+        count = 10
+    try:
+        Memory = env['ai.personal.memory']
+    except KeyError:
+        return _internal_error(
+            'news_digest', Exception('ai.personal.memory saknas'),
+            hint='ai_agent_core is not fully installed').to_json()
+
+    user = env.user
+
+    # ── WRITE: agenten cachar dagens digest som ett personligt minne ──
+    if digest_text and digest_text.strip():
+        from datetime import date
+        content = "[news-digest] %s\n%s" % (date.today().isoformat(),
+                                             digest_text.strip())
+        mem = Memory.add_memory(
+            user.id, content, category='context', source='system',
+            importance='medium',
+            source_ref='news-digest,%s' % date.today().isoformat())
+        return json.dumps({
+            'cached': True, 'written': True, 'memory_id': mem.id,
+            'date': date.today().isoformat(),
+        })
+
+    # ── READ: senaste digesten för idag ──
+    from datetime import date
+    today = date.today().isoformat()
+    marker = '[news-digest] %s' % today
+    found = Memory.search([
+        ('user_id', '=', user.id),
+        ('source_ref', 'like', 'news-digest,%s' % today),
+    ], limit=1, order='create_date desc')
+    if not found:
+        # Fallback: sök i content (äldre poster utan source_ref)
+        found = Memory.search([
+            ('user_id', '=', user.id),
+            ('content', 'like', marker),
+        ], limit=1, order='create_date desc')
+    if not found:
+        return json.dumps({
+            'cached': False,
+            'reason': 'no_digest_for_today',
+            'hint': 'No cached digest for today. Fetch feeds with news_fetch, '
+                    'build the digest, then store it with news_digest '
+                    '(digest_text=...). Tell the user it did not come from '
+                    'cache.',
+        })
+    text = found.content or ''
+    # Ta bort markören från svaret
+    if text.startswith(marker):
+        text = text[len(marker):].lstrip('\n')
+    return json.dumps({
+        'cached': True, 'date': today, 'topic': topic or '',
+        'digest': text,
+    }, ensure_ascii=False)
+
+
+def _tool_personal_memory(env, action: str = "", content: str = "",
+                         query: str = "", category: str = "fact",
+                         importance: str = "medium", source_ref: str = "",
+                         limit: int = 10) -> str:
+    """Läs eller skriv användarens PERSONLIGA minne (ai.personal.memory).
+
+    Generiskt verktyg (news-agent 5.3): agenten kunde läsa minnet via
+    `okf_search` men hade INGEN väg att SKRIVA det. Skillen instruerade
+    "lagra i personligt minne" utan att verktyget fanns. Detta är den
+    vägen — samma för alla agenter, ingen domän nämns.
+
+    Minnet följer PERSONEN (`res.users`), som allt personligt minne: en
+    preferens inlärd i en konversation är tillgänglig i nästa, oavsett
+    vilken coworker som kör.
+
+    action:
+      'write'  — spara `content` (kräver content)
+      'search' — sök med `query` (utan query: senaste `limit`)
+      'recent' — de senaste `limit` minnena
+
+    `env` injiceras av wrap_tools_with_env (första parametern, samma
+    mönster som _tool_news_digest).
+    """
+    action = (action or "").strip().lower()
+    if not action:
+        return _missing_argument_error(
+            'action', "'write', 'search' eller 'recent'",
+            example="action='write'",
+            tool_name='personal_memory').to_json()
+
+    try:
+        Memory = env['ai.personal.memory']
+    except KeyError:
+        return _internal_error(
+            'personal_memory', Exception('ai.personal.memory saknas'),
+            hint='ai_agent_core is not fully installed').to_json()
+
+    user = env.user
+
+    # ── WRITE ──
+    if action == 'write':
+        if not (content or "").strip():
+            return _missing_argument_error(
+                'content',
+                'the text to store (e.g. "the user wants five news items")',
+                example="content='The user wants five news items'",
+                tool_name='personal_memory').to_json()
+        valid_cat = dict(Memory._fields['category'].selection)
+        valid_imp = dict(Memory._fields['importance'].selection)
+        cat = category if category in valid_cat else 'fact'
+        imp = importance if importance in valid_imp else 'medium'
+        try:
+            mem = Memory.add_memory(
+                user.id, content.strip(), category=cat, source='chat',
+                session_id=env.context.get('_ai_context_id') or None,
+                coworker_id=env.context.get('ai_coworker_id') or None,
+                importance=imp,
+                source_ref=source_ref.strip() or None)
+        except Exception as e:  # noqa: BLE001
+            return _internal_error('personal_memory', e).to_json()
+        return json.dumps({
+            'ok': True, 'written': True, 'memory_id': mem.id,
+            'category': cat, 'importance': imp,
+        }, ensure_ascii=False)
+
+    # ── SEARCH / RECENT ──
+    try:
+        limit = max(1, min(int(limit or 10), 50))
+    except (TypeError, ValueError):
+        limit = 10
+    try:
+        if action == 'search' and (query or "").strip():
+            results = Memory.search_for_user(
+                user.id, query=query.strip(), limit=limit)
+        else:
+            results = Memory.search_recent(user.id, limit=limit)
+    except Exception as e:  # noqa: BLE001
+        return _internal_error('personal_memory', e).to_json()
+
+    def _row(r):
+        # search_for_user returnerar dictar; search_recent records.
+        if isinstance(r, dict):
+            return {
+                'id': r.get('id'),
+                'content': (r.get('content') or r.get('memory') or '')[:500],
+                'category': r.get('category'),
+                'score': r.get('score'),
+            }
+        return {
+            'id': r.id, 'content': (r.content or '')[:500],
+            'category': r.category,
+        }
+
+    return json.dumps({
+        'ok': True, 'action': action, 'count': len(results),
+        'memories': [_row(r) for r in results],
+    }, ensure_ascii=False)
+
+
+def _looks_relevant(query: str, results: list) -> bool:
+    """Grov relevanskontroll av sökträffar.
+
+    DuckDuckGo svarar ibland med orelaterade resultat (Telenor för
+    "saltstack pillar") i stället för att returnera 429. Vi kan inte
+    avgöra relevans säkert, men om INGEN träff innehåller något av frågans
+    meningsbärande ord är svaret med stor sannolikhet skräp.
+
+    Kortare ord (< 4 tecken) hoppas över — de matchar för brett.
+    """
+    if not results:
+        return True  # inget att bedöma — låt anroparen hantera tomt svar
+    words = [w for w in (query or '').lower().split() if len(w) >= 4]
+    if not words:
+        return True  # kan inte bedöma, lita på resultatet
+    haystack = ' '.join(
+        f"{r.get('title', '')} {r.get('body', '')} {r.get('href', '')}"
+        for r in results
+    ).lower()
+    return any(w in haystack for w in words)
+
+
+async def _tool_web_search(query: str = "", max_results: int = 5,
+                            recency: str = "") -> str:
+    """Search the web. Uses DuckDuckGo (DDGS); fallback till HTML-scrape
+    hos DuckDuckGo, Bing och Brave.
+
+    ``recency`` begränsar träffarna i tid. Pi har samma parameter
+    (recencyFilter) — nyheter och versionsinformation är ofta värdelös om
+    den är två år gammal.
+    """
+    if not query or not query.strip():
+        return _missing_argument_error(
+            'query', 'a search query (1-200 characters)',
+            example='saltstack pillar best practices',
+            tool_name='web_search').to_json()
+    try:
+        max_results = max(1, min(int(max_results or 5), 15))
+    except (TypeError, ValueError):
+        max_results = 5
+
+    # recency → DDGS timelimit (d/w/m/y) + scrape-leverantörernas datumfilter
+    recency = (recency or '').strip().lower()
+    if recency not in ('', 'day', 'week', 'month', 'year'):
+        return _invalid_value_error(
+            'recency', 'one of: day, week, month, year (or empty for all time)',
+            recency, example='week', tool_name='web_search',
+            retryable=False).to_json()
+    _timelimit = {'day': 'd', 'week': 'w', 'month': 'm', 'year': 'y'}.get(recency)
+    # Bing/DDG HTML använder df=freshness; Brave använder tf.
+    _df = {'day': 'd', 'week': 'w', 'month': 'm', 'year': 'y'}.get(recency)
+
+    # 1. DDGS (primärt). Paketet hette tidigare `duckduckgo_search` men är
+    # omdöpt till `ddgs` — det gamla namnet returnerar allt oftare 0 träffar
+    # (ratelimiting). Endast `ddgs` används; det gamla är borttaget ur
+    # requirements.txt.
+    try:
+        from ddgs import DDGS
+        _kw = {'max_results': max_results}
+        if _timelimit:
+            _kw['timelimit'] = _timelimit
+        # DDGS ratelimitar och kan ge 0 träffar — eller helt orelaterade
+        # träffar (Telenor för "saltstack pillar") — på ett försök som
+        # lyckas nästa gång. Mätt: samma fråga gav 0, 0, 3. Två försök med
+        # kort paus tar bort de flesta falska svar.
+        for attempt in range(2):
+            results = list(DDGS().text(query, **_kw))
+            if not results:
+                if attempt == 0:
+                    _time.sleep(0.6)
+                continue
+            if not _looks_relevant(query, results) and attempt == 0:
+                _time.sleep(0.8)
+                continue
+            return "\n".join(
+                f"{i+1}. {r.get('title','?')}\n   {r.get('body','')[:200]}\n   {r.get('href','')}"
+                for i, r in enumerate(results)
+            )
+    except ImportError:
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
+    except Exception as exc:
+        # Tyst sväljning dolde att DDGS kastade — logga så nästa felsökning
+        # inte börjar om från noll.
+        _logger.warning('web_search: DDGS misslyckades: %s', exc)
+    # 2+3+4. HTML-scrape med flera leverantörer (fallback): DuckDuckGo är
+    # blockerad/ej nabbara från vissa nät (verifierat på ledningssystem:
+    # html.duckduckgo.com ger ingen anslutning) — försök därför även Bing
+    # och Brave så webb-sök faktiskt kan returnera träffar.
+    import httpx as _httpx
+    import html as _html
+    from bs4 import BeautifulSoup as _Soup
+    from urllib.parse import quote_plus as _q
+    import time as _t
+
+    # Total tidsbudget för hela leverantörskedjan (webui-stream-feedback 5.1).
+    #
+    # VARFÖR: kedjan DDGS×2 + DDG HTML + Bing + Brave har 20 s timeout VAR.
+    # Värsta fallet var ~80 s — tillräckligt för att chatten ska ge upp
+    # innan första träffen. Mätt 2026-11-05 tog sju sökningar 7–20 s.
+    #
+    # Budgeten styr HELHETEN, inte den enskilda leverantören: en långsam men
+    # fungerande leverantör ska fortfarande få sin chans om den är först.
+    _deadline = _t.monotonic() + _WEB_SEARCH_BUDGET
+
+    def _out_of_budget():
+        return _t.monotonic() >= _deadline
+
+    UA = ('Mozilla/5.0 (X11; Linux x86_64; rv:126.0) '
+          'Gecko/20100101 Firefox/126.0')
+    seen: set = set()
+
+    async def _grab(href):
+        # Bing och DDG ibland redirect-användare; försök aldrig mer än en
+        # gång mot samma url.
+        h = href or ''
+        if h.lower().startswith(('/url?', '//')):
+            import re as _re
+            m = _re.search(r'(?:u=|url=|=)?(https?://[^&]+)', h)
+            if m:
+                h = m.group(1)
+        if h in seen or not h.startswith('http'):
+            return None
+        seen.add(h)
+        return h
+
+    async def _search(label, url, parser):
+        try:
+            async with _httpx.AsyncClient(timeout=20,
+                                          follow_redirects=True) as client:
+                r = await client.get(url, headers={'User-Agent': UA})
+                # DDG svarar 202 (rate-limit) och Brave 429 — men båda kan
+                # ändå leverera HTML med träffar. Parsa allt utom rena fel.
+                if r.status_code >= 400:
+                    _logger.info('web_search: %s svarade %s', label,
+                                 r.status_code)
+                    return None
+            soup = _Soup(r.text, 'html.parser')
+            items = parser(soup)
+            if not items:
+                _logger.info('web_search: %s gave no parsed hits', label)
+            return items
+        except Exception as exc:
+            _logger.info('web_search: %s misslyckades: %s', label, exc)
+            return None
+
+    async def _to_lines(items):
+        out = []
+        for t, h, s in items:
+            href = await _grab(h)
+            if not href:
+                continue
+            out.append(f"{len(out)+1}. {t}\n   {(s or '')[:200]}\n   {href}")
+            if len(out) >= max_results:
+                break
+        return out
+
+    # DuckDuckGo (html) — ofta blockerad, första försöket.
+    def _ddg(soup):
+        res = []
+        for el in soup.select('.result'):
+            a = el.select_one('.result__a')
+            sn = el.select_one('.result__snippet')
+            if a:
+                res.append((_html.unescape(a.get_text(strip=True)),
+                            a.get('href', ''),
+                            _html.unescape(sn.get_text(strip=True)) if sn else ''))
+        return res
+
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan DDG HTML — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
+    links = await _search('ddg',
+        'https://html.duckduckgo.com/html/?q=' + _q(query) + '&kl=wt-wt&l=wt-wt'
+        + ('&df=' + _df if _df else ''),
+        _ddg)
+    if links:
+        lines = await _to_lines(links)
+        if lines:
+            return '\n'.join(lines)
+
+    # Bing
+    def _bing(soup):
+        res = []
+        for li in soup.select('li.b_algo'):
+            a = li.select_one('h2 a')
+            if not a:
+                continue
+            sn = li.select_one('.b_caption p, p')
+            res.append((a.get_text(strip=True), a.get('href', ''),
+                        sn.get_text(strip=True) if sn else ''))
+        return res
+
+    _bing_url = 'https://www.bing.com/search?q=' + _q(query)
+    if _df:
+        # Bing använder filters=ex1:"ez5" för senaste dygnet osv. Den enkla
+        # formen (&filters=ex1%3a%22ez<kod>%22) är stabil över tid.
+        _bing_fresh = {'d': '1', 'w': '2', 'm': '3', 'y': '4'}[_df]
+        _bing_url += '&filters=ex1%3a%22ez' + _bing_fresh + '%22'
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan Bing — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
+    lines2 = await _search('bing', _bing_url, _bing)
+    out = await _to_lines(lines2 or [])
+    if out:
+        return '\n'.join(out)
+
+    # Brave
+    def _brave(soup):
+        res = []
+        for el in soup.select('.snippet'):
+            a = el.select_one('[href]') or el.select_one('a')
+            t = el.select_one('.snippet-title, .title')
+            sn = el.select_one('.snippet-description')
+            if t:
+                res.append((t.get_text(strip=True),
+                            a.get('href', '') if a else '',
+                            sn.get_text(strip=True) if sn else ''))
+        return res
+
+    _brave_url = 'https://search.brave.com/search?q=' + _q(query)
+    if _df:
+        _brave_url += '&tf=' + {'d': 'pd', 'w': 'pw', 'm': 'pm', 'y': 'py'}[_df]
+    if _out_of_budget():
+        _logger.info('web_search: tidsbudgeten (%ss) slut innan Brave — '
+                     'returnerar det som hunnits', _WEB_SEARCH_BUDGET)
+        return ""
+    lines3 = await _search('brave', _brave_url, _brave)
+    out3 = await _to_lines(lines3 or [])
+    if out3:
+        return '\n'.join(out3)
+
+    return ("No web results. DuckDuckGo, Bing and Brave were tried; the "
+            "search engines may be rate-limiting, or the query may be too "
+            "narrow. Retry once, or rephrase the query.")
+
+
+async def _tool_fetch_url(url: str = "", max_length: int = 5000,
+                          prompt: str = "") -> str:
+    """Fetch a URL and return its readable text.
+
+    ``prompt`` beskriver vad man letar efter. Det styr inte hämtningen —
+    hela texten returneras — men det följer med i svaret så att modellen
+    ser vad syftet var när den läser. Pi har samma parameter och använder
+    den för att rikta extraktionen; här är den dokumentation.
+    """
+    if not url:
+        return _missing_argument_error(
+            'url', 'a URL starting with http:// or https://',
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url').to_json()
+    if not (url.startswith('http://') or url.startswith('https://')):
+        # Ett annat schema (file:, ftp:, data:) ger samma svar varje gång —
+        # att försöka igen med samma argument hjälper inte.
+        return _invalid_value_error(
+            'url', 'a URL starting with http:// or https://', url,
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url',
+            retryable=False,
+            hint='Only http and https are fetchable; other schemes are '
+                 'rejected before any network call.').to_json()
+    try:
+        max_length = max(1000, min(int(max_length or 5000), 20000))
+    except (TypeError, ValueError):
+        max_length = 5000
+
+    # YouTube: transkriptet är det enda meningsfulla att ge en textmodell —
+    # videon kan inte ses. Görs före hämtningen; att ladda videosidan hade
+    # bara gett HTML-skalet.
+    if youtube_video_id(url):
+        transcript = extract_youtube(url, max_length)
+        if transcript:
+            return transcript
+
+    # SSRF-skydd: URL:en kommer från en LLM som kan ha fått den från en
+    # webbsida (prompt injection). Utan kontroll kan den nå molnmetadata,
+    # interna admin-gränssnitt eller Odoo självt på loopback.
+    try:
+        validate_url(url)
+    except SsrfBlocked as exc:
+        _logger.warning('fetch_url blocked by SSRF guard: %s (%s)', url, exc.reason)
+        return _invalid_value_error(
+            'url', 'a publicly reachable http(s) URL', url,
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url',
+            retryable=False,
+            hint=f'Blocked: {exc.reason}. Internal, private and loopback '
+                 'addresses are not reachable from this tool.',
+        ).to_json()
+
+    try:
+        import httpx
+
+        # Redirects följs INTE automatiskt — varje hopp valideras på nytt,
+        # annars räcker det att en publik URL redirectar till en intern.
+        async def _get_following_redirects(client):
+            current = url
+            for hop in range(MAX_REDIRECTS + 1):
+                r = await client.get(current, headers={'User-Agent': 'Odoo-AI/1.0'})
+                if r.status_code not in REDIRECT_STATUSES:
+                    return r
+                location = r.headers.get('location')
+                if not location:
+                    return r
+                current = str(httpx.URL(current).join(location))
+                validate_redirect(url, current, hop + 1)
+            raise SsrfBlocked(url, f'too many redirects (more than {MAX_REDIRECTS})')
+
+        # Cert-validering är PÅ. Den tidigare verify=False-fallbacken
+        # antog att odoo-användaren saknade läsrätt till ett lokalt CA-cert
+        # (mycacert.crt) — men det certet finns inte, och valideringen
+        # fungerar som odoo. Fallbacken gjorde i praktiken alla hämtningar
+        # ocertifierade så fort något gick fel.
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+            r = await _get_following_redirects(client)
+        r.raise_for_status()
+
+        # Vissa sajter (t.ex. docs.saltproject.io) svarar 200 med en
+        # <meta http-equiv="refresh"> i stället för HTTP 30x. Följ den —
+        # annars återstår bara metataggen efter städningen.
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+            for hop in range(MAX_REDIRECTS):
+                target = extract_meta_refresh(r.text, str(r.url))
+                if not target:
+                    break
+                validate_redirect(url, target, hop + 1)
+                r = await client.get(target, headers={'User-Agent': 'Odoo-AI/1.0'})
+                r.raise_for_status()
+
+        # PDF: extrahera textlagret. Content-Type ljuger ibland, så
+        # filsignaturen kontrolleras också.
+        content = r.content or b''
+        if is_pdf(r.headers.get('content-type', ''), content):
+            text = extract_pdf(content, max_length)
+            if not text:
+                return ('The PDF was fetched but has no text layer — it is '
+                        'probably a scanned image, which needs OCR.')
+            return text
+
+        # Riktig artikelutvinning i stället för soup.get_text(): den senare
+        # returnerade menyrader, cookie-banners och brödsmulor, så modellen
+        # fick skräp och svarade därefter.
+        text = extract_readable(r.text, str(r.url), max_length)
+        if not text:
+            return ('The page was fetched but no readable text could be '
+                    'extracted (it may be JavaScript-rendered or empty).')
+        return text
+    except SsrfBlocked as exc:
+        _logger.warning('fetch_url blocked by SSRF guard (redirect): %s (%s)',
+                        url, exc.reason)
+        return _invalid_value_error(
+            'url', 'a publicly reachable http(s) URL', url,
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url',
+            retryable=False,
+            hint=f'Blocked: {exc.reason}.',
+        ).to_json()
+    except ImportError as e:
+        return _internal_error(
+            'fetch_url', e,
+            hint='install the missing dependency: '
+                 'pip install httpx beautifulsoup4').to_json()
+    except Exception as e:
+        return _internal_error('fetch_url', e).to_json()
+
+
+def _sanitize_tool_name(name: str) -> str:
+    """Gör ett verktygsnamn giltigt för en provider: ``^[a-zA-Z0-9_-]+$``.
+
+    VARFÖR (fix-tool-name-sanitization): ett verktygsnamn med `&` gav
+    `[InvalidParameter] invalid function name format` från opencode-go, och
+    hela webbchatten svarade "Anslutningen till AI-servern bröts". Felet kom
+    från agenten `SEO & GEO-specialist` → `call_specialist_seo_&_geo_specialist`.
+
+    Den tidigare implementationen translittererade BARA icke-ASCII:
+
+        if name.isascii():
+            return name          # & ÄR ascii → oförändrat
+
+    Två hål: (1) ASCII-specialtecken som `&`, `+`, `/` passerade rakt igenom;
+    (2) vissa icke-ASCII-tecken bryts inte ner av NFKD (`→` U+2192 har ingen
+    kompatibilitetsuppdelning), så `mail_→_partner` förblev ogiltigt.
+
+    Cerebras nekar dessutom att kompilera JSON-schema för icke-ASCII-namn
+    ('driftlarm_update_bedömning' → 400 'Failed to compile the JSON schema
+    grammar'), så translittereringen behövs fortfarande — den är steg 1.
+
+    Ordningen är viktig: translitterera FÖRE ersättning, annars blir `allmän`
+    till `allm_n` i stället för `allman`.
+
+    Idempotent: ``f(f(x)) == f(x)``. Det krävs av `stream.py`, som slår upp ett
+    verktyg med både det råt och det saniterade namnet.
+    """
+    import re
+    import unicodedata
+
+    if not name:
+        return name
+
+    # 1. Translitterera icke-ASCII: å → a. Görs först så att `allmän` blir
+    #    `allman` och inte `allm_n`.
+    normalized = unicodedata.normalize('NFKD', name)
+    ascii_name = ''.join(
+        c for c in normalized if not unicodedata.combining(c))
+
+    # 2. Ersätt allt utanför regexet. Fångar både ASCII-specialtecken
+    #    (&, +, /) och icke-ASCII som NFKD inte bryter ner (→, emoji).
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', ascii_name)
+
+    # 3. Kollapsa upprepningar och trimma kanter, annars blir `a & b` →
+    #    `a___b` och namnet varierar med hur många mellanslag någon skrev.
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+    return sanitized
+
+
+def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
+    """Convert ai.tool records to executable core Tool objects.
+
+    Change ai-orchestration-tidy-up 7.5: buzz-agenter ska kunna köra med
+    EGNA tools (via identity_id.tool_ids / ai.tool) istället för att bara
+    ärva coworkerns hela verktygssats. Varje tool exekveras genom
+    ai.tool._execute_tool() (sandboxad Python-kod).
+    """
+    import json as _json
+    tools = []
+    for record in records:
+        # Builtin-verktyg (explicit-agent-tools): returnera den riktiga
+        # builtin Tool med dess Python-handler. group_ids från posten
+        # behålls så access-kontroll fungerar som för custom-verktyg.
+        # Handlern kräver env → wrappa med wrap_tools_with_env (annars
+        # "missing 1 required positional argument 'env'" vid exekvering).
+        if record.builtin_name:
+            bt = next(
+                (t for t in builtin_tools()
+                 if t.name == record.builtin_name), None)
+            if bt:
+                import dataclasses
+                wrapped = wrap_tools_with_env([bt], env)[0] if env else bt
+                tools.append(dataclasses.replace(
+                    wrapped,
+                    group_ids=list(record.group_ids.ids)
+                    if record.group_ids else []))
+                continue
+        try:
+            params = _json.loads(record.parameters or '{}') or {}
+        except Exception:
+            params = {}
+        schema = {
+            'type': 'object',
+            'properties': params.get('properties', {}) if isinstance(params, dict) else {},
+            'required': params.get('required', []) if isinstance(params, dict) else [],
+        }
+
+        async def _handler(_rec=record, **kwargs):
+            try:
+                return await _rec._execute_tool_async(kwargs)
+            except Exception as e:
+                return f'Tool {_rec.name} failed: {e}'
+
+        tools.append(Tool(
+            name=_sanitize_tool_name(record.name),
+            description=record.description or record.name,
+            parameters=schema,
+            handler=_handler,
+            risk_level=record.risk_level or 'read_only',
+            executor=record.executor or 'local',
+            capabilities=(
+                [c.strip() for c in record.capabilities.split(',') if c.strip()]
+                if record.capabilities else []),
+            group_ids=list(record.group_ids.ids) if record.group_ids else [],
+            nats_subject=record.nats_subject or 'pi.task.do',
+            nats_skills=record.nats_skills or '',
+            nats_timeout=record.nats_timeout or 30,
+        ))
+    return tools
+
+
+# ---------------------------------------------------------------------------
+# Capability-serialisering (ai-tool-access-capabilities)
+# ---------------------------------------------------------------------------
+# En förmåga (ai.tool.capability) = namn + AI-beskrivning + medlemmar.
+# Access (group_ids) filtreras INNAN dessa funktioner anropas (spec 3.5) —
+# medlemmarna i registryn är redan tillåtna för användaren.
+# ---------------------------------------------------------------------------
+
+# Max operationer per enum-tool (spec: 5–8; fler → delas eller namespace).
+CAPABILITY_ENUM_MAX_OPS = 8
+
+
+def _capability_enum_schema(members):
+    """Bygg JSON-schema för ett enum-tool: operation + alla medlemmars
+    parametrar (best-effort-merge; required hålls till operation — villkorade
+    parametrar beskrivs i text, inte i schema, för små modellers skull)."""
+    properties = {
+        'operation': {
+            'type': 'string',
+            'enum': [m.name for m in members],
+            'description': 'Operation to perform. Choose exactly one from the enum.',
+        },
+    }
+    for m in members:
+        for k, v in (m.parameters or {}).get('properties', {}).items():
+            properties.setdefault(k, v)
+    return {
+        'type': 'object',
+        'properties': properties,
+        'required': ['operation'],
+    }
+
+
+def _capability_enum_description(cap_name, cap_desc, members):
+    """Samlad AI-beskrivning med per-operation-rader (guardrails informativa)."""
+    lines = [f"{cap_name}: {cap_desc or ''}".strip(), '', 'Operationer:']
+    for m in members:
+        op_desc = (m.description or m.name).replace('\n', ' ')
+        lines.append(f'- {m.name}: {op_desc}')
+    return '\n'.join(lines)
+
+
+def capability_enum_tool(cap_name, cap_desc, members):
+    """Bygg EN Tool per förmåga med operation-enum (spec 3.3).
+
+    members: list[Tool] — redan access-filtrerade medlemmar.
+    Risk = max av medlemmarnas risk (destruktiv medlem → HITL på hela).
+    group_ids lämnas tomma: verktyget existerar bara efter access-filtrering.
+    """
+    if len(members) > CAPABILITY_ENUM_MAX_OPS:
+        raise ValueError(
+            f"Capability '{cap_name}' has {len(members)} operations "
+            f"> {CAPABILITY_ENUM_MAX_OPS} — split the capability or use "
+            'namespace mode (spec tool-capability-serialization).')
+
+    by_name = {m.name: m for m in members}
+    max_risk = max(
+        (Tool.RISK_LEVELS.get(m.risk_level, 1) for m in members),
+        default=1)
+    risk_level = next(
+        (r for r, lvl in sorted(
+            Tool.RISK_LEVELS.items(), key=lambda kv: kv[1], reverse=True)
+         if lvl <= max_risk), 'read_only')
+
+    async def _handler(_by_name=by_name, **kwargs):
+        op = kwargs.pop('operation', None)
+        member = _by_name.get(op)
+        if member is None:
+            return (f"Error: unknown operation '{op}' for capability "
+                    f"'{cap_name}'")
+        try:
+            return await member.execute(**kwargs)
+        except Exception as e:
+            return f"Tool error ({cap_name}/{op}): {e}"
+
+    return Tool(
+        name=cap_name,
+        description=_capability_enum_description(cap_name, cap_desc, members),
+        parameters=_capability_enum_schema(members),
+        handler=_handler,
+        risk_level=risk_level,
+        source='capability',
+        executor='local',
+        capabilities=['capability'],
+    )
+
+
+def capability_namespace_prompt(capabilities):
+    """Systemprompt-suffix för namespace-läge (spec 3.4): individuella verktyg
+    behålls, förmågans samlade beskrivning injiceras för att styra valet.
+
+    capabilities: list[dict] med name/description/member_names.
+    """
+    if not capabilities:
+        return ''
+    lines = ['', '## Capabilities', '']
+    for cap in capabilities:
+        lines.append(f'### {cap["name"]}')
+        lines.append(cap.get('description') or '')
+        members = cap.get('member_names') or []
+        if members:
+            lines.append('Medlemmar: ' + ', '.join(members))
+        lines.append('')
+    return '\n'.join(lines).rstrip()
+
+
+def apply_capability_serialization(registry, capabilities, mode):
+    """Applicera förmågeserialisering på ett ToolRegistry (spec 3.3/3.4).
+
+    Args:
+        registry: ToolRegistry med redan access-filtrerade verktyg.
+        capabilities: list[dict] med name/description/member_names —
+                      member_names är verktygsnamn i registryn.
+        mode: 'flat' (no-op) | 'enum' | 'namespace'.
+
+    Returns:
+        prompt_suffix: str — namespace-prompt att lägga i systemprompten
+                       (tom för flat/enum).
+    """
+    if mode == 'flat' or not capabilities:
+        return ''
+
+    if mode == 'namespace':
+        return capability_namespace_prompt(capabilities)
+
+    if mode == 'enum':
+        for cap in capabilities:
+            members = [
+                registry.get(n) for n in cap.get('member_names') or []
+                if registry.get(n) is not None]
+            if not members:
+                continue
+            if len(members) > CAPABILITY_ENUM_MAX_OPS:
+                # Dela i ≤8-operationers enheter (spec 3.3 scenario).
+                for i in range(0, len(members), CAPABILITY_ENUM_MAX_OPS):
+                    chunk = members[i:i + CAPABILITY_ENUM_MAX_OPS]
+                    name = f"{cap['name']}_{i // CAPABILITY_ENUM_MAX_OPS + 1}"
+                    registry.register(capability_enum_tool(
+                        name, cap.get('description', ''), chunk))
+            else:
+                registry.register(capability_enum_tool(
+                    cap['name'], cap.get('description', ''), members))
+            # Ta bort individuella medlemmar — LLM:en ser bara enheterna.
+            for m in members:
+                registry._tools.pop(m.name, None)
+        return ''
+
+    return ''
+
+
+# ---------------------------------------------------------------------------
+# describe_available (tool-call-quality D4)
+# ---------------------------------------------------------------------------
+#
+# VARFÖR: session 28097 letade efter mail-modellen med fem `ir.model`-
+# sökningar och fick modellnamn UTAN fält — därför fortsatte den leta. Det
+# systemet vet men aldrig gav den är: vilka modeller som finns och vilka fält
+# en fråga faktiskt behöver.
+
+#: De fältdimensioner en fråga typiskt behöver. Varje dimension fylls ur
+#: modellens FAKTISKA fält (D4) — finns ingen tidsdimension sägs det, inte en
+#: gissning.
+_AVAILABLE_DIMENSIONS = (
+    ('content', ('subject', 'name', 'title', 'description', 'body', 'summary')),
+    ('time', ('received_at', 'date', 'start', 'stop', 'date_deadline',
+              'date_start', 'create_date', 'updated_time', 'follow_up_at')),
+    ('customer', ('partner_id', 'partner_ids')),
+    ('status', ('state', 'status', 'stage_id', 'category')),
+    ('action', ('action_needed', 'activity_ids', 'todo_due')),
+)
+
+
+#: Svenska frågeord → de engelska ord som finns i modellnamn och
+#: fältbeskrivningar. Utan den här bryggan svarar "möten" och "uppgifter"
+#: tomt, eftersom modellerna heter `calendar.event` och `project.task`.
+#:
+#: Det är inte en översättning av systemet — bara de ord en användare
+#: faktiskt skriver när hen letar. Listan är avsiktligt kort; hellre tomt
+#: än en gissning som pekar på fel modell.
+_QUESTION_SYNONYMS = {
+    'möte': 'calendar event meeting', 'möten': 'calendar event meeting',
+    'kalender': 'calendar event', 'bokning': 'calendar event',
+    'uppgift': 'project task', 'uppgifter': 'project task',
+    'projekt': 'project', 'ärende': 'helpdesk ticket',
+    'ärenden': 'helpdesk ticket', 'kund': 'partner', 'kunder': 'partner',
+    'kontakt': 'partner', 'kontakter': 'partner',
+    'faktura': 'account move invoice', 'fakturor': 'account move invoice',
+    'order': 'sale order', 'offerter': 'sale order',
+    'anteckning': 'joplin note', 'anteckningar': 'joplin note',
+    'dokument': 'document page dms file', 'lag': 'document law',
+    'medarbetare': 'hr employee', 'personal': 'hr employee',
+    'företag': 'res company',
+}
+
+
+def _expand_question(question):
+    """Lägg till engelska motsvarigheter för svenska frågeord."""
+    tokens = [t for t in question.split() if len(t) > 2]
+    extra = []
+    for tok in tokens:
+        mapped = _QUESTION_SYNONYMS.get(tok)
+        if mapped:
+            extra.extend(mapped.split())
+    return tokens + extra
+
+
+def _available_fields(Model):
+    """Modellens fält grupperade per dimension.
+
+    Bara lagrade, läsbara, icke-gruppberoende fält — samma integritetsregel
+    som mixinen använder. Ett gruppbegränsat fält ska aldrig föreslås.
+    """
+    out = {}
+    for dim, candidates in _AVAILABLE_DIMENSIONS:
+        hits = []
+        for fname in candidates:
+            field = Model._fields.get(fname)
+            if not field:
+                continue
+            if field.groups:
+                continue
+            hits.append(fname)
+        if hits:
+            out[dim] = hits
+    return out
+
+
+def _tool_describe_available(env, question=''):
+    """Vad finns? Modeller och fält som svarar mot frågan.
+
+    (tool-call-quality D4.) Bygger ur modellregistret, inte ur en
+    `ir.model`-sökning: svaret ska namge de fält som bär innehåll, tid, kund
+    och status — det en fråga behöver filtrera eller sortera på.
+
+    BUDGET: topp 5 modeller, max ~1200 tecken. Ett "vad finns" som fyller
+    kontexten är ett nytt problem, inte en lösning.
+    """
+    import json as _json
+    if 'ai.okf.concept' not in env:
+        return _json.dumps({'models': [], 'note': 'OKF is not installed'})
+
+    question = (question or '').strip().lower()
+    if not question:
+        return _missing_argument_error(
+            'question', 'what you are looking for, in natural language',
+            example='"mail från en kund"',
+            tool_name='describe_available',
+            next_step='Pass the question itself, e.g. "mail" or "möten".',
+        ).to_json()
+
+    Mixin = env['ai.okf.mixin']
+    # Kandidater: de modeller systemet faktiskt indexerar (registret), inte
+    # hela ir.model. Det är de som bär kunskap och är byggda för att sökas.
+    candidates = list(Mixin._okf_indexable_models())
+    for model in Mixin._okf_related_models():
+        if model not in candidates:
+            candidates.append(model)
+
+    # Access: samma asymmetriska klassning som sökvägen. CLOSED-modeller
+    # föreslås aldrig, och svaret avslöjar inte att de dolts.
+    Resolver = env['ai.access.resolver']
+    user = env.user
+
+    scored = []
+    for model_name in candidates:
+        if model_name not in env:
+            continue
+        Model = env[model_name]
+        # Fritext: modellnamn, beskrivning och fältnamn.
+        #
+        # FYND 2026-11-11 (första driftkörningen): `user_mail_ai.mail` gick
+        # inte att hitta med frågan "mail". Vi bytte punkt mot mellanslag
+        # men lämnade understrecket, så `user_mail_ai` blev ett enda ord —
+        # och `mail` som delsträng fanns bara inuti `user_mail_ai`, vilket
+        # matchade men gav fel rang. Nu normaliseras BÅDE punkt och
+        # understreck till mellanslag, så modellnamnets ord blir sökbara.
+        haystack = ' '.join([
+            model_name.replace('.', ' ').replace('_', ' '),
+            Model._description or '',
+            ' '.join(f.replace('_', ' ') for f in Model._fields.keys()),
+        ]).lower()
+        tokens = _expand_question(question)
+        score = sum(1 for t in tokens if t in haystack)
+        if not score:
+            continue
+        # Ett ord som är modellens eget (sista ledet i namnet) väger tyngre
+        # än ett som bara finns i ett fältnamn — "mail" ska peka på
+        # mail-modellen, inte på varje modell som råkade ha ett mail-fält.
+        own = model_name.split('.')[-1].replace('_', ' ').lower()
+        if any(t in own for t in tokens):
+            score += 2
+        try:
+            kind, _ids = Resolver._classify_source_model(model_name, user)
+        except Exception:  # noqa: BLE001 — okänd klassning = stängd
+            continue
+        if kind == Resolver.CLOSED:
+            continue
+        scored.append((score, model_name, Model))
+
+    if not scored:
+        return _json.dumps({
+            'models': [],
+            'note': ('No installed model matches %r. Do not guess a model '
+                     'name — ask the user which system holds the data.'
+                     % question),
+        }, ensure_ascii=False)
+
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    out = []
+    used = 0
+    for score, model_name, Model in scored[:5]:
+        entry = {
+            'model': model_name,
+            'name': Model._description or model_name,
+            'fields': _available_fields(Model),
+        }
+        blob = _json.dumps(entry, ensure_ascii=False)
+        if used + len(blob) > 1200 and out:
+            break
+        out.append(entry)
+        used += len(blob)
+    return _json.dumps({'models': out}, ensure_ascii=False, default=str)
+
+
+def _tool_push_notification(env, title='', body='', url=None):
+    """Skicka en push-notis till sessionens användare (push-notification 1.1).
+
+    Mottagaren är ALLTID sessionens `user_id` — verktyget tar ingen
+    mottagare. Ett verktyg som tog en mottagare vore en kanal för spam och
+    för notiser som ser ut att komma från någon annan (design D1).
+
+    Sessionen läses ur `env.context` med samma två nycklar som HITL:s
+    `_resolve_session`: `_ai_context_model`/`_ai_context_id` (kanonisk
+    aktuell session) eller `ai_lineage_session_id`.
+
+    Returnerar JSON med `queued` (bool) och, när notisen inte kunde köas,
+    en `reason` som säger varför. Vi påstår aldrig att en notis levererats:
+    `_push_user_notification` köar den bara, och returnerar False när
+    användaren saknar enheter eller VAPID-nycklarna saknas.
+    """
+    import json as _json
+    if not title or not (title or '').strip():
+        return _json.dumps({'queued': False,
+                            'reason': 'title is required'})
+    if 'web.pwa.push' not in env:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'web push is not installed in this database'})
+
+    sess_id = 0
+    if env.context.get('_ai_context_model') == 'ai.coworker.session':
+        sess_id = env.context.get('_ai_context_id') or 0
+    if not sess_id:
+        sess_id = env.context.get('ai_lineage_session_id') or 0
+    if not sess_id:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'no session in context - the notification needs a '
+                      'session to know its recipient'})
+
+    try:
+        session = env['ai.coworker.session'].sudo().browse(int(sess_id))
+        if not session.exists():
+            return _json.dumps({'queued': False,
+                                'reason': 'session not found'})
+        user = session.user_id
+        if not user:
+            return _json.dumps({
+                'queued': False,
+                'reason': 'the session has no user to notify'})
+        queued = env['web.pwa.push']._push_user_notification(
+            user,
+            title=(title or '').strip(),
+            body=(body or '').strip(),
+            url=(url or '/ai/chat'),
+        )
+    except Exception as e:  # noqa: BLE001
+        _logger.warning('push_notification failed: %s', e, exc_info=True)
+        return _json.dumps({'queued': False,
+                            'reason': 'push failed: %s' % e})
+
+    if not queued:
+        return _json.dumps({
+            'queued': False,
+            'reason': 'the user has no registered device, or the server '
+                      'has no VAPID keys - nothing was sent'})
+    return _json.dumps({'queued': True, 'recipient': user.display_name})
+
+
+def builtin_tools() -> list[Tool]:
+    """Return the tools this module offers (seedningskälla).
+
+    Rollen är INTE att vara ett runtime-register. Vilka verktyg en agent
+    har avgörs uteslutande av `ai.agent.tool_ids` (explicit-agent-tools).
+
+    Används av:
+    - `ai.tool._ensure_builtin_tool_records()` — seedar en `ai.tool`-post
+      per verktyg (med `builtin_name`) vid modul-init och -update.
+    - `ai_tool_records_to_tools()` / `ai.tool.to_core_tool()` — slår upp
+      den riktiga Python-handlern för en post med `builtin_name`.
+
+    Ingen runtime-väg registrerar listan implicit i en session.
+    """
+    return [
+        Tool(
+            name="odoo_calculator",
+            description="Evaluate a mathematical expression safely. Supports +, -, *, /, parentheses, "
+                        "and basic arithmetic. Returns the numeric result as a string.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "The mathematical expression to evaluate (e.g. '12 * (3 + 4) / 2')",
+                    }
+                },
+                "required": ["expression"],
+            },
+            handler=_tool_calculator,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="odoo_web_search",
+            description="Search the web for current information. Uses DuckDuckGo "
+                        "(free, no API key) with Bing and Brave as fallback. "
+                        "Returns top results with title, snippet and URL. Good for "
+                        "documentation, news and anything online.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The search query (e.g. 'latest Odoo 18 release notes')",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (1-15, default 5)",
+                    },
+                    "recency": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "year"],
+                        "description": "Limit results by age. Leave empty for all "
+                                       "time. Use for news, releases and anything "
+                                       "where an old answer is wrong.",
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=_tool_web_search,
+            risk_level="safe",
+            trust="untrusted",
+            source="builtin",
+        ),
+        Tool(
+            name="odoo_fetch_url",
+            description="Fetch a URL and return its readable text. Handles web pages "
+                        "(article body, not menus or cookie banners), PDFs (text "
+                        "layer) and YouTube videos (transcript). Follows HTTP "
+                        "redirects and meta-refresh pages. Private, loopback and "
+                        "cloud-metadata addresses are blocked.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The full URL to fetch (must include http:// or https://)",
+                    },
+                    "max_length": {
+                        "type": "integer",
+                        "description": "Maximum characters to return (1000-20000, default 5000)",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "What you are looking for. Does not filter the "
+                                       "result — the full text is returned — but it "
+                                       "keeps your intent attached to the fetch "
+                                       "(e.g. 'the retry timeout for uploads').",
+                    },
+                },
+                "required": ["url"],
+            },
+            handler=_tool_fetch_url,
+            risk_level="safe",
+            trust="untrusted",
+            source="builtin",
+        ),
+        Tool(
+            name="news_fetch",
+            description="Fetch and parse an RSS/Atom feed from a URL and return "
+                        "normalized items (title, url, published, summary). "
+                        "Model-agnostic: it takes a URL and returns data. The "
+                        "agent owns the source list in its skill.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Feed URL (must include http:// or https://)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of items to return (1-100, default 20)",
+                    },
+                },
+                "required": ["url"],
+            },
+            handler=_tool_news_fetch,
+            risk_level="safe",
+            trust="untrusted",
+            source="builtin",
+        ),
+        Tool(
+            name="news_digest",
+            description="Read or write the user's cached news digest in personal "
+                        "memory (ai.personal.memory). Without digest_text: read "
+                        "today's cached digest (fast, no LLM call). With "
+                        "digest_text: store it for today. The digest follows "
+                        "the person, like all personal memory.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "Optional topic filter (e.g. 'AI'); empty = all",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Maximum number of news items (1-50, default 10)",
+                    },
+                    "digest_text": {
+                        "type": "string",
+                        "description": "The digest to cache (empty = read the cached one)",
+                    },
+                },
+                "required": [],
+            },
+            handler=_tool_news_digest,
+            risk_level="safe",
+            trust="untrusted",
+            source="builtin",
+        ),
+        Tool(
+            name="personal_memory",
+            description="Read or write the user's PERSONAL memory "
+                        "(ai.personal.memory) — preferences, facts, insights "
+                        "that follow the person across coworkers and "
+                        "conversations. Use action='write' to remember "
+                        "something the user told you (e.g. 'jag vill bara ha "
+                        "fem' -> category='preference'), action='search' to "
+                        "recall by query, action='recent' for the latest. "
+                        "This is how a learned preference survives the next "
+                        "session.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["write", "search", "recent"],
+                        "description": "write = store content; search = find by query; recent = latest memories",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The memory to store (required for action='write'), e.g. 'The user wants five news items'",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (for action='search'); empty = latest",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["fact", "preference", "goal", "correction",
+                                 "pattern", "feedback", "context", "insight",
+                                 "policy", "skill"],
+                        "description": "Memory type (default 'fact'); use 'preference' for what the user wants",
+                    },
+                    "importance": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "How important the memory is (default 'medium')",
+                    },
+                    "source_ref": {
+                        "type": "string",
+                        "description": "Optional reference to the source (e.g. a news URL)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results for search/recent (1-50, default 10)",
+                    },
+                },
+                "required": ["action"],
+            },
+            handler=_tool_personal_memory,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="browser_navigate",
+            description="Navigate to a URL using a headless browser and return the full page text content. "
+                        "Useful for browsing websites that require JavaScript rendering, "
+                        "checking if sites are up, or extracting content from dynamic pages. "
+                        "Delegates to a Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to navigate to (e.g. https://example.com)",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["snapshot", "screenshot", "check_uptime"],
+                        "description": "What to do on the page. snapshot = read page text, "
+                                       "screenshot = capture image, check_uptime = verify page loads",
+                    },
+                },
+                "required": ["url"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            trust="untrusted",
+            capabilities=["browser"],
+            nats_subject="pi.task.do",
+            nats_skills="agent-browser",
+        ),
+        Tool(
+            name="graph_query",
+            description="Query the Odoo Mind graph database using Cypher. "
+                        "Use this to find relationships between Odoo records — "
+                        "partners, companies, emails, invoices, strategy plans, "
+                        "knowledge articles. "
+                        "Returns JSON with nodes and relationships. "
+                        "Example: MATCH (p:OdooPartner {id: 42})-[:HAS_CONTACT]->(person) RETURN person.name, person.email "
+                        "READ-ONLY only. Cannot modify data.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Cypher query. Must be read-only (MATCH/RETURN only). "
+                                       "Example: MATCH (p:OdooPartner)-[:BELONGS_TO]->(c:Company {id: 1}) RETURN p.name",
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=_tool_graph_query,
+            risk_level="read_only",
+            source="builtin",
+        ),
+        Tool(
+            name="graphify_search",
+            description="Search graphify-indexed repositories (OCA modules, internal repos). "
+                        "Use when user asks 'does OCA have a module for...' or 'has anyone solved this?'. "
+                        "Returns module names, descriptions, relevance scores. Delegates to Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "repos": {"type": "array", "items": {"type": "string"}, "description": "Repo filter, e.g. ['oca/*']"},
+                    "limit": {"type": "integer", "description": "Max results (default 5)"},
+                },
+                "required": ["query"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            capabilities=["graphify", "external-search"],
+            nats_subject="pi.skill.graphify.search",
+            nats_skills="graphify",
+        ),
+        Tool(
+            name="pi_unified_recall",
+            description="Multi-source search across Odoo Mind AND external sources (graphify, filesystem). "
+                        "Use for comprehensive knowledge — both internal Odoo data and external systems. "
+                        "Returns ranked, attributed results. Delegates to Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "sources": {"type": "array", "items": {"type": "string"}, "description": "Sources: 'internal', 'graphify', 'filesystem', or 'all'"},
+                    "strategy": {"type": "string", "enum": ["precision", "balanced", "recall", "detective"], "description": "Search strategy"},
+                    "limit": {"type": "integer", "description": "Max results (default 10)"},
+                },
+                "required": ["query"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            capabilities=["unified-recall", "external-search"],
+            nats_subject="pi.skill.unified.recall",
+            nats_skills="odoo-unified",
+        ),
+        Tool(
+            name="echo",
+            description="Echo back the message. Useful for testing.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The message to echo back",
+                    }
+                },
+                "required": ["message"],
+            },
+            handler=_tool_echo,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="nats_publish",
+            description="Publish a message to a NATS subject for Pi workers to consume. "
+                        "Use this to delegate infrastructure tasks (bash, deployment, monitoring) "
+                        "to remote Pi agents. Returns acknowledgment or error.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string",
+                        "description": "NATS subject to publish to, e.g. 'pi.task.new' or 'pi.task.assign.{host}'",
+                    },
+                    "task_id": {
+                        "type": "integer",
+                        "description": "Unique task ID for tracking the result",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "The task prompt for the worker to execute",
+                    },
+                    "skills": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of skill names the worker should load (optional)",
+                    },
+                },
+                "required": ["subject", "task_id", "prompt"],
+            },
+            handler=_tool_nats_publish,
+            risk_level="execute",
+            source="builtin",
+        ),
+
+        # ── Quest Builder: Inventory tools (read_only, safe) ──
+        Tool(
+            name="inventory_architecture",
+            description="Return complete system architecture: all ai.* models with fields/relations, init_types, and MODULE.md docs from installed ai_* modules.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_architecture,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="inventory_quests",
+            description="List all active ai.coworker records with name, status, and init_type.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_quests,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="inventory_agents",
+            description="List all ai.agent records with name, model, and assigned skills.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_agents,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="inventory_skills",
+            description="List all ai.skill records with name, category, and trigger keywords.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_skills,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="inventory_models",
+            description="List all ai.model records with capabilities: is_vision, has_streaming, context_window, provider.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_models,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="inventory_tools",
+            description="List all ai.tool records with name and risk_level.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_tools,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="inventory_identities",
+            description="List all ai.identity templates with name and scope.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_identities,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="inventory_odoo_models",
+            description="List available Odoo models (ir.model) for powerbox binding.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=_tool_inventory_odoo_models,
+            risk_level="safe",
+            source="builtin",
+        ),
+
+        # ── Quest Builder: Execution tools (write, destructive) ──
+        Tool(
+            name="builder_create_quest",
+            description="Create a new ai.coworker record. Params: name (required), description, init_types (list), orchestration_mode (single|supervisor|buzz). Returns quest ID.",
+            parameters={"type": "object", "properties": {
+                "name": {"type": "string", "description": "Quest name"},
+                "description": {"type": "string", "description": "System prompt / quest description"},
+                "init_types": {"type": "string", "description": "Comma-separated init types: web_ui,chat,powerbox,mail,cron,server_action,manual"},
+                "orchestration_mode": {"type": "string", "enum": ["single", "supervisor", "buzz"], "description": "Orchestration mode; 'supervisor' enables multi-agent delegation"},
+            }, "required": ["name"]},
+            handler=_tool_builder_create_quest,
+            risk_level="destructive",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_update_quest",
+            description="Update an existing ai.coworker. Params: coworker_id (required), then any of: name, description, orchestration_mode.",
+            parameters={"type": "object", "properties": {
+                "coworker_id": {"type": "integer", "description": "Quest ID to update"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "orchestration_mode": {"type": "string", "enum": ["single", "supervisor", "buzz"]},
+            }, "required": ["coworker_id"]},
+            handler=_tool_builder_update_quest,
+            risk_level="destructive",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_create_agent",
+            description="Create a new ai.agent. Params: name (required), description, model (bifrost model name), skills (comma-separated skill names). Returns agent ID.",
+            parameters={"type": "object", "properties": {
+                "name": {"type": "string", "description": "Agent name"},
+                "description": {"type": "string", "description": "Agent description / role"},
+                "model": {"type": "string", "description": "AI model name (e.g. cheap, moderate, deepseek/deepseek-chat)"},
+                "skills": {"type": "string", "description": "Comma-separated skill names to assign (must exist)"},
+            }, "required": ["name"]},
+            handler=_tool_builder_create_agent,
+            risk_level="destructive",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_create_skill",
+            description="Create a new ai.skill. Params: name (required), category, recipe_text (full markdown recipe), trigger_keywords.",
+            parameters={"type": "object", "properties": {
+                "name": {"type": "string", "description": "Skill name"},
+                "category": {"type": "string", "description": "Category: general, analysis, accounting, development, infrastructure, communication, research"},
+                "recipe_text": {"type": "string", "description": "Full markdown recipe/instructions for this skill"},
+                "trigger_keywords": {"type": "string", "description": "Comma-separated keywords that trigger this skill"},
+            }, "required": ["name", "recipe_text"]},
+            handler=_tool_builder_create_skill,
+            risk_level="destructive",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_assign_agent",
+            description="Assign an agent to a quest. Params: coworker_id, agent_id, sequence (optional).",
+            parameters={"type": "object", "properties": {
+                "coworker_id": {"type": "integer"},
+                "agent_id": {"type": "integer"},
+                "sequence": {"type": "integer", "description": "Order in the agent pipeline (1-based)"},
+            }, "required": ["coworker_id", "agent_id"]},
+            handler=_tool_builder_assign_agent,
+            risk_level="destructive",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_configure_init_type",
+            description="Configure an init type on a quest. Params: coworker_id, init_type (one of: web_ui,chat,channel,mail,cron,server_action,powerbox,manual,openai_api), config_json (type-specific config).",
+            parameters={"type": "object", "properties": {
+                "coworker_id": {"type": "integer"},
+                "init_type": {"type": "string", "description": "Init type to configure"},
+                "config": {"type": "string", "description": "JSON config: for powerbox use {\"model_ids\": [\"sale.order\",\"crm.lead\"]}, for mail use {\"alias_name\":\"support\"}"},
+            }, "required": ["coworker_id", "init_type"]},
+            handler=_tool_builder_configure_init_type,
+            risk_level="destructive",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_link_skill_to_agent",
+            description="Link an existing skill to an agent. Params: agent_id, skill_id.",
+            parameters={"type": "object", "properties": {
+                "agent_id": {"type": "integer"},
+                "skill_id": {"type": "integer"},
+            }, "required": ["agent_id", "skill_id"]},
+            handler=_tool_builder_link_skill_to_agent,
+            risk_level="destructive",
+            source="builtin",
+        ),
+
+        # ── Skill Builder tools ──
+        Tool(
+            name="read_skill",
+            description="Read the full recipe_text from an ai.skill record. Params: skill_id.",
+            parameters={"type": "object", "properties": {
+                "skill_id": {"type": "integer"},
+            }, "required": ["skill_id"]},
+            handler=_tool_read_skill,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="search_github_skills",
+            description="Search GitHub for SKILL.md files matching a query. Returns repos, paths, and raw URLs.",
+            parameters={"type": "object", "properties": {
+                "query": {"type": "string"},
+            }, "required": ["query"]},
+            handler=_tool_search_github_skills,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_draft_skill",
+            description="Create a temporary draft skill for testing. Params: name (required), recipe_text, category, trigger_keywords.",
+            parameters={"type": "object", "properties": {
+                "name": {"type": "string"},
+                "recipe_text": {"type": "string"},
+                "category": {"type": "string"},
+                "trigger_keywords": {"type": "string"},
+            }, "required": ["name", "recipe_text"]},
+            handler=_tool_builder_draft_skill,
+            risk_level="destructive",
+            source="builtin",
+        ),
+        Tool(
+            name="builder_test_skill",
+            description="Test a skill by running a prompt through a temporary quest. Params: skill_id, prompt. Returns AI response.",
+            parameters={"type": "object", "properties": {
+                "skill_id": {"type": "integer"},
+                "prompt": {"type": "string"},
+            }, "required": ["skill_id", "prompt"]},
+            handler=_tool_builder_test_skill,
+            risk_level="safe",
+            source="builtin",
+        ),
+                Tool(
+            name="builder_improve_skill",
+            description="Update a skill based on user feedback. Params: skill_id, feedback, field.",
+            parameters={"type": "object", "properties": {
+                "skill_id": {"type": "integer"},
+                "feedback": {"type": "string"},
+                "field": {"type": "string", "description": "Field: recipe_text, trigger_keywords, description, category"},
+            }, "required": ["skill_id", "feedback"]},
+            handler=_tool_builder_improve_skill,
+            risk_level="destructive",
+            source="builtin",
+        ),
+
+        # ── Generic Odoo Model Tools (odoo-model-tools change) ──
+        Tool(
+            name="describe_model",
+            description="Return a model's schema: fields (type/readonly/computed), relations, available action_*/button_* methods, and capabilities (has_okf, has_graph, has_embedding). Use before searching or writing to a model.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Odoo model technical name, e.g. crm.lead",
+                        "example": "res.partner",
+                        "next_step": (
+                            "Call describe_available with your question to "
+                            "see which models exist, or pass a model like "
+                            "'res.partner'."),
+                    },
+                },
+                "required": ["model"],
+            },
+            handler=_tool_describe_model,
+            risk_level="read_only",
+            source="odoo_model",
+        ),
+        Tool(
+            name="describe_available",
+            description=(
+                "What exists? Given a question in natural language, returns "
+                "the installed models that match — with the fields that "
+                "carry content, time, customer, status and action. Use this "
+                "BEFORE guessing a model name; it is one call instead of "
+                "several ir.model searches, and it names the fields you "
+                "need to filter or sort on."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": (
+                            "What you are looking for, e.g. 'mail', "
+                            "'möten', 'fakturor'."),
+                        "example": "mail från en kund",
+                    },
+                },
+                "required": ["question"],
+            },
+            handler=_tool_describe_available,
+            risk_level="read_only",
+            source="odoo_model",
+            trust="tool",
+        ),
+        Tool(
+            name="odoo_search",
+            description="Search records via the ORM (search_read) with Odoo domain syntax. Returns id/name/display_name/create_date by default; pass fields to get more. Limit defaults to 20.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "domain": {"type": "array", "description": "Odoo search domain syntax, e.g. [[\x27state\x27, \x27=\x27, \x27draft\x27]]", "items": {"type": "array"}},
+                    "fields": {"type": "array", "items": {"type": "string"}},
+                    "limit": {"type": "integer", "default": 20},
+                    "offset": {"type": "integer"},
+                    "order": {"type": "string"},
+                },
+                "required": ["model"],
+            },
+            handler=_tool_odoo_search,
+            risk_level="read_only",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_create",
+            description="Create a record via the ORM (business layer) — defaults/onchange are applied. Returns id and display_name. Requires approval.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "values": {"type": "object", "description": "Field values"},
+                },
+                "required": ["model", "values"],
+            },
+            handler=_tool_odoo_create,
+            risk_level="write",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_call_method",
+            description="Call a business method (action_*/button_*) on a record — e.g. action_confirm, action_post. Use instead of writing state directly. Requires approval (HITL) always.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "id": {"type": "integer"},
+                    "method": {"type": "string", "description": "Method name, must start with action_ or button_ (or be whitelisted)"},
+                    "args": {"type": "object", "description": "Optional keyword arguments"},
+                },
+                "required": ["model", "id", "method"],
+            },
+            handler=_tool_odoo_call_method,
+            risk_level="execute",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_write",
+            description="Update safe fields on records. Never write state/move_type/journal_id/amount_* directly — use odoo_call_method for business flows. Requires approval.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "ids": {"type": "array", "items": {"type": "integer"}},
+                    "values": {"type": "object"},
+                },
+                "required": ["model", "ids", "values"],
+            },
+            handler=_tool_odoo_write,
+            risk_level="write",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_attach",
+            description=(
+                "Move file bytes between a file path and a binary field on any "
+                "Odoo record — model-agnostic (works for ir.attachment or "
+                "any model with a binary field). Use this to fetch a "
+                "document to disk before working on it, and to store a "
+                "result back. The file content never passes through the "
+                "model context; only the path does. Requires approval when "
+                "writing to an existing record."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string",
+                              "description": "Odoo model name, e.g. ir.attachment"},
+                    "id": {"type": "integer",
+                           "description": "Record id"},
+                    "field": {"type": "string",
+                              "description": "Binary field, e.g. content / raw"},
+                    "path": {"type": "string",
+                             "description": "File path (absolute, or relative "
+                                            "to the agent workdir)"},
+                    "direction": {
+                        "type": "string", "enum": ["in", "out"],
+                        "description": "'out' = field → path, 'in' = path → field"},
+                },
+                "required": ["model", "id", "field", "path", "direction"],
+            },
+            handler=_tool_odoo_attach,
+            risk_level="write",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_unlink",
+            description="Delete records. USE WITH CAUTION — destructive, always requires human approval (hard stop).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "ids": {"type": "array", "items": {"type": "integer"}},
+                },
+                "required": ["model", "ids"],
+            },
+            handler=_tool_odoo_unlink,
+            risk_level="destructive",
+            source="odoo_model",
+        ),
+        Tool(
+            name="okf_search",
+            description="Search OKF knowledge concepts (ai.okf.concept) — hybrid vector + full-text search with access filtering. Use for knowledge about processes/context when OKF exists.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "scope": {"type": "string", "enum": ["company", "personal", "coworker"]},
+                    "limit": {"type": "integer", "default": 10},
+                    "period": {
+                        "type": "string",
+                        "description": (
+                            "OPTIONAL. Only needed to override the automatic "
+                            "time window. Swedish relative expressions such as "
+                            "'i veckan', 'senaste månaden' or 'förra året'. "
+                            "Leave empty in most cases: mail already defaults "
+                            "to the last 7 days and calendar to the next 7, "
+                            "and an expression inside the query is understood "
+                            "automatically."),
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=_tool_okf_search,
+            risk_level="read_only",
+            source="odoo_model",
+        ),
+        Tool(
+            name="delegate_task",
+            description=(
+                "Place an assignment with a colleague (ai.coworker) in your department. Use it when the task is outside your own ability but within your department (sideways) or below you (down) — e.g. an accounting coworker asking an operations coworker to check the logs. Delegation NEVER goes upward (that is escalation) or across departments. The assignment carries your trust level and is carried out by the colleague at their own pace (heartbeat); you get the answer from there. See the colleague catalog in the system prompt for valid recipients."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "target_coworker": {
+                        "type": "string",
+                        "description": "Mottagarens namn (se kollegakatalogen)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "What should be done (required — an empty task rots)",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Kort rubrik (default: description)",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["0", "1", "2", "3"],
+                        "description": "0=Low, 1=Normal, 2=High, 3=Urgent",
+                    },
+                },
+                "required": ["target_coworker", "description"],
+            },
+            handler=_tool_delegate_task,
+            risk_level="write",
+            source="builtin",
+        ),
+        Tool(
+            name="push_notification",
+            description=(
+                "Send a push notification to the user who owns this "
+                "session. Use it BEFORE a long job so the user can leave "
+                "the chat, or when a background job finishes. The "
+                "recipient is always the session's user - you cannot "
+                "address anyone else. Returns whether the notification "
+                "could be queued; a user without registered devices gets "
+                "a clear negative answer, not a claim that it was sent."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short heading (max ~60 chars)",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "One or two sentences of context",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": (
+                            "Path opened on click, e.g. /ai/chat. "
+                            "Defaults to /ai/chat."),
+                    },
+                },
+                "required": ["title", "body"],
+            },
+            handler=_tool_push_notification,
+            risk_level="write",
+            source="builtin",
+        ),
+        Tool(
+            name="mail_digest",
+            description=(
+                "The user's most important mail, ranked, with a stated "
+                "reason per mail — one call instead of searching the mail "
+                "schema by hand. Importance comes from action_needed (3), "
+                "follow_up_at (2) and customer (1); interest_score is shown "
+                "but does NOT decide the order. Default window is 7 days "
+                "back - 'recent' means a week unless the user says otherwise. "
+                "'missed' lists mail needing action that is older than 7 days "
+                "but within 30; older mail is reported as a count, never "
+                "listed as if current. 'upcoming' returns calendar events in "
+                "the next 7 days: what is waiting is often what makes a mail "
+                "urgent. Use this FIRST for any question about the user's "
+                "mail or inbox."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer", "default": 5,
+                        "description": "How many mail to return (default 5).",
+                    },
+                    "since_days": {
+                        "type": "integer", "default": 7,
+                        "description": ("How many days back to look. "
+                                        "Default 7 - a week is what 'recent' "
+                                        "means unless the user says "
+                                        "otherwise. 0 = no limit (use with "
+                                        "care on a large inbox)."),
+                    },
+                    "only_action_needed": {
+                        "type": "boolean", "default": False,
+                        "description": "Only mail that requires action.",
+                    },
+                    "include_missed": {
+                        "type": "boolean", "default": True,
+                        "description": ("Also list mail needing action that "
+                                        "is older than 7 days."),
+                    },
+                    "missed_days": {
+                        "type": "integer", "default": 30,
+                        "description": ("How far back 'missed' may reach. "
+                                        "Mail older than this is reported "
+                                        "as a count only, not listed."),
+                    },
+                    "lookahead_days": {
+                        "type": "integer", "default": 7,
+                        "description": ("Also return calendar events in the "
+                                        "next N days (default 7) - what is "
+                                        "waiting is often what makes a mail "
+                                        "urgent."),
+                    },
+                },
+                "required": [],
+            },
+            handler=_tool_mail_digest,
+            risk_level="read_only",
+            source="builtin",
+            trust="tool",
+        ),
+    ]
+
+
+def _neg_ts(ts):
+    """Sorteringsnyckel: nyast först, utan att parsa datetime.
+
+    `received_at` ligger som sträng i digest-raden (JSON-säkert). ISO-formade
+    tidsstämplar sorterar lexikalt, så vi inverterar tecknen för fallande
+    ordning. Tom sträng hamnar sist.
+    """
+    if not ts:
+        return '\uffff'
+    return ''.join(chr(0x10FFFF - ord(c)) if ord(c) < 0x10FFFF else c
+                   for c in str(ts))
+
+
+def _tool_mail_digest(env, limit=5, since_days=7, only_action_needed=False,
+                      include_missed=True, missed_days=30,
+                      lookahead_days=7):
+    """Topp-N mail med motivering per mail — ett anrop i stället för tio.
+
+    VARFÖR (mail-digest-quality 4.1): modellen upptäckte mailschemat på nytt
+    varje gång. Mätt 2026-11-11: 19 verktygsanrop, 101 s, 32 % av anropen
+    resultatlösa — och svaret öppnade med att påstå att tabellen var tom.
+
+    Vikten beräknas ur `interest_components` (mail-digest-quality 1.1):
+    `action_needed` väger 3, `follow_up_at` 2, `partner_id` 1. Orsakerna
+    följer med varje rad, så listan går att försvara — en rankning utan
+    orsak är en rankning man inte kan lita på.
+
+    `include_missed` lägger till mail användaren sannolikt missat: kräver
+    åtgärd men äldre än 7 dagar. Det är den del som gör AI:n bättre än en
+    manuell genomgång — den ser det ingen skannar.
+
+    Returnerar JSON: {mails: [...], missed: [...], total: N, note: str}
+    """
+    import json as _json
+    from datetime import timedelta
+    from odoo import fields as _fields
+
+    if 'user_mail_ai.mail' not in env:
+        return _json.dumps({
+            'error': 'user_mail_ai.mail is not installed — no mail to digest.',
+            'hint': 'Install user_mail_ai, or use odoo_search on mail.message '
+                    'for Odoo-internal threads (those are NOT personal mail).',
+        }, ensure_ascii=False)
+
+    Mail = env['user_mail_ai.mail'].sudo()
+    user = env.user
+    # Scope: användarens egna mail. Admin ser allt, men digesten ska vara
+    # PERSONLIG — annars får en administratör andras inkorgar i svaret.
+    domain = [('user_id', '=', user.id)]
+    if only_action_needed:
+        domain.append(('action_needed', '=', True))
+    if since_days:
+        cutoff = _fields.Datetime.now() - timedelta(days=int(since_days))
+        domain.append(('received_at', '>=', cutoff))
+
+    total_in_scope = Mail.search_count(domain)
+    if not total_in_scope:
+        # Ärligt tomt, men SJÄLVBESKRIVANDE — samma lärdom som odoo_search.
+        # OCH med åldern: ett tomt 7-dagarsfönster på en inkorg vars nyaste
+        # mail är sju månader gammalt är inte "inga mail" — det är en
+        # synk som stannat. Utan åldern ser de två likadana ut.
+        any_mail = Mail.search_count([('user_id', '=', user.id)])
+        newest = Mail.search([('user_id', '=', user.id)],
+                             order='received_at desc', limit=1)
+        age = ((_fields.Datetime.now() - newest.received_at).days
+               if newest and newest.received_at else None)
+        n_act = Mail.search_count([
+            ('user_id', '=', user.id), ('action_needed', '=', True)])
+        if not any_mail:
+            note = 'The user has no mail at all in user_mail_ai.mail.'
+        elif age is not None and age > 14:
+            note = ('No mail in the last %s days. The newest mail is %d '
+                    'days old — the inbox has stopped syncing, so widening '
+                    'the window will only surface old mail. Fix the sync '
+                    'first.' % (since_days, age))
+        else:
+            note = ('No mail matched since_days=%s. The user has %d mail in '
+                    'total (%d need action) — widen the window.'
+                    % (since_days, any_mail, n_act))
+        return _json.dumps({
+            'mails': [], 'missed': [], 'upcoming': [],
+            'missed_older_count': n_act if any_mail else 0,
+            'total': 0,
+            'total_rows_for_user': any_mail,
+            'newest_mail_age_days': age,
+            'note': note,
+        }, ensure_ascii=False)
+
+    def _importance(rec):
+        """(vikt, orsaker) ur den sparade komponenten, med fallback."""
+        raw = rec.interest_components
+        if raw:
+            try:
+                d = _json.loads(raw)
+                return float(d.get('importance') or 0.0), list(d.get('reasons') or [])
+            except (ValueError, TypeError):
+                pass
+        # Fallback: räkna om (poster skapade före backfillen).
+        try:
+            return env['ai.okf.mixin']._okf_importance_of(rec)
+        except Exception:
+            return 0.0, []
+
+    def _row(rec):
+        imp, reasons = _importance(rec)
+        return {
+            'id': rec.id,
+            'subject': rec.subject or '(inget ämne)',
+            'from': rec.from_name or rec.from_email or '?',
+            'received_at': str(rec.received_at or ''),
+            'category': rec.category or '',
+            'action_needed': bool(rec.action_needed),
+            'reply_needed': bool(rec.reply_needed),
+            'importance': imp,
+            'reasons': reasons,
+            'interest_score': float(rec.interest_score or 0.0),
+            'folder': rec.folder or '',
+        }
+
+    # ── RANGORDNING (mätt 2026-11-11) ────────────────────────────────
+    # Första versionen sorterade på vikt först. Det var fel, och mätningen
+    # visade varför: vikten är 4.0 för ALLA 497 action_needed-mail
+    # (action_required + customer fyrar för varje), så den diskriminerar
+    # ingenting. Topplistan blev spam — "Din betalning nekades",
+    # "Ditt Google-konto raderas" — för de låg bara tidigast.
+    #
+    # `interest_score` diskriminerar däremot (project 7.71, other 5.98,
+    # invoice 6.92). Den ska därför RANGORDNA; vikten är ett filter
+    # (kräver åtgärd) och en förklaring, inte en ordning.
+    #
+    # Ordningen är: kräver åtgärd först (det är frågan "vad måste jag
+    # göra"), sedan intresse, sedan nyast. Vikten följer med som orsak.
+    ordered = Mail.search(
+        domain,
+        order='action_needed desc, interest_score desc, received_at desc',
+        limit=max(int(limit or 5) * 6, 30))
+    rows = [_row(r) for r in ordered]
+    rows.sort(key=lambda x: (
+        0 if x['action_needed'] else 1,   # action först
+        -x['interest_score'],              # intresse rangordnar
+        '' if not x['received_at'] else x['received_at'],
+    ), reverse=False)
+    # `received_at` är en sträng i _row(); sortera nyast först inom samma
+    # intresse genom att vända på tidsdelen separat.
+    rows.sort(key=lambda x: (
+        0 if x['action_needed'] else 1,
+        -x['interest_score'],
+        _neg_ts(x['received_at']),
+    ))
+    top = rows[:max(1, int(limit or 5))]
+
+    # ── TIDSFÖNSTER (mail-digest-quality, 2026-11-11) ────────────────
+    # "Missade" är mail som kräver åtgärd och ligger UTANFÖR det fönster
+    # användaren normalt skannar — men bara inom rimligt avstånd. Den
+    # första versionen tog ALLT äldre än 7 dagar, vilket på en inkorg som
+    # slutat synkas gav mail från sju månader tillbaka som om de vore
+    # aktuella. Det är samma tidsblindhet som gjorde att svaret listade
+    # mars/april som "dina viktigaste mail" i november.
+    #
+    # Nu: missed = äldre än 7 dagar men inom `missed_days` (default 30).
+    # Mail utanför fönstret rapporteras som ett ANTAL, inte som en lista —
+    # de är inte aktuella, men att tiga om dem vore att dölja data.
+    missed = []
+    missed_older_count = 0
+    if include_missed:
+        now = _fields.Datetime.now()
+        recent_cut = now - timedelta(days=7)
+        horizon = now - timedelta(days=int(missed_days or 30))
+        stale = Mail.search([
+            ('user_id', '=', user.id),
+            ('action_needed', '=', True),
+            ('received_at', '<', recent_cut),
+            ('received_at', '>=', horizon),
+        ], order='received_at desc', limit=5)
+        seen = {r['id'] for r in top}
+        missed = [_row(r) for r in stale if r.id not in seen]
+        missed_older_count = Mail.search_count([
+            ('user_id', '=', user.id),
+            ('action_needed', '=', True),
+            ('received_at', '<', horizon),
+        ])
+
+    # ── FRAMÅT: kalender (mail-digest-quality 5.x) ───────────────────
+    # En fråga om "viktiga mail" handlar i praktiken om VAD SOM VÄNTAR.
+    # Ett mail från i förrgår kan vara mindre angeläget än ett möte i
+    # morgon. Vi tittar därför 7 dagar framåt som underförstått
+    # komplement — samma horisont som bakåt, för symmetrin.
+    upcoming = []
+    try:
+        if 'calendar.event' in env:
+            now = _fields.Datetime.now()
+            ahead = now + timedelta(days=int(lookahead_days or 7))
+            evs = env['calendar.event'].sudo().search([
+                ('start', '>=', now),
+                ('start', '<=', ahead),
+                ('partner_ids', 'in', [user.partner_id.id]),
+            ], order='start asc', limit=5)
+            for e in evs:
+                upcoming.append({
+                    'id': e.id,
+                    'name': e.name or '(utan titel)',
+                    'start': str(e.start or ''),
+                    'days_ahead': max(0, (e.start - now).days),
+                })
+    except Exception as e:  # noqa: BLE001 — kalendern får ej fälla digesten
+        _logger.warning('mail_digest: kalender misslyckades: %s', e)
+
+    now_ts = _fields.Datetime.now()
+    newest = Mail.search([('user_id', '=', user.id)],
+                         order='received_at desc', limit=1)
+    newest_age = ((now_ts - newest.received_at).days
+                  if newest and newest.received_at else None)
+
+    note = ('Ranked by importance (action_needed=3, follow_up_at=2, '
+            'customer=1), not by interest_score alone — interest measures '
+            'how much the content touches the user, not how important it is.')
+    if missed:
+        note += (' "missed" lists mail that need action, are older than 7 '
+                 'days, and fall within the last %d days: the ones a manual '
+                 'scan tends to skip.' % int(missed_days or 30))
+    if missed_older_count:
+        note += (' %d more mail need action but are older than %d days and '
+                 'are NOT listed — they are outside the current window.'
+                 % (missed_older_count, int(missed_days or 30)))
+    if upcoming:
+        note += (' "upcoming" lists calendar events in the next %d days: '
+                 'what is waiting, which is often what makes a mail urgent.'
+                 % int(lookahead_days or 7))
+    if newest_age is not None and newest_age > 14:
+        note += (' WARNING: the newest mail is %d days old — the inbox has '
+                 'stopped syncing, so this digest reflects old data.'
+                 % newest_age)
+
+    return _json.dumps({
+        'mails': top,
+        'missed': missed,
+        'missed_older_count': missed_older_count,
+        'upcoming': upcoming,
+        'total': total_in_scope,
+        'newest_mail_age_days': newest_age,
+        'note': note,
+    }, ensure_ascii=False, default=str)
+
+
+async def _tool_echo(message: str) -> str:
+    """Echo back the message. Test tool."""
+    return message
+
+
+async def _tool_graph_query(env, query: str = "") -> str:
+    """Query the Odoo Mind AGE graph using Cypher.
+
+    Runs read-only Cypher queries against the odoo_mind graph.
+    Returns results as JSON string.
+
+    Args:
+        env: Odoo environment (injected by wrap_tools_with_env)
+        query: Cypher query string (MATCH/RETURN only)
+
+    Returns:
+        JSON string with query results
+    """
+    import json
+    if not query or not query.strip():
+        return _missing_argument_error(
+            'query', 'a graph query (AGE/Cypher syntax)',
+            example="MATCH (n:Model) RETURN n.name LIMIT 10",
+            tool_name='graph_query').to_json()
+    try:
+        executor = env['graph.executor']
+        if not executor.is_age_available():
+            return json.dumps({
+                "error": "Odoo Mind graph is not available. "
+                         "Apache AGE extension may not be installed.",
+                "hint": "Run: salt '*' state.apply postgres.age",
+            })
+        results = executor.cypher(query.strip(), read_only=True, timeout=10)
+        return json.dumps(results, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Graph query failed: {e}"})
+
+
+# Global NATS connection (lazy-init)
+_nats_connection = None
+
+#: NATS KV-bucket för mesh-lås — PROTOKOLL, samma som i `nats.ts`.
+#: Ändra inte namnet utan att tömma den gamla bucketen.
+NATS_KV_BUCKET = 'pi_mesh_locks'
+
+
+def nats_kv_create(key: str, value: str) -> bool:
+    """Atomiskt lås i NATS KV — compare-and-swap (pi-session-handover D5).
+
+    `create()` lyckas BARA om nyckeln inte finns. Atomiskt på servern:
+    den som först skriver vinner, den andra får en konflikt och backar.
+    Det är den koordinator som gör att två Pi:er aldrig samtidigt tror
+    att de äger samma session.
+
+    Synkron (körs i egen loop): anropas från ORM-kod, inte från
+    AgentLoop. Returnerar True om låset togs, False annars — aldrig ett
+    undantag (en handover som inte kan låsas ska nekas, inte krascha).
+    """
+    import asyncio
+    import os
+
+    async def _run():
+        from nats import connect as nats_connect
+        from nats.js.api import KeyValueConfig
+        nats_url = os.environ.get('NATS_URL', 'nats://localhost:4222')
+        nc = await asyncio.wait_for(nats_connect(nats_url), timeout=5.0)
+        try:
+            js = nc.jetstream()
+            try:
+                kv = await js.key_value(NATS_KV_BUCKET)
+            except Exception:
+                # Bucketen finns inte — skapa den. `history=1` räcker: vi
+                # bryr oss bara om nuvarande ägare, inte om historiken.
+                kv = await js.create_key_value(
+                    config=KeyValueConfig(bucket=NATS_KV_BUCKET, history=1))
+            await kv.create(key, value.encode())
+            return True
+        finally:
+            await nc.close()
+
+    try:
+        return asyncio.run(_run())
+    except Exception as e:
+        # Konflikt (nyckeln finns) eller NATS otillgängligt → neka.
+        _logger.info('NATS KV create denied for %s: %s', key, e)
+        return False
+
+
+def nats_kv_delete(key: str) -> bool:
+    """Släpp ett KV-lås. Best-effort — returnerar False vid fel."""
+    import asyncio
+    import os
+
+    async def _run():
+        from nats import connect as nats_connect
+        nats_url = os.environ.get('NATS_URL', 'nats://localhost:4222')
+        nc = await asyncio.wait_for(nats_connect(nats_url), timeout=5.0)
+        try:
+            kv = await nc.jetstream().key_value(NATS_KV_BUCKET)
+            await kv.delete(key)
+            return True
+        finally:
+            await nc.close()
+
+    try:
+        return asyncio.run(_run())
+    except Exception as e:
+        _logger.debug('NATS KV delete failed for %s: %s', key, e)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# NATS Executor — request-reply for tool delegation (tool-executor-nats)
+# ---------------------------------------------------------------------------
+
+
+async def _ensure_nats_connection(timeout: float = 5.0):
+    """Get or create the NATS connection. Returns (connection, error_string)."""
+    global _nats_connection
+    import os
+    import asyncio
+
+    if _nats_connection is not None and not _nats_connection.is_closed:
+        return _nats_connection, None
+
+    _nats_connection = None  # Reset dead connection
+    try:
+        from nats import connect as nats_connect
+        nats_url = os.environ.get('NATS_URL', 'nats://localhost:4222')
+        _nats_connection = await asyncio.wait_for(
+            nats_connect(nats_url), timeout=timeout
+        )
+        return _nats_connection, None
+    except asyncio.TimeoutError:
+        return None, f'NATS connection timeout to {nats_url}'
+    except Exception as e:
+        return None, f'NATS connection failed: {e}'
+
+
+async def nats_request_reply(
+    subject: str,
+    payload: dict,
+    timeout: float = 30.0,
+    conn=None,
+) -> str:
+    """Send a NATS request and wait for reply.
+
+    Uses NATS Core request-reply with _INBOX routing.
+    The reply subject is auto-generated by NATS — only this connection
+    can receive replies to this request (MITM-safe at transport level).
+
+    Args:
+        subject: NATS subject to send request to
+        payload: Dictionary to serialize as JSON payload
+        timeout: Max seconds to wait for reply
+        conn: Existing NATS connection, or None to lazy-init
+
+    Returns:
+        Reply data as decoded string, or error message string
+    """
+    import json as json_mod
+
+    # Get connection
+    if conn is None:
+        conn, err = await _ensure_nats_connection(timeout=min(timeout, 10.0))
+        if err:
+            return err
+
+    import asyncio
+    try:
+        data = json_mod.dumps(payload).encode()
+        response = await asyncio.wait_for(
+            conn.request(subject, data, timeout=timeout),
+            timeout=timeout + 1.0,  # Slight buffer for NATS timeout propagation
+        )
+        reply = response.data.decode()
+        _logger.info("NATS request-reply: subject=%s, payload=%d bytes, reply=%d bytes",
+                     subject, len(data), len(reply))
+        return reply
+    except asyncio.TimeoutError:
+        return f'NATS request timed out after {timeout}s on subject \'{subject}\''
+    except Exception as e:
+        _logger.warning("NATS request-reply failed: %s", e)
+        return f'NATS request failed: {e}'
+
+
+async def _tool_nats_publish(subject: str, task_id: int, prompt: str,
+                              skills: list[str] | None = None) -> str:
+    """Publish a task to NATS for Pi workers.
+
+    Lazy-initializes the NATS connection on first call.
+    Times out after 5 seconds if NATS is unreachable.
+    """
+    global _nats_connection
+    import os
+    import asyncio
+
+    try:
+        # Lazy init: connect on first use
+        if _nats_connection is None:
+            from nats import connect as nats_connect
+            nats_url = os.environ.get('NATS_URL', 'nats://localhost:4222')
+            try:
+                _nats_connection = await asyncio.wait_for(
+                    nats_connect(nats_url), timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                return f'NATS publish failed: connection timeout to {nats_url}'
+            except Exception as e:
+                _nats_connection = None
+                return f'NATS publish failed: {e}'
+
+        if _nats_connection.is_closed:
+            _nats_connection = None
+            return 'NATS publish failed: connection closed'
+
+        # Build payload
+        payload = {
+            'task_id': task_id,
+            'prompt': prompt,
+        }
+        if skills:
+            payload['skills'] = skills
+
+        import json as json_mod
+        data = json_mod.dumps(payload).encode()
+        await _nats_connection.publish(subject, data)
+
+        return f'Published to \'{subject}\' ({len(data)} bytes)'
+
+    except ImportError:
+        return 'NATS publish failed: nats package not installed. Install with: pip install nats-py'
+    except Exception as e:
+        _nats_connection = None
+        return f'NATS publish failed: {e}'
+
+
+# ---------------------------------------------------------------------------
+# TodoList — plan-before-action (inspired by OpenWorker)
+# ---------------------------------------------------------------------------
+
+
+from dataclasses import dataclass as dc_dataclass
+
+
+@dc_dataclass
+class TodoList:
+    """A structured task list the agent maintains.
+
+    Rendered by the UI as a progress indicator. The agent calls todo_write
+    to replace the entire list each time — never append/remove individual items.
+    """
+    items: list[dict] = None
+
+    def __post_init__(self):
+        if self.items is None:
+            self.items = []
+
+    @property
+    def done_count(self) -> int:
+        return sum(1 for item in self.items if item.get("status") == "done")
+
+    @property
+    def total_count(self) -> int:
+        return len(self.items)
+
+    @property
+    def progress_pct(self) -> float:
+        if not self.items:
+            return 0.0
+        return self.done_count / self.total_count * 100
+
+
+def _make_todo_write(holder: 'TodoList'):
+    """Bygg `todo_write` som stänger över EN hållare (D6).
+
+    Tidigare skrev verktyget till en modulnivå-global (`_TODO_HOLDER`) som
+    sattes när en loop skapades. Två loopar i samma worker — supervisor +
+    specialist, eller två samtidiga sessioner — skrev då över varandras
+    state. Det är ett korrekthetsfel, inte bara en läcka: den första loopens
+    `todo_write` hamnade i den andras lista.
+
+    En closure per `planning_tools()`-anrop ger varje loop sin egen lista
+    utan att någon global behöver existera.
+    """
+
+    async def _tool_todo_write(todos: list = None, items: list = None) -> str:
+        """Replace the task list. Each item has 'content' and 'status'.
+
+        Status must be one of: pending, in_progress, done.
+        The list replaces any previous list — provide ALL items each call.
+        """
+        import json
+
+        normalized = []
+        for entry in (todos if todos is not None else items) or []:
+            if isinstance(entry, dict):
+                status = entry.get("status", "pending")
+                if status == "completed":
+                    status = "done"
+                if status not in ("pending", "in_progress", "done"):
+                    status = "pending"
+                normalized.append({
+                    "content": str(entry.get("content", "")),
+                    "status": status,
+                })
+            else:
+                normalized.append({"content": str(entry), "status": "pending"})
+
+        holder.items = normalized
+        return json.dumps({"count": len(normalized), "todos": normalized})
+
+    return _tool_todo_write
+
+
+def _tool_propose_plan(plan: str = "") -> str:
+    """Propose a plan. In PLAN mode this pauses for approval before writes execute.
+
+    This is a sync function that returns immediately. The actual approval
+    is handled by the AgentLoop which intercepts this tool call before execution.
+
+    The plan is rendered for the user and they approve/deny. Approval flips the
+    permission mode from PLAN to INTERACTIVE (or AUTO).
+    """
+    import json
+    return json.dumps({
+        "plan_received": bool(plan),
+        "status": "pending_approval",
+        "note": "Waiting for user to approve this plan before proceeding.",
+    })
+
+
+# Modulnivå-globaler för todo-state och skill-källa togs bort (D6):
+# de gjorde att två loopar i samma worker skrev över varandras state.
+# `planning_tools()` och `skill_tools()` returnerar nu verktyg som stänger
+# över sin egen hållare/källa.
+
+
+def _make_load_skill(skill_source: callable | None):
+    """Bygg `load_skill` som stänger över EN källa (D6).
+
+    Samma skäl som för `todo_write`: en global källa sattes när en loop
+    skapades, så två samtidiga loopar läste varandras skills. En closure per
+    `skill_tools()`-anrop ger varje loop sin egen källa.
+    """
+
+    async def _tool_load_skill(name: str = "") -> str:
+        """Load a skill's full instructions by name. Call this when a skill from
+the catalog is relevant to the current task."""
+        import json
+        if not name or not name.strip():
+            return _missing_argument_error(
+                'name', 'the name of a skill from the catalog',
+                example='saltstack',
+                tool_name='load_skill').to_json()
+
+        if skill_source is None:
+            return json.dumps({
+                "error": "no skill source configured",
+                "note": "This environment doesn't support dynamic skill loading.",
+            })
+
+        try:
+            result = await skill_source(name.strip())
+            return json.dumps(result, default=str)
+        except Exception as e:
+            return json.dumps({"error": f"failed to load skill '{name}': {e}"})
+
+    return _tool_load_skill
+
+
+def skill_tools(skill_source: callable | None = None) -> list[Tool]:
+    """Return skill-related tools: load_skill.
+
+    Args:
+        skill_source: Async callable that takes a skill name and returns
+                      a dict with name, instructions, resources_path etc.
+                      If None, load_skill returns an error.
+    """
+    load_skill = _make_load_skill(skill_source)
+    return [
+        Tool(
+            name="load_skill",
+            description=(
+                "Load a skill's full instructions and resources by name. "
+                "Use this when a skill from the available skills catalog "
+                "is relevant to the current task. Returns the skill's "
+                "complete instructions and any resource paths."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The skill name to load (from the catalog)",
+                    },
+                },
+                "required": ["name"],
+            },
+            handler=load_skill,
+            risk_level="safe",
+            source="builtin",
+        ),
+    ]
+
+
+def planning_tools(todo_holder: TodoList | None = None) -> list[Tool]:
+    """Return plan-before-action tools: todo_write and propose_plan.
+
+    Args:
+        todo_holder: A TodoList instance to hold the agent's task state.
+                     If None, a fresh holder is created for this call — it
+                     is NOT stored in a module-level global (D6).
+    """
+    holder = todo_holder if todo_holder is not None else TodoList()
+    todo_write = _make_todo_write(holder)
+
+    return [
+        Tool(
+            name="todo_write",
+            description=(
+                "Replace the task list. Provide the FULL list of todos each call "
+                "— never incrementally append. Each todo is an object with: "
+                "'content' (string describing the step) and 'status' "
+                "(one of: pending, in_progress, done). Always keep exactly one "
+                "item in_progress and update statuses as you finish steps. "
+                "Start every complex task with todo_write."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "description": "The full list of todos",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "description": "What needs to be done",
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "done"],
+                                    "description": "Current status of this step",
+                                },
+                            },
+                            "required": ["content", "status"],
+                        },
+                    },
+                },
+                "required": ["todos"],
+            },
+            handler=todo_write,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="propose_plan",
+            description=(
+                "Propose a plan for the user to review before executing. "
+                "Call this with a clear, structured description of what you "
+                "plan to do — what steps, what changes, what tools you'll use. "
+                "The user will review and approve/deny. Use this in PLAN mode "
+                "after you've finished exploring and are ready to make changes."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "string",
+                        "description": (
+                            "A structured plan describing what you intend to do, "
+                            "including which tools you'll use and what changes "
+                            "you'll make."
+                        ),
+                    },
+                },
+                "required": ["plan"],
+            },
+            handler=_tool_propose_plan,
+            risk_level="safe",
+            source="builtin",
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Odoo Model Tools (TOOL-002) — auto-generated from registered models
+# ---------------------------------------------------------------------------
+
+# Odoo model field type → JSON Schema type mapping
+ODOO_TYPE_TO_JSON = {
+    'char': 'string',
+    'text': 'string',
+    'html': 'string',
+    'integer': 'integer',
+    'float': 'number',
+    'monetary': 'number',
+    'boolean': 'boolean',
+    'date': 'string',
+    'datetime': 'string',
+    'selection': 'string',
+    'many2one': 'integer',
+    'many2many': 'array',
+    'one2many': 'array',
+    'binary': 'string',
+}
+
+
+# ---------------------------------------------------------------------------
+# Generic Odoo Model Tools (odoo-model-tools change)
+# Ersätter den döda per-modell-generatorn (model_to_tools). Sex generiska
+# verktyg med modellen som parameter — kontextfönstret exploderar inte med
+# tusentals verktyg. Handlers tar `env` som första arg, injiceras av
+# wrap_tools_with_env.
+# ---------------------------------------------------------------------------
+
+# Fält som aldrig får skrivas direkt — affärsflöden går via metoder
+_ODOO_WRITE_DENYLIST = (
+    'state', 'move_type', 'journal_id', 'amount_',
+)
+
+
+def _model_scope_error(env, model):
+    """Return error-sträng om modellen ligger utanför scopen (annars '')."""
+    scoped = env.context.get('_ai_scoped_models')
+    if scoped and model not in scoped:
+        return ('Model %s is not in the scoped models for this init type '
+                '(scoped: %s)' % (model, sorted(scoped)))
+    return ''
+
+
+# ---------------------------------------------------------------------------
+# Strukturerad verktygsfeltyp (improve-ai-coworker-memory-and-tools 2.1)
+# Verktygsfel ska vara ÅTGÄRDBARA: vilken parameter, förväntat format,
+# faktiskt värde och om anropet kan göras om. Feltypen serialiseras till
+# både LLM-läsbar text och JSON (maskinläsbar för kvalitetsloopen).
+# ---------------------------------------------------------------------------
+
+class ToolError(Exception):
+    """Strukturerat, åtgärdbart verktygsfel.
+
+    Bär tillräckligt för att agenten ska kunna korrigera anropet utan att
+    tappa sessionens tråd: vilken parameter som är fel, förväntat format,
+    faktiskt värde och om ett nytt försök är meningsfullt.
+    """
+
+    def __init__(self, message, parameter='', expected='', actual='',
+                 valid_fields=None, retryable=True, tool_name='', hint='',
+                 next_step=''):
+        super().__init__(message)
+        self.message = message
+        self.parameter = parameter
+        self.expected = expected
+        self.actual = actual
+        self.valid_fields = list(valid_fields or [])
+        self.retryable = retryable
+        self.tool_name = tool_name
+        # Valfri vägledning om VARFÖR anropet avvisades och vad man gör
+        # istället — t.ex. SSRF-skyddets förklaring. Skiljer sig från
+        # ``expected`` som beskriver rätt format.
+        self.hint = hint
+        # NÄSTA STEG (tool-call-quality D3): vilken handling som leder
+        # vidare, inte bara vad som var fel. `hint` förklarar VARFÖR;
+        # `next_step` säger VAD anroparen ska göra nu.
+        #
+        # Fältet finns för att session 28097 upprepade samma tomma anrop
+        # fyra gånger: felet konstaterade vad som saknades men pekade inte
+        # vidare, så modellen försökte igen på samma sätt.
+        self.next_step = next_step
+
+    def to_text(self):
+        """LLM-läsbar text med vägledning."""
+        parts = [f"Error: {self.message}"]
+        if self.parameter:
+            parts.append(f"Parameter: {self.parameter}")
+        if self.expected:
+            parts.append(f"Expected: {self.expected}")
+        if self.actual:
+            parts.append(f"Actual: {self.actual}")
+        if self.valid_fields:
+            parts.append("Valid fields: %s" % ', '.join(self.valid_fields))
+        if self.hint:
+            parts.append(f"Hint: {self.hint}")
+        if self.next_step:
+            parts.append(f"Next step: {self.next_step}")
+        parts.append("Retryable: %s" % ('yes' if self.retryable else 'no'))
+        return '\n'.join(parts)
+
+    def to_dict(self):
+        """Maskinläsbar struktur (för kvalitetsloopen)."""
+        return {
+            'error': self.message,
+            'parameter': self.parameter,
+            'expected': self.expected,
+            'actual': self.actual,
+            'valid_fields': self.valid_fields,
+            'retryable': self.retryable,
+            'tool_name': self.tool_name,
+            'hint': self.hint,
+            'next_step': self.next_step,
+        }
+
+    def to_json(self):
+        import json as _json
+        return json.dumps(self.to_dict(), ensure_ascii=False, default=str)
+
+
+def _tool_error(message, valid_fields=None, tool_name=''):
+    """Hjälpare: okänt/felaktigt fält → åtgärdbart ToolError."""
+    return ToolError(
+        message, expected='one of: %s' % ', '.join(valid_fields or []),
+        valid_fields=valid_fields, tool_name=tool_name)
+
+
+def _missing_argument_error(parameter, expected, example='', tool_name='',
+                            next_step=''):
+    """Saknat eller tomt obligatoriskt argument → åtgärdbart fel.
+
+    Ett TOMT argument behandlas som ett saknat (atgardbara-verktygsfel D2):
+    felet ska säga vilket argument som saknas och ge ett exempel, inte eka
+    tomheten ("Unknown model: ").
+
+    :param parameter: argumentets namn
+    :param expected:  förväntat format eller vilka värden som gäller
+    :param example:   ett konkret exempel på ett giltigt värde
+    :param next_step: vilken handling som leder vidare (tool-call-quality D3).
+                      Session 28097 upprepade samma tomma anrop fyra gånger
+                      just för att felet inte pekade vidare.
+    """
+    msg = f"Missing required argument '{parameter}'"
+    if example:
+        msg += f" — example: {example}"
+    return ToolError(
+        msg,
+        parameter=parameter,
+        expected=expected,
+        actual='(empty)',
+        retryable=True,
+        tool_name=tool_name,
+        next_step=next_step,
+    )
+
+
+def _invalid_value_error(parameter, expected, actual, example='',
+                         retryable=True, tool_name='', hint=''):
+    """Fel format/värde på ett argument → åtgärdbart fel."""
+    msg = f"Invalid value for '{parameter}'"
+    if example:
+        msg += f" — example: {example}"
+    return ToolError(
+        msg,
+        parameter=parameter,
+        expected=expected,
+        actual=str(actual),
+        retryable=retryable,
+        tool_name=tool_name,
+        hint=hint,
+    )
+
+
+def _internal_error(tool_name, exc, hint=''):
+    """Oväntat fel inuti ett verktyg → strukturerat fel, inte omförsökbart.
+
+    Till skillnad från ett avvisat anrop är detta inte anroparens misstag
+    (atgardbara-verktygsfel, kategori C): ett nytt försök med samma argument
+    hjälper inte. Formen är densamma som övriga fel så konsumenterna slipper
+    specialfall, men ``retryable`` är False och ``expected`` säger att felet
+    är internt.
+    """
+    return ToolError(
+        f"{tool_name} failed: {exc}",
+        expected=hint or 'the tool to succeed — this is an internal error, '
+                        'not a bad argument',
+        actual=str(exc)[:200],
+        retryable=False,
+        tool_name=tool_name,
+    )
+
+
+def _missing_record_error(model, record_id, tool_name='', parameter=''):
+    """Resursen finns inte → åtgärdbart fel som INTE är omförsökbart.
+
+    Ett nytt försök med samma id hjälper inte (atgardbara-verktygsfel D4):
+    antingen är id:t fel eller så finns posten inte längre. Vägledningen ska
+    säga vilken modell och vilket id som avsågs, så anroparen kan slå upp
+    rätt id i stället för att gissa.
+    """
+    return ToolError(
+        f"{model} #{record_id} not found",
+        parameter=parameter or f'{model.lower().replace(".", "_")}_id',
+        expected=f'an existing {model} id',
+        actual=str(record_id),
+        retryable=False,
+        tool_name=tool_name,
+    )
+
+
+def _unknown_field_error(model, field, valid_fields, tool_name=''):
+    """Okänt fält: namnge fältet och förteckna giltiga fält."""
+    return ToolError(
+        f"Unknown field '{field}' on {model}",
+        parameter=field,
+        expected='one of: %s' % ', '.join(sorted(valid_fields)[:40]),
+        actual=field,
+        valid_fields=sorted(valid_fields),
+        tool_name=tool_name,
+    )
+
+
+def _tool_describe_model(env, model=''):
+    """Return model schema + capabilities (fält, relationer, action-metoder,
+    has_okf/has_graph/has_embedding)."""
+    import json as _json
+    # Tomt argument är ett SAKNAT argument, inte en okänd modell
+    # (atgardbara-verktygsfel D2): tidigare gav detta "Unknown model: "
+    # vilket inte namnger vad som saknas.
+    if not model or not str(model).strip():
+        return _missing_argument_error(
+            'model', 'an Odoo model name (technical name)',
+            example='res.partner',
+            tool_name='describe_model',
+            next_step=('Call describe_available with your question to see '
+                       'which models exist, or pass a model like '
+                       '"res.partner".')).to_json()
+    if model not in env.registry:
+        return _invalid_value_error(
+            'model', 'an installed Odoo model', model,
+            example='res.partner',
+            retryable=False,
+            tool_name='describe_model').to_json()
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    Model = env[model]
+    try:
+        fields_get = Model.fields_get()
+    except Exception as e:
+        return json.dumps({"error": f"fields_get failed for {model}: {e}"})
+
+    fields = {}
+    for fname, finfo in fields_get.items():
+        field_obj = Model._fields.get(fname)
+        fields[fname] = {
+            'type': finfo.get('type'),
+            'string': finfo.get('string'),
+            'readonly': bool(finfo.get('readonly')),
+            'required': bool(finfo.get('required')),
+            'relation': finfo.get('relation'),
+            'computed': bool(getattr(field_obj, 'compute', False)),
+            'related': bool(getattr(field_obj, 'related', False)),
+        }
+    relations = {
+        fname: finfo.get('relation')
+        for fname, finfo in fields_get.items()
+        if finfo.get('type') in ('many2one', 'one2many', 'many2many')
+        and finfo.get('relation')
+    }
+    action_methods = sorted({
+        name for name in dir(Model)
+        if (name.startswith('action_') or name.startswith('button_'))
+        and not name.startswith('__')
+        and callable(getattr(Model, name, None))
+    })
+    has_okf = has_graph = has_embedding = False
+    try:
+        if 'ai.artifact.type' in env:
+            has_okf = env['ai.artifact.type'].search_count(
+                [('model_id.model', '=', model)]) > 0
+    except Exception:
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
+    try:
+        if 'graph.node.definition' in env:
+            has_graph = env['graph.node.definition'].search_count(
+                [('model_id.model', '=', model)]) > 0
+    except Exception:
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
+    try:
+        for field_obj in Model._fields.values():
+            ctype = getattr(field_obj, 'column_type', (None,))[0]
+            if ctype == 'vector' or getattr(field_obj, 'type', '') == 'vector':
+                has_embedding = True
+                break
+    except Exception:
+        pass  # best-effort: tyst fallback — se etiketteringsregeln
+
+    return json.dumps({
+        'model': model,
+        'fields': fields,
+        'relations': relations,
+        'action_methods': action_methods,
+        'capabilities': {
+            'has_okf': has_okf,
+            'has_graph': has_graph,
+            'has_embedding': has_embedding,
+        },
+    }, default=str)
+
+
+def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
+                      offset=0, order=None):
+    """Search records via ORM (search_read). Defaultfält id/name/
+    display_name/create_date, limit 10–20. html/text/binary exkluderas i
+    default men respekteras om explicit begärda."""
+    import json as _json
+    if not model or model not in env.registry:
+        return json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    Model = env[model]
+    default_fields = fields is None
+    if fields is None:
+        fields = ['id']
+        for fname in ('name', 'display_name', 'create_date'):
+            if fname in Model._fields:
+                fields.append(fname)
+    elif 'id' not in fields:
+        fields = ['id'] + list(fields)
+    if default_fields:
+        try:
+            fg = Model.fields_get(fields)
+        except Exception:
+            fg = {}
+        fields = [f for f in fields
+                  if fg.get(f, {}).get('type') not in ('html', 'text', 'binary')]
+    else:
+        # Explicit fields: validera mot schemat → åtgärdbart fel (2.3).
+        unknown = [f for f in fields
+                   if f not in Model._fields and f != 'id']
+        if unknown:
+            return _unknown_field_error(
+                model, unknown[0], set(Model._fields),
+                tool_name='odoo_search').to_json()
+    try:
+        records = Model.search_read(
+            domain or [], fields=fields, limit=limit or 20,
+            offset=offset or 0, order=order)
+    except Exception as e:
+        # ── RULLA TILLBAKA (mätt 2026-11-11) ────────────────────────────
+        # En ogiltig domän (t.ex. en sträng mot ett integerfält) aborterar
+        # PostgreSQL-transaktionen. Utan rollback ärver HELA requesten den
+        # aborterade transaktionen, och nästa ORM-anrop kastar
+        # `InFailedSqlTransaction: current transaction is aborted` — även
+        # det som skulle rapportera felet. Följden blev HTTP 500 i stället
+        # för ett begripligt verktygsfel.
+        #
+        # Savepointen isolerar anropet: det trasiga sökandet rullas tillbaka,
+        # resten av requesten lever.
+        try:
+            env.cr.rollback()
+        except Exception:
+            pass  # best-effort — kan redan vara stängd
+        return ToolError(
+            f"search_read failed on {model}: {e}",
+            expected='valid domain/fields per fields_get',
+            actual=str(e),
+            tool_name='odoo_search',
+            next_step=('Check the domain types against describe_model: an '
+                       'integer field needs an integer, not a string.'),
+        ).to_json()
+
+    # ── TOMT SKA VARA SJÄLVBESKRIVANDE (mail-digest-quality 3.1) ──────
+    # Ett bart `[]` betyder idag fyra olika saker: inga rader, fel modell,
+    # fel fält, eller nekad åtkomst. Modellen kan inte skilja dem och väljer
+    # den mest sannolika tolkningen — "det finns ingen data".
+    #
+    # Mätt 2026-11-11 (session 28417): modellen sökte `mail.message` i
+    # stället för `user_mail_ai.mail`, fick `[]`, och svarade användaren att
+    # tabellen var "helt tom — noll poster för alla användare". Den hade
+    # 3 559 rader. Ett tomt svar som ser ut som ett svar är värre än ett fel.
+    #
+    # Nu bär det tomma svaret sitt eget sammanhang: vilken modell som
+    # frågades, med vilken domän, och hur många rader modellen har TOTALT.
+    # Skillnaden mellan "modellen är tom" och "din fråga matchade inget"
+    # blir synlig — och den senare är den vanliga.
+    if not records:
+        total = 0
+        total_error = ''
+        try:
+            total = Model.search_count([])
+        except Exception as e:
+            # VARFÖR INTE `except: pass` (mätt 2026-11-11): den tysta
+            # fallbacken gjorde `total = 0` även när räkningen KRASCHADE,
+            # och då påstod svaret "This is a real empty table" om en tabell
+            # med 109 887 rader. Ett fel som ser ut som ett svar är exakt
+            # den bugg fixen skulle bota — den får inte återinföras i sin
+            # egen felhantering.
+            #
+            # Räkningen är ett BEKVÄMLIGHETSFÄLT: kan vi inte räkna ska det
+            # sägas, inte gissas. `None` = okänt, aldrig 0.
+            total = None
+            total_error = '%s: %s' % (type(e).__name__, e)
+            _logger.warning(
+                'odoo_search: could not count %s (%s) — reporting the total '
+                'as unknown, not as zero', model, total_error)
+        empty = {
+            'rows': [],
+            'model': model,
+            'domain': domain or [],
+            'total_rows_in_model': total,
+        }
+        if total is None:
+            empty['note'] = (
+                'The domain matched no rows. The total row count could not '
+                'be determined (%s) — do NOT conclude the table is empty.'
+                % total_error)
+        elif total == 0:
+            empty['note'] = (
+                'The model exists but has no rows at all. This is a real '
+                'empty table, not a bad query.')
+        else:
+            empty['note'] = (
+                'The model has %d rows, but the domain matched none. The '
+                'table is NOT empty — widen or correct the domain '
+                '(check field names with describe_model, and whether the '
+                'records belong to another model).' % total)
+        return json.dumps(empty, default=str)
+
+    return json.dumps(records, default=str)
+
+
+def _log_session_object(env, model, res_ids, operation):
+    """Registrera en lyckad operation i sessionens lineage (session-object-lineage).
+
+    Skrivpunkten ligger HÄR — i den väg som utför operationen — inte i
+    efterhandsanalys av sessionens text. Anropas först efter att ORM:en
+    returnerat utan fel, så ett avvisat (HITL) eller misslyckat anrop aldrig
+    lämnar en rad.
+
+    Sessionen läses ur env.context (samma två nycklar som HITL:s
+    `_resolve_session`): `_ai_context_model`/`_ai_context_id` (kanonisk
+    aktuell session) eller `ai_lineage_session_id` (lineage-nyckeln). Saknas
+    sessionen görs ingenting — en lineage-rad utan session vore en påhittad
+    koppling.
+
+    Kastar aldrig: lineage är spårbarhet, inte ett affärsvillkor. Ett fel här
+    får inte fälla ett verktygsanrop som redan lyckats.
+    """
+    try:
+        if 'ai.coworker.session.object' not in env:
+            return 0
+        sess_id = 0
+        if env.context.get('_ai_context_model') == 'ai.coworker.session':
+            sess_id = env.context.get('_ai_context_id') or 0
+        if not sess_id:
+            sess_id = env.context.get('ai_lineage_session_id') or 0
+        if not sess_id:
+            return 0
+        return env['ai.coworker.session.object'].sudo()._log_operation(
+            sess_id, model, res_ids, operation)
+    except Exception as e:  # noqa: BLE001
+        _logger.warning(
+            'Session lineage: kunde inte logga %s %s: %s',
+            operation, model, e)
+        return 0
+
+
+def _tool_odoo_create(env, model='', values=None):
+    """Create a record via ORM (affärslager). Returnerar id + display_name.
+
+    Felaktigt/okänt fält ger ett ÅTGÄRDBART fel (2.2/2.3): fältnamn,
+    förväntade fält och om anropet kan göras om.
+    """
+    import json as _json
+    if not model or model not in env.registry:
+        return json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    Model = env[model]
+    if not Model.check_access_rights('create', raise_exception=False):
+        return json.dumps({"error": f"No create access on {model}"})
+    vals = dict(values or {})
+    # Validera fältnamn mot modellens schema innan create — ger ett
+    # åtgärdbart fel istället för ett generiskt ORM-undantag.
+    if vals:
+        valid_fields = set(Model._fields)
+        unknown = [f for f in vals if f not in valid_fields]
+        if unknown:
+            return _unknown_field_error(
+                model, unknown[0], valid_fields,
+                tool_name='odoo_create').to_json()
+    # mail.activity (och liknande modeller) har ett OBLIGATORISKT
+    # many2one-fält till ir.model (res_model_id) vars motsvarande Char-fält
+    # (res_model) är related+readonly. default_get()-mappningen som annars
+    # gör res_model -> res_model_id körs INTE vid create() från API, så
+    # anroparen måste skicka res_model_id — annars blir det
+    # "null value in column res_model_id violates not-null constraint".
+    # Vi mappar därför res_model -> res_model_id automatiskt (2026-09-22).
+    if 'res_model' in vals and 'res_model_id' not in vals:
+        _rm = vals.pop('res_model')
+        if _rm:
+            _im = env['ir.model'].sudo().search([('model', '=', _rm)], limit=1)
+            if _im:
+                vals['res_model_id'] = _im.id
+            else:
+                return json.dumps({
+                    "error": f"Unknown res_model: {_rm}",
+                    "parameter": "res_model",
+                    "expected": "ett installerat modellnamn (ir.model.model)",
+                    "actual": _rm,
+                    "retryable": False,
+                })
+    try:
+        rec = Model.create(vals)
+    except Exception as e:
+        return ToolError(
+            f"create failed on {model}: {e}",
+            expected='valid field values per fields_get',
+            actual=str(e),
+            tool_name='odoo_create',
+        ).to_json()
+    _log_session_object(env, model, [rec.id], 'created')
+    return json.dumps({
+        "ok": True, "id": rec.id,
+        "name": rec.display_name or rec.name or '',
+        # Modellen eklas tillbaka så write-verify kan slå upp posten när
+        # avtalet använder model_path (generiska verktyg, 5.1).
+        "model": model,
+        "values": vals,
+    }, default=str)
+
+
+def _tool_odoo_call_method(env, model='', id=None, ids=None, record_id=None,
+                           method='', args=None, **kwargs):
+    """Anropa affärsmetod (action_*/button_* eller vitlista). HITL alltid.
+
+    Parameternamn: `id` är den kanoniska. `ids`/`record_id` accepteras som
+    alias (LLM:er gissar olika) och normaliseras — annars blir det ett
+    otydligt TypeError: unexpected keyword argument (2026-09-22).
+    `args` kan vara dict (kwargs till metoden) eller lista (positionella).
+    """
+    import json as _json
+    # Normalisera id-alias -> id
+    if id is None:
+        if ids is not None:
+            id = ids[0] if isinstance(ids, (list, tuple)) and ids else ids
+        elif record_id is not None:
+            id = record_id
+    if not model or model not in env.registry:
+        return json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    if not method or method.startswith('_'):
+        return json.dumps({"error": f"Method '{method}' is not allowed"})
+    if not (method.startswith('action_') or method.startswith('button_')):
+        try:
+            whitelist = env['ir.config_parameter'].get_param(
+                'ai_agent_core.call_method_whitelist', '') or ''
+            allowed = {m.strip() for m in whitelist.split(',') if m.strip()}
+        except Exception:
+            allowed = set()
+        if method not in allowed:
+            return json.dumps({
+                "error": f"Method '{method}' not allowed "
+                         f"(endast action_*/button_* eller vitlista)"})
+    Model = env[model]
+    rec = Model.browse(id)
+    if not rec.exists():
+        return json.dumps({"error": f"{model} {id} not found"})
+    if not hasattr(rec, method) or not callable(getattr(rec, method)):
+        return json.dumps({"error": f"Method '{method}' not found on {model}"})
+    try:
+        if isinstance(args, (list, tuple)):
+            result = getattr(rec, method)(*args)
+        else:
+            result = getattr(rec, method)(**(args or {}))
+    except Exception as e:
+        return json.dumps({
+            "error": f"Method call {model}.{method} failed: {e}"})
+    return json.dumps({"ok": True, "result": str(result)}, default=str)
+
+
+def _tool_odoo_write(env, model='', ids=None, values=None):
+    """Skriv säkra fält (skrivbara, icke-computed/related, utanför denylist).
+    Skriv aldrig state direkt — affärsflöden via odoo_call_method."""
+    import json as _json
+    if not model or model not in env.registry:
+        return json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    Model = env[model]
+    vals = dict(values or {})
+    if not vals:
+        return json.dumps({"error": "values is required"})
+    try:
+        fg = Model.fields_get(list(vals.keys()))
+    except Exception:
+        fg = {}
+    allowed = {}
+    rejected = []
+    for fname, fval in vals.items():
+        if fname in _ODOO_WRITE_DENYLIST or any(
+                fname.startswith(d) for d in _ODOO_WRITE_DENYLIST):
+            rejected.append(fname)
+            continue
+        finfo = fg.get(fname, {})
+        field_obj = Model._fields.get(fname)
+        if finfo.get('readonly') or getattr(field_obj, 'compute', False) \
+                or getattr(field_obj, 'related', False):
+            rejected.append(fname)
+            continue
+        allowed[fname] = fval
+    if rejected:
+        # Vägledningen ska peka på RÄTT verktyg, inte bara avvisa
+        # (atgardbara-verktygsfel D3). HTML-/textfält går inte att skriva
+        # direkt här — de sätts vid skapandet via odoo_create.
+        has_html = [f for f in rejected
+                    if f in Model._fields
+                    and Model._fields[f].type in ('html', 'text')]
+        # Binärfält är `compute` (Odoos konvention) och kan därför aldrig nå
+        # hit. De skrivs via odoo_attach, som flyttar bytes utan att de
+        # passerar modellkontexten (office-document-agent 2.1).
+        has_binary = [f for f in rejected
+                      if f in Model._fields
+                      and Model._fields[f].type == 'binary']
+        if has_binary and not has_html:
+            return ToolError(
+                f"Binary fields not writable via odoo_write on {model}: "
+                f"{', '.join(has_binary)}",
+                parameter=has_binary[0],
+                expected=(
+                    'odoo_attach for binary fields — it moves file bytes '
+                    'between a path and the field without passing the file '
+                    'through the model context'),
+                actual=', '.join(has_binary),
+                retryable=True,
+                tool_name='odoo_write',
+            ).to_json()
+        if has_html:
+            expected = (
+                'HTML/text fields cannot be written by odoo_write. '
+                'Use odoo_create to set %s when creating the record, or '
+                'odoo_call_method for business flows.'
+                % ', '.join(has_html))
+        else:
+            expected = (
+                'writable, non-computed fields (or use odoo_call_method '
+                'for business flows — state changes via methods)')
+        return ToolError(
+            f"Fields not writable on {model}: {rejected}",
+            parameter=rejected[0],
+            expected=expected,
+            actual=', '.join(rejected),
+            valid_fields=sorted(
+                f for f in Model._fields
+                if not Model._fields[f].readonly
+                and not Model._fields[f].compute
+                and not Model._fields[f].related),
+            retryable=True,
+            tool_name='odoo_write',
+        ).to_json()
+    recs = Model.browse(ids or [])
+    if not recs:
+        return json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
+    try:
+        recs.write(allowed)
+    except Exception as e:
+        return json.dumps({"error": f"write failed on {model}: {e}"})
+    _log_session_object(env, model, list(recs.ids), 'updated')
+    return json.dumps({"ok": True, "ids": list(recs.ids)})
+
+
+def _tool_odoo_unlink(env, model='', ids=None):
+    """Radera poster. EXTERNAL-risk — HITL + hårt stopp i permission engine."""
+    import json as _json
+    if not model or model not in env.registry:
+        return json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    recs = env[model].browse(ids or [])
+    if not recs:
+        return json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
+    deleted_ids = list(recs.ids)
+    try:
+        recs.unlink()
+    except Exception as e:
+        return json.dumps({"error": f"unlink failed on {model}: {e}"})
+    _log_session_object(env, model, deleted_ids, 'deleted')
+    return json.dumps({"ok": True, "deleted": deleted_ids})
+
+
+# Underliggande lagringsfält som ALDRIG får skrivas direkt. De ägs av
+# modellens egen invers (t.ex. väljer en modells invers mellan flera
+# lagringsfält utifrån sin storage-konfiguration; ir.attachment.create
+# poppar raw/datas och anropar _get_datas_related_values). Att skriva dem
+# direkt kringgår modellogiken och ger inkonsekvent state
+# (office-document-agent D3).
+_ATTACH_STORAGE_DENYLIST = (
+    'content_binary', 'content_file', 'db_datas', 'store_fname',
+)
+
+
+def _attach_workdir():
+    """Agentens arbetskatalog: /tmp/<pid>/ (office-document-agent D4).
+
+    Unik per process, så samtidiga agenter inte kolliderar. Skapas vid behov.
+    """
+    import os
+    path = os.path.join('/tmp', str(os.getpid()))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def attachment_bytes(att):
+    """Return the content of an ``ir.attachment`` as bytes.
+
+    20.0 removed ``datas`` (base64 text) from ``ir.attachment``; the content
+    now lives in ``raw``, which returns a ``BinaryValue`` (``LocalBinaryFile``
+    or ``BinaryBytes``), not ``bytes``. Reading ``.datas`` there raises
+    AttributeError; writing base64 to ``raw`` stores the base64 *text*.
+
+    This helper is the one place that knows the difference, so callers do not
+    have to repeat the version dance:
+
+        data = attachment_bytes(att)     # bytes, both editions
+
+    Returns b'' when the attachment is empty.
+    """
+    # #if VERSION < "20.0"
+    import base64 as _b64
+    # #endif
+    if not att:
+        return b''
+    # #if VERSION >= "20.0"
+    raw = att.raw
+    if not raw:
+        return b''
+    return raw.content
+    # #else
+    if not att.datas:
+        return b''
+    return _b64.b64decode(att.datas)
+    # #endif
+
+
+def _binary_read_field(rec, field):
+    """Läs ett binärfält som rådata — utan att gissa på returtypen.
+
+    FÄLLA (verifierad 2026-09-30): Odoo:s binärfält returnerar `bytes` i
+    BÅDA fallen, så typen säger ingenting:
+        ir.attachment.raw   → bytes, RÅDATA
+        ir.attachment.datas → bytes, BASE64-TEXT
+        <modell>.content    → bytes, BASE64-TEXT
+    `bin_size=False` tvingar base64 för `datas`/`content` men lämnar `raw`
+    som rådata. Att läsa `raw` som om det vore base64 skriver en base64-kopia
+    till disk (440 bytes i stället för 328) — tyst korruption (T/11520).
+
+    Principen: läs alltid det fält som är base64-kodat. Är det begärda
+    fältet `raw` och modellen har ett `datas`-syskon, läs syskonet. Annars
+    läs fältet direkt (bin_size=False = base64-kontraktet).
+    """
+    import base64 as _b64
+    read_field = field
+    if field == 'raw' and 'datas' in rec._fields:
+        read_field = 'datas'
+    raw = rec.with_context(bin_size=False)[read_field]
+    if raw is None:
+        return b''
+    # #if VERSION >= "20.0"
+    # 20.0: `raw` returns a BinaryValue (LocalBinaryFile/BinaryBytes) whose
+    # content is already raw bytes. base64-decoding it would corrupt the file.
+    if hasattr(raw, 'content'):
+        return raw.content
+    # #endif
+    if isinstance(raw, bytes):
+        try:
+            return _b64.b64decode(raw)
+        except Exception:
+            return raw
+    try:
+        return _b64.b64decode(raw)
+    except Exception:
+        return str(raw).encode()
+
+
+def _binary_write_field(rec, field, data):
+    """Skriv rådata till ett binärfält — utan att gissa på förväntad form.
+
+    Speglar `_binary_read_field`: `raw` tar rådata, `datas`/`content` tar
+    base64. Att skicka base64 till `raw` ger en base64-kopia i databasen
+    (616 bytes i stället för 460) — samma tysta korruption, motsatt riktning.
+    """
+    import base64 as _b64
+    if field == 'raw':
+        # `raw` är det enda fältet som tar rådata. Modeller som exponerar
+        # `raw` har `datas` som base64-syskon — använd hellre det, så att
+        # vi alltid skriver base64 (en form, inte två).
+        if 'datas' in rec._fields:
+            rec.write({'datas': _b64.b64encode(data).decode()})
+            return
+        rec.write({'raw': data})
+        return
+    rec.write({field: _b64.b64encode(data).decode()})
+
+
+def _tool_odoo_attach(env, model='', id=None, field='', path='',
+                      direction='', **kwargs):
+    """Flytta filbytes mellan en sökväg och ett binärfält (modellagnostiskt).
+
+    `direction='out'`: fält → sökväg. `direction='in'`: sökväg → fält.
+    Resultatet innehåller ENDAST metadata (sökväg, storlek, checksumma,
+    fältnamn) — aldrig filens bytes. En base64-kodad fil passerar aldrig
+    LLM-kontexten (max_tool_result_chars=8000 gör det omöjligt).
+
+    Skrivning går via ORM:ens invers, så modellens egen lagringslogik avgör
+    var byten hamnar. Underliggande lagringsfält skrivs aldrig direkt.
+    """
+    import hashlib as _hashlib
+    import json as _json
+    import os
+
+    # ── 1. Argument (saknat/tomt = saknat, atgardbara-verktygsfel D2) ──
+    if not model or not str(model).strip():
+        return _missing_argument_error(
+            'model', 'an Odoo model name (technical name)',
+            example='ir.attachment', tool_name='odoo_attach').to_json()
+    if model not in env.registry:
+        return _invalid_value_error(
+            'model', 'an installed Odoo model', model,
+            example='ir.attachment', retryable=False,
+            tool_name='odoo_attach').to_json()
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    if not field or not str(field).strip():
+        return _missing_argument_error(
+            'field', 'a binary field on the model',
+            example='content', tool_name='odoo_attach').to_json()
+    if not path or not str(path).strip():
+        return _missing_argument_error(
+            'path', 'a file path (absolute, or relative to the agent workdir)',
+            example='/tmp/4711/deck.pptx', tool_name='odoo_attach').to_json()
+    if direction not in ('in', 'out'):
+        return _invalid_value_error(
+            'direction', "'in' (path → field) or 'out' (field → path)",
+            direction, example='out', tool_name='odoo_attach').to_json()
+
+    # ── 2. Fältvalidering INNAN något rör filsystemet ──
+    Model = env[model]
+    if field not in Model._fields:
+        return _unknown_field_error(
+            model, field, set(Model._fields),
+            tool_name='odoo_attach').to_json()
+    field_obj = Model._fields[field]
+    if field_obj.type != 'binary':
+        return _invalid_value_error(
+            'field', "a field of type 'binary'",
+            f"{field} (type: {field_obj.type})",
+            example='content', retryable=True,
+            tool_name='odoo_attach').to_json()
+    if field in _ATTACH_STORAGE_DENYLIST:
+        return ToolError(
+            f"Field '{field}' is an internal storage field on {model}",
+            parameter='field',
+            expected=("the model's exposed binary field (the one with the "
+                      "inverse) — e.g. 'raw' for ir.attachment"),
+            actual=field,
+            retryable=True,
+            tool_name='odoo_attach',
+        ).to_json()
+
+    # ── 3. Posten måste finnas ──
+    rec = Model.browse(id)
+    if not rec.exists():
+        return _missing_record_error(
+            model, id, tool_name='odoo_attach').to_json()
+
+    # ── 4. Sökväg: absolut eller relativ till arbetskatalogen ──
+    if not os.path.isabs(path):
+        path = os.path.join(_attach_workdir(), path)
+
+    try:
+        if direction == 'out':
+            # Rättigheter: ingen sudo. Läskontroll via ORM.
+            if not rec.check_access_rights('read', raise_exception=False):
+                return json.dumps({
+                    "error": f"No read access on {model}"})
+            data = _binary_read_field(rec, field)
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, 'wb') as fh:
+                fh.write(data)
+        else:
+            # Rättigheter: ingen sudo. Skrivkontroll via ORM.
+            if not rec.check_access_rights('write', raise_exception=False):
+                return json.dumps({
+                    "error": f"No write access on {model}"})
+            if not os.path.isfile(path):
+                return _invalid_value_error(
+                    'path', 'an existing file to read', path,
+                    retryable=True, tool_name='odoo_attach').to_json()
+            with open(path, 'rb') as fh:
+                data = fh.read()
+            # Skriv till det EXPONERADE fältet — inversen äger lagringen.
+            _binary_write_field(rec, field, data)
+    except PermissionError as e:
+        return json.dumps({
+            "error": f"Access denied on {model}.{field}: {e}"})
+    except Exception as e:
+        # ir.rule (postnivå) ger AccessError även när modell-ACL:n tillåter.
+        # Kärnan importerar inte Odoo-exceptions (domän-ren), så vi känner
+        # igen dem på klassnamnet. Ett behörighetsfel är inte ett internt
+        # fel — det ska säga vad som saknas och inte vara omförsökbart.
+        if type(e).__name__ in ('AccessError', 'AccessDenied'):
+            return ToolError(
+                f"Access denied on {model}.{field}",
+                parameter='model',
+                expected=('a record the current user may ' +
+                          ('read' if direction == 'out' else 'write')),
+                actual=str(e)[:200],
+                retryable=False,
+                tool_name='odoo_attach',
+            ).to_json()
+        return _internal_error('odoo_attach', e).to_json()
+
+    # ── 5. Endast metadata tillbaka ──
+    size = os.path.getsize(path) if os.path.isfile(path) else len(data)
+    return json.dumps({
+        "ok": True,
+        "model": model,
+        "id": rec.id,
+        "field": field,
+        "direction": direction,
+        "path": path,
+        "size": size,
+        "checksum": _hashlib.sha1(data).hexdigest(),
+    })
+
+
+def _tool_okf_search(env, query='', scope='company', limit=10, period=''):
+    """Sök OKF-koncept via _okf_search (hybrid pgvector + tsvector + access).
+
+    Ägaren löses ur körningskontexten (odoo-mind-memory-scope-isolation):
+    sökningen får aldrig bredda till andra ägare. company → env.company,
+    personal → env.user, coworker → coworkern i kontexten.
+    """
+    import json as _json
+    if not query or not str(query).strip():
+        # Strukturerat fel med nästa steg (tool-call-quality D3): den gamla
+        # strängen "query is required" namngav vad som saknades men inte vad
+        # anroparen skulle göra — och modellen upprepade samma tomma anrop.
+        return _missing_argument_error(
+            'query', 'a search phrase in natural language',
+            example='"mail från Skanska om offerten"',
+            tool_name='okf_search',
+            next_step=('Pass the question itself as the query, or use '
+                       'odoo_search on the model that holds the data.'),
+        ).to_json()
+    if 'ai.okf.concept' not in env:
+        return json.dumps({"error": "OKF not available"})
+    try:
+        kw = {'query': query, 'limit': limit or 10}
+        if period:
+            # Explicit period går före allt annat (okf-temporal-recall D6).
+            # Utelämnad `period` är det NORMALLA — defaulten kommer
+            # underifrån, per artefakttyp.
+            from . import okf_temporal
+            res = okf_temporal.resolve(period)
+            if res['date_from'] is not None:
+                kw['temporal_window'] = (res['date_from'], res['date_to'])
+            else:
+                _logger.info(
+                    'okf_search: period %r could not be interpreted — '
+                    'falling back to the artefact-type default', period)
+        if scope in ('company', 'personal', 'coworker'):
+            kw['scope'] = scope
+            # Ägaruppslag per scope — annars kastar _okf_search (med flit).
+            if scope == 'company':
+                kw['owner_id'] = env.company.id
+            elif scope == 'personal':
+                kw['owner_id'] = env.user.id
+            else:  # coworker
+                cw_id = env.context.get('default_coworker_id') \
+                    or env.context.get('_ai_context_coworker_id')
+                if not cw_id:
+                    sess_id = env.context.get('_ai_context_id')
+                    if sess_id and env.context.get('_ai_context_model') \
+                            == 'ai.coworker.session':
+                        sess = env['ai.coworker.session'].browse(sess_id)
+                        cw_id = sess.coworker_id.id if sess.exists() else None
+                if not cw_id:
+                    return json.dumps({
+                        "error": "coworker scope requires a coworker in the context (default_coworker_id)"})
+                kw['owner_id'] = cw_id
+        Concept = env['ai.okf.concept']
+        results = Concept._okf_search(**kw)
+        out = [{
+            'id': c.id, 'title': c.title,
+            'summary': (c.summary or '')[:500],
+            'concept_key': c.concept_key, 'scope': c.scope,
+            'status': c.status,
+            # Källdatumet hör till svaret: en träff utan tid går inte att
+            # bedöma som "nära" eller "gammal" (task 4.6).
+            'source_date': c.source_date.isoformat() if c.source_date else None,
+            'temporal_role': c.temporal_role or None,
+        } for c in results]
+        # Diagnostiken förklarar vilket fönster som användes — eller att
+        # inget gjorde det och varför. Utan den går ett "tomt" svar inte
+        # att skilja från ett "utanför fönstret".
+        diag = Concept._okf_temporal_diag()
+        payload = {
+            'results': out,
+            'temporal': {
+                'from': diag['from'].isoformat() if diag['from'] else None,
+                'to': diag['to'].isoformat() if diag['to'] else None,
+                'direction': diag['direction'],
+                'source': diag['source'],
+                'unmatched': diag['unmatched'],
+            },
+        }
+        return json.dumps(payload, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"okf_search failed: {e}"})
+
+
+# ---------------------------------------------------------------------------
+# Delegering (coworker-delegation)
+# ---------------------------------------------------------------------------
+
+def _current_coworker(env):
+    """Coworkern som kör just nu (via session-kontexten), eller None.
+
+    Sessionen är den kanoniska "aktuella körningen" — samma idiom som
+    `_resolve_session` och okf_search använder.
+    """
+    if env.context.get('_ai_context_model') != 'ai.coworker.session':
+        return None
+    sess_id = env.context.get('_ai_context_id')
+    if not sess_id:
+        return None
+    sess = env['ai.coworker.session'].browse(int(sess_id))
+    if sess.exists() and sess.coworker_id:
+        return sess.coworker_id
+    return None
+
+
+def _delegation_error(message, parameter='', expected='', retryable=True,
+                      tool_name='delegate_task'):
+    """Åtgärdbart fel (spec: Actionable errors)."""
+    import json as _json
+    out = {"error": message, "ok": False}
+    if parameter:
+        out["parameter"] = parameter
+    if expected:
+        out["expected"] = expected
+    out["retryable"] = retryable
+    return _json.dumps(out, ensure_ascii=False)
+
+
+def _tool_delegate_task(env, target_coworker='', description='',
+                        name='', priority='1'):
+    """Lägg ett uppdrag hos en kollega i organisationen.
+
+    Delegering är ORGANISATION: mottagaren måste ligga i din avdelning
+    (sidledes) eller under dig i avdelningsträdet (neråt) — aldrig uppåt
+    (det är eskalering) eller tvärs över avdelningar. Uppdraget bär ditt
+    tillitssteg och utförs under min(beställare, utförare), så delegering
+    ger ingen ny befogenhet. Budgeten är mottagarens; kostnaden kan följas
+    via uppdragets träd (parent_task_id).
+
+    Använd när uppgiften ligger utanför din egen förmåga men inom din
+    avdelning. Ange mottagarens exakta namn (se kollegakatalogen).
+
+    Args:
+        target_coworker: mottagarens namn (eller id) — se kollegakatalogen.
+        description: vad som ska göras (krävs; en tom uppgift ruttnar).
+        name: kort rubrik (default: description).
+        priority: 0=Låg, 1=Normal, 2=Hög, 3=Brådskande.
+
+    Returns:
+        JSON med ok + task_id + mottagare, eller ett åtgärdbart fel.
+    """
+    import json as _json
+    requester = _current_coworker(env)
+    if requester is None:
+        return _delegation_error(
+            'delegate_task can only be used inside a coworker run (no current session in the context).',
+            parameter='target_coworker', retryable=False)
+    if not (description or '').strip():
+        return _delegation_error(
+            'description is required — a task without a description is not queued.',
+            parameter='description',
+            expected='en tydlig beskrivning av uppdraget', retryable=True)
+    target_coworker = str(target_coworker or '').strip()
+    if not target_coworker:
+        return _delegation_error(
+            'target_coworker is required — give the colleague name (see the colleague catalog).', parameter='target_coworker',
+            expected='en kollega i din avdelning (eller under dig)',
+            retryable=True)
+
+    Coworker = env['ai.coworker']
+    target = Coworker.browse(int(target_coworker)) \
+        if target_coworker.isdigit() else None
+    if target is not None and not target.exists():
+        target = None
+    if target is None:
+        target = Coworker.search([('name', '=', target_coworker)], limit=1)
+    if not target:
+        target = Coworker.search([('name', 'ilike', target_coworker)], limit=1)
+    if not target:
+        return _delegation_error(
+            'Hittade ingen kollega som matchar "%s".' % target_coworker,
+            parameter='target_coworker',
+            expected='exact name of a colleague in your department (see the colleague catalog)', retryable=True)
+
+    try:
+        task = requester._delegate_task_to(
+            target, description, name=(name or None), priority=priority)
+    except Exception as e:
+        # ValidationError från _delegate_task_to bär redan ett begripligt
+        # meddelande (riktning, mottagbarhet, djup, kvot). Andra fel blir
+        # ett internt fel — men aldrig en tyst framgång.
+        if type(e).__name__ == 'ValidationError':
+            return _delegation_error(str(e), retryable=True)
+        return _internal_error('delegate_task', e).to_json()
+
+    return _json.dumps({
+        "ok": True,
+        "task_id": task.id,
+        "name": task.name,
+        "target": target.name,
+        "delegation_depth": task.delegation_depth,
+        "message": ("The assignment now sits with %s. You get the answer from there once the colleague picks it up." % target.name),
+    }, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# Quest Builder Tool Handlers
+# ---------------------------------------------------------------------------
+
+def _tool_inventory_architecture(env, **kwargs):
+    """Return complete system architecture via runtime introspection + MODULE.md."""
+    import json as _json, os as _os
+    result = {"models": {}, "init_types": [], "modules": {}}
+
+    # Runtime introspection: all ai.* models
+    for model_name in sorted(env.registry._fields):
+        if not model_name.startswith("ai."):
+            continue
+        Model = env[model_name]
+        fields_info = {}
+        for fname, field in Model._fields.items():
+            if fname.startswith("_"):
+                continue
+            info = {"type": field.type}
+            if hasattr(field, "required"):
+                info["required"] = field.required
+            if hasattr(field, "help") and field.help:
+                info["help"] = field.help[:200]
+            if hasattr(field, "comodel_name") and field.comodel_name:
+                info["relation"] = field.comodel_name
+            fields_info[fname] = info
+        result["models"][model_name] = {
+            "description": getattr(Model, "_description", ""),
+            "fields": fields_info,
+        }
+
+    # Init types
+    if hasattr(env["ai.coworker.init_type"], "INIT_TYPE_SELECTION"):
+        result["init_types"] = [
+            {"key": k, "label": v}
+            for k, v in env["ai.coworker.init_type"].INIT_TYPE_SELECTION
+        ]
+
+    # MODULE.md files from ai_* modules
+    addons_paths = getattr(__import__("odoo").modules.module, "get_module_root", lambda x: None)
+    search_dirs = [
+        "/usr/share/odoo-ai",
+        "/usr/lib/python3/dist-packages/odoo/addons",
+    ]
+    for base_dir in search_dirs:
+        if not _os.path.isdir(base_dir):
+            continue
+        for entry in _os.listdir(base_dir):
+            if not entry.startswith("ai_"):
+                continue
+            md_path = _os.path.join(base_dir, entry, "MODULE.md")
+            if _os.path.isfile(md_path):
+                try:
+                    with open(md_path, "r") as f:
+                        result["modules"][entry] = f.read()[:4000]
+                except Exception:
+                    pass  # best-effort: tyst fallback — se etiketteringsregeln
+
+    return json.dumps(result, indent=2, default=str)
+
+
+def _tool_inventory_quests(env, **kwargs):
+    import json as _json
+    quests = env["ai.coworker"].search([("active", "=", True)])
+    data = [{"id": q.id, "name": q.name, "status": q.status,
+             "init_type": q.init_type, "orchestration_mode": q.orchestration_mode,
+             "agent_count": q.agent_count}
+            for q in quests]
+    return json.dumps(data, indent=2)
+
+
+def _tool_inventory_agents(env, **kwargs):
+    import json as _json
+    agents = env["ai.agent"].search([])
+    data = []
+    for a in agents:
+        skills = [s.name for s in a.skill_ids]
+        model_name = a.model_id.name if a.model_id else "none"
+        data.append({"id": a.id, "name": a.name, "model": model_name,
+                     "provider_type": a.provider_type, "skills": skills})
+    return json.dumps(data, indent=2)
+
+
+def _tool_inventory_skills(env, **kwargs):
+    import json as _json
+    skills = env["ai.skill"].search([])
+    data = [{"id": s.id, "name": s.name, "category": s.category or "general",
+             "trigger_keywords": s.trigger_keywords or "",
+             "description": (s.description or "")[:200]}
+            for s in skills]
+    return json.dumps(data, indent=2)
+
+
+def _tool_inventory_models(env, **kwargs):
+    import json as _json
+    models = env["ai.model"].search([("active", "=", True)])
+    data = [{"id": m.id, "name": m.name, "display_name": m.display_name,
+             "is_vision": m.is_vision, "has_streaming": m.has_streaming,
+             "context_window": m.context_window,
+             "provider": m.provider.name if m.provider else "unknown"}
+            for m in models]
+    return json.dumps(data, indent=2)
+
+
+def _tool_inventory_tools(env, **kwargs):
+    import json as _json
+    tools = env["ai.tool"].search([])
+    data = [{"id": t.id, "name": t.name, "risk_level": t.risk_level,
+             "description": (t.description or "")[:200]}
+            for t in tools]
+    return json.dumps(data, indent=2)
+
+
+def _tool_inventory_identities(env, **kwargs):
+    import json as _json
+    identities = env["ai.identity"].search([("is_template", "=", True)])
+    data = [{"id": i.id, "name": i.name, "scope": i.scope,
+             "description": (i.description or "")[:200]}
+            for i in identities]
+    return json.dumps(data, indent=2)
+
+
+def _tool_inventory_odoo_models(env, **kwargs):
+    import json as _json
+    models = env["ir.model"].search([("transient", "=", False)])
+    data = [{"id": m.id, "model": m.model, "name": m.name}
+            for m in models[:200]]  # Limit to avoid huge responses
+    return json.dumps(data, indent=2)
+
+
+def _tool_builder_create_quest(env, name, description="", init_types="", orchestration_mode="single", **kwargs):
+    """Create a new ai.coworker. Returns quest ID."""
+    vals = {
+        "name": name,
+        "description": description,
+        "status": "active",
+        "orchestration_mode": orchestration_mode or "single",
+    }
+    quest = env["ai.coworker"].create(vals)
+
+    # Configure init types
+    if init_types:
+        for itype in [t.strip() for t in init_types.split(",") if t.strip()]:
+            env["ai.coworker.init_type"].create({
+                "coworker_id": quest.id,
+                "init_type": itype,
+                "active": True,
+            })
+
+    return f"Quest #{quest.id} '{quest.name}' created with init_types: {init_types or 'none'}"
+
+
+def _tool_builder_update_quest(env, coworker_id, **kwargs):
+    """Update an existing ai.coworker. Only updates provided fields."""
+    quest = env["ai.coworker"].browse(int(coworker_id))
+    if not quest.exists():
+        return _missing_record_error(
+            'ai.coworker', coworker_id,
+            tool_name='builder_update_quest').to_json()
+    updates = {}
+    for field in ("name", "description"):
+        if field in kwargs and kwargs[field]:
+            updates[field] = kwargs[field]
+    if kwargs.get("orchestration_mode"):
+        updates["orchestration_mode"] = kwargs["orchestration_mode"]
+    if updates:
+        quest.write(updates)
+    return f"Quest #{quest.id} updated: {list(updates.keys())}"
+
+
+def _tool_builder_create_agent(env, name, description="", model="", skills="", **kwargs):
+    """Create a new ai.agent. Returns agent ID."""
+    if not model:
+        from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+        model = get_default_model_name()
+    vals = {
+        "name": name,
+        "description": description,
+        "provider_type": "bifrost",
+        "bifrost_model": model,
+        "status": "active",
+    }
+    agent = env["ai.agent"].create(vals)
+
+    # Link skills
+    if skills:
+        skill_names = [s.strip() for s in skills.split(",") if s.strip()]
+        skill_recs = env["ai.skill"].search([("name", "in", skill_names)])
+        if skill_recs:
+            agent.skill_ids = [(6, 0, skill_recs.ids)]
+        found = {s.name for s in skill_recs}
+        missing = set(skill_names) - found
+        if missing:
+            return (f"Agent #{agent.id} '{agent.name}' created. "
+                    f"Skills linked: {list(found)}. "
+                    f"Skills NOT found: {list(missing)} — create them first with builder_create_skill.")
+
+    return f"Agent #{agent.id} '{agent.name}' created with model {model}"
+
+
+def _tool_builder_create_skill(env, name, recipe_text, category="general", trigger_keywords="", **kwargs):
+    """Create a new ai.skill. Returns skill ID."""
+    skill = env["ai.skill"].create({
+        "name": name,
+        "description": recipe_text[:200],
+        "recipe_text": recipe_text,
+        "category": category,
+        "trigger_keywords": trigger_keywords,
+        "compatibility": "any",
+    })
+    return f"Skill #{skill.id} '{skill.name}' created (category: {category})"
+
+
+def _tool_builder_assign_agent(env, coworker_id, agent_id, sequence=10, **kwargs):
+    """Assign an agent to a quest."""
+    quest = env["ai.coworker"].browse(int(coworker_id))
+    agent = env["ai.agent"].browse(int(agent_id))
+    if not quest.exists():
+        return _missing_record_error(
+            'ai.coworker', coworker_id,
+            tool_name='builder_assign_agent').to_json()
+    if not agent.exists():
+        return _missing_record_error(
+            'ai.agent', agent_id,
+            tool_name='builder_assign_agent').to_json()
+    existing = env["ai.coworker.agent"].search([
+        ("coworker_id", "=", quest.id),
+        ("agent_id", "=", agent.id),
+    ])
+    if existing:
+        return f"Agent '{agent.name}' already assigned to quest '{quest.name}'"
+    env["ai.coworker.agent"].create({
+        "coworker_id": quest.id,
+        "agent_id": agent.id,
+        "sequence": int(sequence),
+    })
+    return f"Agent '{agent.name}' assigned to quest '{quest.name}' (sequence: {sequence})"
+
+
+def _tool_builder_configure_init_type(env, coworker_id, init_type, config="{}", **kwargs):
+    """Configure an init type on a quest."""
+    import json as _json
+    quest = env["ai.coworker"].browse(int(coworker_id))
+    if not quest.exists():
+        return _missing_record_error(
+            'ai.coworker', coworker_id,
+            tool_name='builder_configure_init_type').to_json()
+    config_data = _json.loads(config) if isinstance(config, str) else config
+    vals = {
+        "coworker_id": quest.id,
+        "init_type": init_type,
+        "active": True,
+    }
+    if init_type == "powerbox" and "model_ids" in config_data:
+        model_recs = env["ir.model"].search([
+            ("model", "in", config_data["model_ids"])
+        ])
+        quest.write({"model_ids": [(6, 0, model_recs.ids)]})
+    if init_type == "mail" and "alias_name" in config_data:
+        vals["alias_name"] = config_data["alias_name"]
+    if init_type == "web_ui":
+        quest.write({"show_in_chat": True})
+    # Let the init_type record auto-create resources (chat_user, alias, cron, etc.)
+    init_record = env["ai.coworker.init_type"].create(vals)
+    init_record._after_change()
+    return f"Init type '{init_type}' configured for quest '{quest.name}'"
+
+
+def _tool_builder_link_skill_to_agent(env, agent_id, skill_id, **kwargs):
+    """Link an existing skill to an agent."""
+    agent = env["ai.agent"].browse(int(agent_id))
+    skill = env["ai.skill"].browse(int(skill_id))
+    if not agent.exists():
+        return _missing_record_error(
+            'ai.agent', agent_id,
+            tool_name='builder_link_skill_to_agent').to_json()
+    if not skill.exists():
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='builder_link_skill_to_agent').to_json()
+    agent.skill_ids = [(4, skill.id)]
+    return f"Skill '{skill.name}' linked to agent '{agent.name}'"
+
+
+# ── Skill Builder Tool Handlers ──
+
+def _tool_read_skill(env, skill_id, **kwargs):
+    """Read full recipe_text from an ai.skill record."""
+    skill = env["ai.skill"].browse(int(skill_id))
+    if not skill.exists():
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='read_skill').to_json()
+    return (
+        f"# {skill.name}\n\n"
+        f"Category: {skill.category or 'general'}\n"
+        f"Triggers: {skill.trigger_keywords or '(none)'}\n"
+        f"Description: {(skill.description or '')[:200]}\n\n"
+        f"## Recipe\n\n{skill.recipe_text or '(no recipe)'}"
+    )
+
+
+def _tool_search_github_skills(env, query, **kwargs):
+    """Search GitHub for SKILL.md files matching query."""
+    import json as _json, urllib.request, urllib.parse
+    q = urllib.parse.quote(f"{query} SKILL.md in:path")
+    url = f"https://api.github.com/search/code?q={q}&per_page=10"
+    try:
+        req = urllib.request.Request(url)
+        req.add_header("Accept", "application/vnd.github.v3+json")
+        req.add_header("User-Agent", "odoo-ai-skill-builder")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+        results = []
+        for item in data.get("items", [])[:10]:
+            raw_url = item["html_url"].replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+            results.append({
+                "repo": item["repository"]["full_name"],
+                "path": item["path"],
+                "raw_url": raw_url,
+            })
+        return json.dumps(results, indent=2) if results else "No matching skills found on GitHub"
+    except Exception as e:
+        return json.dumps({"error": str(e), "tip": "Try web_search instead if GitHub API is rate-limited"})
+
+
+def _tool_builder_draft_skill(env, name, recipe_text, category="general", trigger_keywords="", **kwargs):
+    """Create a temporary draft skill for testing."""
+    skill = env["ai.skill"].create({
+        "name": f"[DRAFT] {name}",
+        "description": recipe_text[:200] if recipe_text else name,
+        "recipe_text": recipe_text,
+        "category": category,
+        "trigger_keywords": trigger_keywords,
+        "compatibility": "any",
+        "active": False,  # Draft, not visible
+    })
+    return f"Draft skill #{skill.id} '{name}' created. Use builder_test_skill({skill.id}, prompt) to test it."
+
+
+def _tool_builder_test_skill(env, skill_id, prompt, **kwargs):
+    """Test a skill by running a prompt through a temporary quest."""
+    skill = env["ai.skill"].browse(int(skill_id))
+    if not skill.exists():
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='builder_test_skill').to_json()
+    quest = env["ai.coworker"].create({
+        "name": f"Test: {skill.name}",
+        "description": skill.recipe_text or skill.description or "",
+        "init_type": "manual",
+        "status": "draft",
+    })
+    try:
+        result = quest.run(prompt=prompt)
+        return result if result else "(empty response)"
+    finally:
+        quest.unlink()
+
+
+def _tool_builder_create_skill(env, name, recipe_text, category="general",
+                                trigger_keywords="", description="", **kwargs):
+    """Save a skill permanently."""
+    desc = description or (recipe_text[:200] if recipe_text else name)
+    desc = desc[:1024]  # Max 1024 chars
+    skill = env["ai.skill"].create({
+        "name": name,
+        "description": desc,
+        "recipe_text": recipe_text,
+        "category": category,
+        "trigger_keywords": trigger_keywords,
+        "compatibility": "any",
+        "source_type": "odoo",
+        "active": True,
+    })
+    return f"Skill #{skill.id} '{skill.name}' saved permanently (category: {category})"
+
+
+def _tool_builder_improve_skill(env, skill_id, feedback, field="recipe_text", **kwargs):
+    """Update a skill based on user feedback."""
+    skill = env["ai.skill"].browse(int(skill_id))
+    if not skill.exists():
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='builder_improve_skill').to_json()
+    valid_fields = ["recipe_text", "trigger_keywords", "description", "category"]
+    if field not in valid_fields:
+        return _unknown_field_error(
+            'ai.skill', field, valid_fields,
+            tool_name='builder_improve_skill').to_json()
+    # For recipe_text, prepend improvement note and apply feedback
+    if field == "recipe_text":
+        current = skill.recipe_text or ""
+        improved = f"{current}\n\n<!-- Improvement based on feedback: {feedback[:200]} -->\n"
+        skill.write({field: improved})
+        return f"Skill #{skill_id} recipe_text updated with improvement note. Review and refine manually."
+    elif field == "trigger_keywords":
+        current = skill.trigger_keywords or ""
+        # Add new keywords if not already present
+        new_kw = [k.strip() for k in feedback.split(",") if k.strip()]
+        existing = set(k.strip().lower() for k in current.split(",") if k.strip())
+        added = [k for k in new_kw if k.lower() not in existing]
+        if added:
+            updated = current + (", " if current else "") + ", ".join(added)
+            skill.write({field: updated})
+            return f"Skill #{skill_id} trigger_keywords updated: added {added}"
+        return f"Skill #{skill_id}: no new keywords to add"
+    else:
+        skill.write({field: feedback[:1024]})
+        return f"Skill #{skill_id} {field} updated"
+
+
+# ---------------------------------------------------------------------------
+# MCP Tool Support (TOOL-002) — discover from MCP servers
+# ---------------------------------------------------------------------------
+
+class MCPToolDiscovery:
+    """Discover tools from MCP servers.
+
+    MCP servers expose tools via the Model Context Protocol.
+    This class handles discovery and registration.
+
+    Usage:
+        discovery = MCPToolDiscovery()
+        discovery.add_server("filesystem", {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"]})
+        tools = await discovery.discover_all()
+    """
+
+    def __init__(self):
+        self._servers: dict[str, dict] = {}
+
+    def add_server(self, name: str, config: dict) -> None:
+        """Register an MCP server configuration.
+
+        Args:
+            name: Server identifier
+            config: Server config dict with command/args or url
+        """
+        self._servers[name] = config
+
+    async def discover_all(self) -> list[Tool]:
+        """Discover tools from all registered MCP servers.
+
+        Returns:
+            List of Tool instances from all servers
+        """
+        import asyncio
+        tasks = [
+            self._discover_server(name, cfg)
+            for name, cfg in self._servers.items()
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_tools = []
+        for result in results:
+            if isinstance(result, Exception):
+                _logger.warning("MCP server discovery failed: %s", result)
+            elif isinstance(result, list):
+                all_tools.extend(result)
+
+        return all_tools
+
+    async def _discover_server(self, name: str, config: dict) -> list[Tool]:
+        """Discover tools from one MCP server.
+
+        Uses subprocess communication with JSON-RPC via stdio.
+        """
+        import asyncio.subprocess
+        import json as json_mod
+
+        cmd = config.get("command", "")
+        args = config.get("args", [])
+
+        if not cmd:
+            _logger.warning("MCP server '%s': no command configured", name)
+            return []
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                cmd, *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            # Send tools/list request
+            request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {},
+            }
+            request_str = json_mod.dumps(request) + "\n"
+            proc.stdin.write(request_str.encode())
+            await proc.stdin.drain()
+
+            # Read response (with timeout)
+            try:
+                response_line = await asyncio.wait_for(
+                    proc.stdout.readline(), timeout=10
+                )
+                response = json_mod.loads(response_line.decode())
+            except asyncio.TimeoutError:
+                _logger.warning("MCP server '%s' timed out", name)
+                proc.kill()
+                return []
+
+            proc.terminate()
+            await proc.wait()
+
+            # Parse tools
+            tools = []
+            for tool_def in response.get("result", {}).get("tools", []):
+                tool = Tool(
+                    name=f"mcp_{name}_{tool_def['name']}",
+                    description=tool_def.get("description", ""),
+                    parameters=tool_def.get("inputSchema", {"type": "object", "properties": {}}),
+                    handler=_make_mcp_tool_handler(name, tool_def["name"], config),
+                    risk_level="read_only",
+                    source="mcp",
+                )
+                tools.append(tool)
+
+            _logger.info("MCP server '%s': discovered %d tools", name, len(tools))
+            return tools
+
+        except FileNotFoundError:
+            _logger.warning("MCP server '%s': command '%s' not found", name, cmd)
+            return []
+        except Exception as e:
+            _logger.warning("MCP server '%s' discovery failed: %s", name, e)
+            return []
+
+
+def _make_mcp_tool_handler(server_name: str, tool_name: str, config: dict):
+    """Create a handler that calls an MCP server tool."""
+    async def handler(**kwargs):
+        import asyncio.subprocess
+        import json as json_mod
+
+        cmd = config.get("command", "")
+        args = config.get("args", [])
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                cmd, *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": kwargs,
+                },
+            }
+            request_str = json_mod.dumps(request) + "\n"
+            proc.stdin.write(request_str.encode())
+            await proc.stdin.drain()
+
+            try:
+                response_line = await asyncio.wait_for(
+                    proc.stdout.readline(), timeout=60
+                )
+                response = json_mod.loads(response_line.decode())
+            except asyncio.TimeoutError:
+                proc.kill()
+                return f"MCP tool '{tool_name}' timed out"
+
+            proc.terminate()
+            await proc.wait()
+
+            if "error" in response:
+                return f"MCP error: {response['error']}"
+
+            result = response.get("result", {})
+            return json_mod.dumps(result.get("content", result), indent=2)
+
+        except Exception as e:
+            return f"MCP tool '{tool_name}' error: {e}"
+
+    return handler
+
+
+# ---------------------------------------------------------------------------
+# env-injection wrapper (builder tools need Odoo env as first arg)
+# ---------------------------------------------------------------------------
+
+def wrap_tools_with_env(tools, env):
+    """Wrap tool handlers so they receive the Odoo env and are awaitable.
+
+    Builtin handlers are declared as sync ``handler(env, **kwargs)``, but
+    ``Tool.execute`` calls ``await self.handler(**kwargs)`` — without this
+    wrapper the call fails twice over (missing env, awaiting a sync fn).
+
+    Handlers whose signature has no ``env`` parameter are only wrapped for
+    sync→async safety. Async handlers and NATS tools (handler=None) pass
+    through unchanged.
+    """
+    import dataclasses
+    import functools
+    import inspect
+
+    wrapped = []
+    for tool in tools:
+        handler = tool.handler
+        if handler is None:
+            wrapped.append(tool)
+            continue
+
+        sig = inspect.signature(handler)
+        needs_env = 'env' in sig.parameters
+        is_async = inspect.iscoroutinefunction(handler)
+
+        if needs_env and is_async:
+            @functools.wraps(handler)
+            async def wh(_h=handler, **kwargs):
+                return await _h(env, **kwargs)
+        elif needs_env:
+            @functools.wraps(handler)
+            async def wh(_h=handler, **kwargs):
+                return _h(env, **kwargs)
+        elif not is_async:
+            @functools.wraps(handler)
+            async def wh(_h=handler, **kwargs):
+                return _h(**kwargs)
+        else:
+            wh = handler
+
+        wrapped.append(dataclasses.replace(tool, handler=wh))
+    return wrapped
+
+
+def specialist_tools(agents) -> list[Tool]:
+    """Build a Tool per specialist agent for supervisor delegation.
+
+    Each tool invokes the specialist's AgentLoop.run() with a query
+    (and optional context). Async native — runs in the same event loop.
+
+    Args:
+        agents: list of (name, description, loop) tuples
+                where loop has async run(prompt) -> ChatResponse
+
+    Returns:
+        list[Tool] ready for ToolRegistry
+    """
+    tools = []
+    for name, description, loop in agents:
+        safe_name = name.strip().lower().replace(' ', '_').replace('-', '_')
+        # Sanitera till ^[a-zA-Z0-9_-]+$ — providers nekar namn med `&`, `→`
+        # m.fl. (`[InvalidParameter] invalid function name format`).
+        safe_name = _sanitize_tool_name(safe_name)
+        tool_name = f"call_specialist_{safe_name}"
+        # Vakt: efter saniteringen ska namnet ALLTID matcha regexet. Om det
+        # inte gör det är saniteringen trasig, och då vill vi veta det här
+        # i stället för att providern svarar 400 mitt i en användares tur.
+        import re as _re
+        if not _re.match(r'^[a-zA-Z0-9_-]+$', tool_name):
+            _logger.error(
+                'specialist_tools: built tool name %r does not match ^[a-zA-Z0-9_-]+$ (agent name=%r) — the sanitisation is broken',
+                tool_name, name)
+        tool = Tool(
+            name=tool_name,
+            description=(
+                f"Delegate ONE concrete sub-question to the specialist '{name}'. "
+                f"{description or ''}. IMPORTANT: `query` MUST always be a concrete, "
+                f"specific search/work task that you build from the user question "
+                f"(e.g. the exact topic/term to investigate) — NEVER send an empty or "
+                f"vague query. If you cannot formulate a concrete sub-question for "
+                f"the specialist, do NOT call the tool."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The exact task to perform."
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Relevant background for the task (optional)."
+                    },
+                },
+                "required": ["query"],
+            },
+            risk_level="read_only",  # Delegation är i sig ingen skrivande handling
+            source="specialist",
+        )
+
+        async def _handler(_loop=loop, **kwargs):
+            query = kwargs.get("query", "")
+            context = kwargs.get("context", "")
+            # Delegera aldrig en tom uppgift: säg i stället till vad som saknas
+            # så modellen korrigerar hellre än skapar tom/iterativa delegationsanrop.
+            if not query or not str(query).strip():
+                return _missing_argument_error(
+                    'query',
+                    'a concrete task for the specialist (not empty)',
+                    example='Summarise the latest operational alert for web01',
+                    tool_name='call_specialist').to_json()
+            prompt = f"{context}\n\n{query}" if context else query
+            try:
+                result = await _loop.run(prompt)
+                text = result.text if hasattr(result, 'text') else str(result)
+                return text[:8000] if text else "(tomt svar)"
+            except Exception as e:
+                return f"Specialist error: {e}"
+
+        # Replace handler (dataclass frozen? — replace)
+        from dataclasses import replace
+        tools.append(replace(tool, handler=_handler))
+    return tools
