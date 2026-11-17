@@ -1057,7 +1057,7 @@ class AIStreamController(http.Controller):
             }
         )
 
-    @http.route('/ai/interrupt/respond', type='json', auth='public',
+    @http.route('/ai/interrupt/respond', type='jsonrpc', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def interrupt_respond(self, session_uuid=None, response=None, **kw):
         """POST endpoint for human response to interrupt."""
@@ -1538,7 +1538,7 @@ class AIStreamController(http.Controller):
     # === Session document API ===
 
     @http.route('/ai/session/<int:session_id>/record_context',
-                type='json', auth='user', methods=['POST'], csrf=False,
+                type='jsonrpc', auth='user', methods=['POST'], csrf=False,
                 sitemap=False)
     def session_record_context(self, session_id, model=None, res_id=None,
                                res_ids=None, **kw):
@@ -2392,7 +2392,7 @@ class PICallbackController(http.Controller):
             },
         }, ensure_ascii=False), content_type='application/json')
 
-    @http.route('/pi/callback/<int:task_id>', type='json', auth='public',
+    @http.route('/pi/callback/<int:task_id>', type='jsonrpc', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def pi_callback(self, task_id, **kw):
         """Receive results from Pi workers/controller.
@@ -2449,7 +2449,7 @@ class PICallbackController(http.Controller):
         _logger.info('Callback received for session %d: state=%s', task_id, state)
         return {'status': 'ok', 'session_id': session.id}
 
-    @http.route('/pi/bifrost/batch/callback', type='json', auth='public',
+    @http.route('/pi/bifrost/batch/callback', type='jsonrpc', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def bifrost_batch_callback(self, **kw):
         """Receive Bifrost batch processing results.

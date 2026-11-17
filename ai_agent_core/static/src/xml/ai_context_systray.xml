@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Systray-knapp -->
+    <template id="AIContextSystray" name="AI Context Systray">
+        <button
+            class="btn btn-secondary o_systray_ai_context_btn d-flex align-items-center"
+            t-on-click="onClick"
+            t-att-disabled="state.loading"
+            title="Starta AI-chatt med den här posten som kontext"
+            aria-label="AI-chatt med postkontext"
+        >
+            <i t-attf-class="fa fa-lg me-1 {{ state.loading ? 'fa-spinner fa-spin' : 'fa-comments' }}"/>
+            <span class="d-none d-lg-inline">
+                <t t-if="state.loading">Laddar...</t>
+                <t t-else="">Fråga AI</t>
+            </span>
+        </button>
+    </template>
+
+    <!-- Välj AI-medarbetare -->
+    <template id="AIContextSelector" name="AI Context Selector">
+        <div class="modal fade show d-block" tabindex="-1" role="dialog"
+             style="background: rgba(0,0,0,0.5);">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <t t-if="props.recordInfo">
+                                Fråga AI om <strong t-out="props.recordInfo.displayName"/>
+                            </t>
+                            <t t-else="">Starta AI-chatt</t>
+                        </h5>
+                        <button type="button" class="btn-close"
+                                t-on-click="() => props.onCancel()"
+                                aria-label="Stäng"/>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="text-muted mb-3">
+                            <t t-if="props.recordInfo">
+                                Postens fält och chatter följer med som kontext.
+                                Du kan ställa följdfrågor i chatten.
+                            </t>
+                            <t t-else="">
+                                Ingen post vald — chatten startar utan kontext.
+                            </t>
+                        </p>
+
+                        <div class="list-group">
+                            <t t-foreach="props.coworkers" t-as="cw" t-key="cw.id">
+                                <button
+                                    type="button"
+                                    class="list-group-item list-group-item-action d-flex align-items-center"
+                                    t-att-class="state.selectedId === cw.id
+                                        ? 'list-group-item active' : ''"
+                                    t-on-click="() => select(cw.id)"
+                                >
+                                    <div class="flex-grow-1">
+                                        <div class="fw-bold">
+                                            <t t-out="cw.name"/>
+                                        </div>
+                                        <small class="d-block text-muted"
+                                               t-out="cw.description or ''"/>
+                                    </div>
+                                </button>
+                            </t>
+                        </div>
+
+                        <t t-if="!props.coworkers or !props.coworkers.length">
+                            <div class="alert alert-info mt-3">
+                                Inga AI-medarbetare tillgängliga.
+                            </div>
+                        </t>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                                t-on-click="() => props.onCancel()">
+                            Avbryt
+                        </button>
+                        <button type="button" class="btn btn-primary"
+                                t-on-click="launch"
+                                t-att-disabled="!state.selectedId or state.launching">
+                            <i t-attf-class="fa me-1 {{ state.launching ? 'fa-spinner fa-spin' : 'fa-comments' }}"/>
+                            <t t-if="state.launching">Startar...</t>
+                            <t t-else="">Starta chatt</t>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+</odoo>

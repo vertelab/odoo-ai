@@ -132,6 +132,7 @@
         'data/company_memory_categories.xml',
         'views/res_users_personal_memory_views.xml',
         'views/powerbox_templates.xml',
+        'static/src/xml/ai_context_systray.xml',
         'views/ai_session_views.xml',
         'views/workspace_activity_views.xml',
         'views/workspace_para_views.xml',
@@ -153,6 +154,8 @@
     'assets': {
         'web.assets_backend': [
             'ai_agent_core/static/src/js/ai_record_context_patch.js',
+            'ai_agent_core/static/src/js/ai_context_form_patch.js',
+            'ai_agent_core/static/src/js/ai_context_systray.js',
             'ai_agent_core/static/src/js/powerbox.js',
             'ai_agent_core/static/src/js/wysiwyg_powerbox.js',
             'ai_agent_core/static/src/js/user_menu_ai_chat.js',
