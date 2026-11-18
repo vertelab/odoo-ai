@@ -148,8 +148,16 @@
         <field name="view_mode">kanban,list,form</field>
     </record>
 
+    <!-- Rotmenyn är dold för alla utom Settings-administratör
+         (base.group_system). Menyn är inte klar och saknar en fungerande
+         ikon; att visa den för alla användare är brus. Detta är en
+         synlighetsfråga i gränssnittet — modellernas ir.model.access och
+         ir.rule är orörda, så smartknappar och listor fungerar som förut.
+         Barnen ärver rotens synlighet. Se openspec/changes/
+         hide-odoo-mind-menu. -->
     <menuitem id="menu_workspace_root" name="Odoo Mind"
-              web_icon="mail_activity" sequence="40"/>
+              web_icon="mail_activity" sequence="40"
+              groups="base.group_system"/>
     <menuitem id="menu_workspace_agenda" parent="menu_workspace_root"
               action="action_workspace_agenda" sequence="10" name="Agenda"/>
     <menuitem id="menu_workspace_agenda_suggestions"
