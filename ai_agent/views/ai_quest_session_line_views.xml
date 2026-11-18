@@ -42,15 +42,6 @@
                 <field name="ai_quest_session_id"/>
                 <field name="system_fingerprint"/>
                 <field name="finish_reason"/>
-                <group expand="0" string="Group By">
-                    <filter string="AI Quest Session" name="group_by_session" context="{'group_by': 'ai_quest_session_id'}"/>
-                    <filter string="Token Type" name="group_by_token_type" context="{'group_by': 'token_type_id'}"/>
-                    <filter string="Data Type" name="group_by_data_type" context="{'group_by': 'data_type_id'}"/>
-                    <filter string="API Type" name="group_by_api_type" context="{'group_by': 'api_type_id'}"/>
-                    <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}"/>
-                    <filter string="Product" name="group_by_product" context="{'group_by': 'product_tmpl_id'}"/>
-                    <filter string="Finish Reason" name="group_by_finish_reason" context="{'group_by': 'finish_reason'}"/>
-                </group>
                 <separator/>
             </search>
         </field>

@@ -132,7 +132,7 @@ class AIOnboarding(models.Model):
             return ''
         try:
             rag = company.website_rag_attachment_id.sudo()
-            content = rag.datas.decode('utf-8') if rag.datas else ''
+            content = rag.raw.decode('utf-8') if rag.raw else ''
             return content[:5000]
         except Exception as e:
             _logger.warning('Failed to read website RAG: %s', e)

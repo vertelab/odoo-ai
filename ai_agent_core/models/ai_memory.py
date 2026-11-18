@@ -200,7 +200,7 @@ class AIMemory(models.Model):
                     self.name, att.create_uid.login)
                 return None
 
-            data = b64.b64decode(att.datas)
+            data = b64.b64decode(att.raw)
             embeddings = self._get_embeddings()
             if not embeddings:
                 return None
