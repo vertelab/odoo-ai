@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '2.0.88',
+    'version': '2.0.90',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -158,7 +158,6 @@
         'data/company_memory_categories.xml',
         'views/res_users_personal_memory_views.xml',
         'views/powerbox_templates.xml',
-        'static/src/xml/ai_context_systray.xml',
         'views/ai_session_views.xml',
         'views/ai_session_object_views.xml',
         'views/ai_session_trace_views.xml',
@@ -184,8 +183,6 @@
     'assets': {
         'web.assets_backend': [
             'ai_agent_core/static/src/js/ai_record_context_patch.js',
-            'ai_agent_core/static/src/js/ai_context_form_patch.js',
-            'ai_agent_core/static/src/js/ai_context_systray.js',
             'ai_agent_core/static/src/js/many2many_tags_avatar_overflow_patch.js',
             'ai_agent_core/static/src/js/many2many_tags_avatar_overflow_patch.xml',
             'ai_agent_core/static/src/js/powerbox.js',

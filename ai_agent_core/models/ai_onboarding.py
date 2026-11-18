@@ -36,7 +36,7 @@ class AIOnboarding(models.Model):
     # Intervjun (länkad till den allmänna coworkern)
     coworker_id = fields.Many2one('ai.coworker',
         string='Interview Coworker',
-        help='The general coworker that conducts the interview.')
+        help='Den allmänna coworkern som genomför intervjun.')
     interview_session_id = fields.Many2one('ai.coworker.session',
         string='Interview Session')
 
@@ -45,18 +45,18 @@ class AIOnboarding(models.Model):
         default=dict,
         help='{"account": {"installed": true}, "crm": {...}}')
     website_summary = fields.Text(
-        help='Summary of the company website RAG.')
+        help='Summering av företagets webbplats-RAG.')
 
     # Vad CEO:n svarade
     answers = fields.Json(default=dict,
-        help='Structured answers to the interview questions.')
+        help='Strukturerade svar på intervjufrågorna.')
     current_question = fields.Text('Current Question')
     question_index = fields.Integer('Question Index', default=0)
     total_questions = fields.Integer('Total Questions', default=0)
 
     # Förslaget
     proposal_json = fields.Json(default=dict,
-        help='The complete organisation proposal.')
+        help='Det fullständiga organisationsförslaget.')
     template_id = fields.Many2one('ai.org.template',
         string='Template Used')
 
@@ -93,19 +93,19 @@ class AIOnboarding(models.Model):
         """Skanna installerade Odoo-moduler och mappa till affärsdomäner."""
         module_map = {
             'account': 'Ekonomi & Redovisning',
-            'crm': 'Sales process — leads & pipeline',
+            'crm': 'Säljprocess — leads & pipeline',
             'sale': 'Order & Offerter',
             'project': 'Projekt & Uppgifter',
             'stock': 'Lagerhantering',
             'mrp': 'Tillverkning — stycklistor & produktion',
-            'fleet': 'Fleet & Mileage Log',
-            'maintenance': 'Maintenance — equipment & schedules',
-            'hr': 'HR — employees, leave, recruitment',
-            'marketing': 'Marketing — campaigns & leads',
-            'helpdesk': 'Support — tickets & SLA',
+            'fleet': 'Fordon & Körjournal',
+            'maintenance': 'Underhåll — utrustning & scheman',
+            'hr': 'Personal — anställda, frånvaro, rekrytering',
+            'marketing': 'Marknadsföring — kampanjer & leads',
+            'helpdesk': 'Support — ärenden & SLA',
             'website': 'Webbplats',
             'mgmtsystem': 'Ledningssystem — avvikelser & risker',
-            'purchase': 'Purchasing',
+            'purchase': 'Inköp',
             'point_of_sale': 'Kassa',
         }
         detected = {}
@@ -121,7 +121,7 @@ class AIOnboarding(models.Model):
                         'description': description,
                     }
             except Exception:
-                pass  # best-effort: tyst fallback — se etiketteringsregeln
+                pass
         return detected
 
     @api.model
@@ -170,7 +170,7 @@ class AIOnboarding(models.Model):
                     best_score = score
                     best = template
             except Exception:
-                continue  # best-effort: tyst fallback — se etiketteringsregeln
+                continue
         return best
 
     # ════════════════════════════════════════════
@@ -288,78 +288,44 @@ class AIOnboarding(models.Model):
             'account_invoices': 'Ekonomi',
             'account_bookkeeping': 'Ekonomi',
             'hr_payroll': 'Personal',
-            'crm_leads': 'Sales',
-            'sale_offers': 'Sales',
+            'crm_leads': 'Försäljning',
+            'sale_offers': 'Försäljning',
             'project_count': 'Projekt',
             'project_timesheets': 'Projekt',
         }
         return q_to_dept.get(question_id, 'Generellt')
 
     def _suggest_identity(self, answers):
-        """Föreslå mission/values från intervjusvaren.
-
-        Den hårdkodade texten är en AVSIKTLIG fallback: den används bara
-        när ingen provider finns eller LLM:en felar. Den får inte
-        förväxlas med ett lyckat LLM-anrop — därför loggas orsaken.
-        """
-        # Avsiktlig standardtext (fallback, inte en tyst nolla).
-        fallback_mission = (
-            f'{self.company_id.name or "Our company"} delivers value '
-            'by combining expertise with smart AI solutions.'
+        """Föreslå mission/values från intervjusvaren."""
+        # Grundtext — kan förfinas med LLM om tillgängligt
+        mission = (
+            f'{self.company_id.name or "Vårt företag"} levererar värde '
+            'genom att kombinera expertis med smarta AI-lösningar.'
         )
-        fallback_values = (
-            'Quality and accuracy in everything we do.\nPersonal service backed by modern technology.'
+        values = (
+            'Kvalitet och noggrannhet i allt vi gör.\n'
+            'Personlig service med stöd av modern teknik.'
         )
-        mission, values = fallback_mission, fallback_values
         try:
-            # Kanonisk provider-kedja (samma som _llm_extract_facts).
-            # `ai.provider._call_llm` FINNS INTE — ett anrop gav
-            # AttributeError som svaldes av except och gjorde fallbacken
-            # till en tyst nolla.
-            import asyncio
-            from odoo.addons.ai_agent_core.core.provider import (
-                Message, Role, _run_provider, get_default_provider,
-                get_default_model_name)
-
+            # LLM-förfinad version om provider finns
             modules_text = ', '.join(
                 d.get('description', m) for m, d in
-                (self.detected_modules or {}).items()) or 'unknown'
+                (self.detected_modules or {}).items()) or 'okänt'
             prompt = (
-                f'Company: {self.company_id.name}\n'
-                f'Installed modules: {modules_text}\n'
-                f'Webbplats: {(self.website_summary or "")[:1000]}\n'
-                f'Svar: {json.dumps(answers, ensure_ascii=False)[:1500]}\n\n'
+                f'Företag: {self.company_id.name}\\n'
+                f'Installerade moduler: {modules_text}\\n'
+                f'Webbplats: {(self.website_summary or "")[:1000]}\\n'
+                f'Svar: {json.dumps(answers, ensure_ascii=False)[:1500]}\\n\\n'
                 'Generera mission (1 mening) och values (3 korta punkter). '
                 'Svara exakt i JSON: {"mission": "...", "values": "..."}'
             )
-            provider, model_rec = get_default_provider(self.env)
-            if not provider:
-                _logger.warning(
-                    'Identity proposal: no provider available — using the deliberate default text')
-                return mission, values
-            # En enda provider-chat, ingen loop: förslaget är ett anrop
-            # utan verktyg (structural-discipline-gates 3.3).
-            # B7: stäng providern — annars lämnas httpx-tasken pending.
-            raw = _run_provider(
-                provider.chat(
-                    model=(model_rec and model_rec._get_api_name())
-                    or get_default_model_name(),
-                    messages=[Message(role=Role.USER, content=prompt)],
-                    max_tokens=1500),
-                provider)
-            response = (raw.text or '').strip()
-            # Modellen kan linda JSON i ```-block trots instruktionen.
-            if response.startswith('```'):
-                response = response.strip('`')
-                if response.startswith('json'):
-                    response = response[4:]
-                response = response.strip()
-            data = json.loads(response)
-            mission = data.get('mission', mission)
-            values = data.get('values', values)
+            result = self.env['ai.provider']._call_llm(prompt)
+            if result:
+                data = json.loads(result) if isinstance(result, str) else result
+                mission = data.get('mission', mission)
+                values = data.get('values', values)
         except Exception as e:
-            _logger.warning(
-                'Identity proposal: the LLM call failed, using the deliberate default text: %s', e)
+            _logger.warning('LLM identity suggestion failed (using fallback): %s', e)
         return mission, values
 
     # ════════════════════════════════════════════
@@ -410,46 +376,15 @@ class AIOnboarding(models.Model):
                      len(self.created_coworker_ids))
         return True
 
-    def _get_or_create_company_goal(self):
-        """Slå upp (eller skapa) företagets company-nivå-mål.
-
-        Kaskadens rot (org-goal-integrity D5). Ett department-mål får
-        aldrig skapas föräldralöst: finns inget company-mål vid tillfället
-        skapas det först, så att parent_id alltid kan sättas.
-        """
-        Goal = self.env['ai.org.goal'].sudo()
-        goal = Goal.search([
-            ('level', '=', 'company'),
-            ('company_id', '=', self.company_id.id),
-        ], limit=1)
-        if goal:
-            return goal
-        return Goal.create({
-            'name': _('Company Goals'),
-            'level': 'company',
-            'status': 'active',
-            'company_id': self.company_id.id,
-        })
-
     def _create_goal(self, goal_data, level='company', department=None):
-        """Skapa ett ai.org.goal med key results.
-
-        Kaskadkopplar department-mål mot company-målet (D5): ett
-        department-mål får alltid `parent_id` satt mot företagets
-        company-nivå-mål — company-målet skapas först om det saknas, så
-        inget föräldralöst avdelningsmål uppstår.
-        """
+        """Skapa ett ai.org.goal med key results."""
         try:
-            parent_id = False
-            if level == 'department':
-                parent_id = self._get_or_create_company_goal().id
             goal = self.env['ai.org.goal'].sudo().create({
-                'name': goal_data.get('name', 'Goals'),
+                'name': goal_data.get('name', 'Mål'),
                 'description': goal_data.get('description'),
                 'level': level,
                 'status': 'active',
                 'department_id': department.id if department else False,
-                'parent_id': parent_id,
                 'deadline': goal_data.get('deadline'),
                 'company_id': self.company_id.id,
             })
@@ -461,6 +396,7 @@ class AIOnboarding(models.Model):
                     'current_value': 0.0,
                     'unit': kr_data.get('unit', '%'),
                 })
+            # Koppla till company-goal om department-nivå
             return goal
         except Exception as e:
             _logger.error('Goal creation failed: %s', e)
@@ -478,66 +414,6 @@ class AIOnboarding(models.Model):
         except Exception as e:
             _logger.error('Department creation failed for %s: %s', name, e)
             return False
-
-    def _ensure_heartbeat_waker(self):
-        """Säkerställ att heartbeat-väckaren finns i motorns register (7.1).
-
-        Väckaren är en delad `cron.task` (ai_heartbeat_dispatch, cadence min)
-        som skapas av modulens data-XML. Här kontrollerar vi att den finns och
-        är aktiv — annars är en "aktiverad" heartbeat ett tomt löfte.
-        Idempotent: skapar inget om posten redan finns.
-        """
-        if 'cron.task' not in self.env:
-            _logger.warning(
-                'cron_tick is missing — the heartbeat waker cannot be ensured')
-            return False
-        CronTask = self.env['cron.task'].sudo()
-        # `active=False` filtreras bort av search — sök även inaktiva så att
-        # en avaktiverad väckare ÅTERAKTIVERAS i stället för att en dubblett
-        # skapas (technical_name är unikt → UniqueViolation annars).
-        waker = CronTask.with_context(active_test=False).search([
-            ('technical_name', '=', 'ai_heartbeat_dispatch')], limit=1)
-        if not waker:
-            waker = CronTask.create({
-                'name': 'Heartbeat — dispatcher',
-                'technical_name': 'ai_heartbeat_dispatch',
-                'module': 'ai_agent_core',
-                'model_name': 'ai.coworker',
-                'method_name': '_heartbeat_all',
-                'cadence': 'min',
-                'sequence': 10,
-                'active': True,
-            })
-            _logger.info('Created the heartbeat waker (cron.task %s)', waker.id)
-        elif not waker.active:
-            waker.active = True
-            _logger.info('Activated the heartbeat waker (cron.task %s)', waker.id)
-        return waker
-
-    def _ensure_coworker_owner(self, coworker):
-        """Säkerställ att coworkern har en ägare för automatiska körningar.
-
-        `_resolve_dispatch_user` vägrar systemuser — utan `chat_user_id`
-        skulle heartbeat-körningen avbrytas med ett högljutt fel. Vi sätter
-        den inloggade användaren (onboarding körs av en människa) som ägare.
-        Idempotent: rör inte en redan satt ägare.
-        """
-        try:
-            if coworker.chat_user_id:
-                return coworker.chat_user_id
-            user = self.env.user
-            if user and not user._is_public() and user.id != self.env.ref(
-                    'base.user_root').id:
-                coworker.write({'chat_user_id': user.id})
-                _logger.info(
-                    'Onboarding: set %s as owner for %s',
-                    user.login, coworker.name)
-                return user
-        except Exception as e:
-            _logger.warning(
-                'Onboarding: could not set an owner for %s: %s',
-                coworker.name, e)
-        return False
 
     def _create_coworker(self, cw_data, department):
         """Skapa en ai.coworker med agent, skills, tools och tasks."""
@@ -568,24 +444,16 @@ class AIOnboarding(models.Model):
                 'agent_id': agent.id,
                 'role': 'lead',
             })
-            # Skapa init_types: web_ui + heartbeat.
-            #
-            # Schemalagt-arbete 7.1: onboarding ska skapa en OPERATIV
-            # heartbeat — inte bara flaggan. Väckaren är en delad cron.task
-            # (cadence min) som registreras av modulens data-XML; här
-            # säkerställer vi att den finns och är aktiv, och att coworkern
-            # har en ägare (chat_user_id) så att automatiska körningar kan
-            # lösa upp en användare (aldrig systemuser).
+            # Skapa init_types: web_ui + cron (heartbeat)
             InitType = self.env['ai.coworker.init_type']
             InitType.create({'coworker_id': coworker.id, 'init_type': 'web_ui', 'active': True})
-            InitType.create({'coworker_id': coworker.id, 'init_type': 'heartbeat', 'active': True})
-            self._ensure_heartbeat_waker()
-            self._ensure_coworker_owner(coworker)
+            InitType.create({'coworker_id': coworker.id, 'init_type': 'cron', 'active': True,
+                             'cron_interval_number': 5, 'cron_interval_type': 'minutes'})
 
             # Skapa initiala tasks så coworkern börjar jobba
             initial_tasks = cw_data.get('initial_tasks') or [
-                f'Map the workflow within {cw_data.get("description", name)}',
-                'Carry out the first week of work and report back',
+                f'Kartlägg arbetsflödet inom {cw_data.get("description", name)}',
+                'Genomför första veckans arbete och rapportera',
             ]
             for task_text in initial_tasks:
                 self._create_task(task_text, coworker, department)
@@ -600,7 +468,7 @@ class AIOnboarding(models.Model):
         try:
             task = self.env['ai.org.task'].sudo().create({
                 'name': task_text,
-                'description': f'Initial task from onboarding for {coworker.name}',
+                'description': f'Initial uppgift från onboarding för {coworker.name}',
                 'coworker_id': coworker.id,
                 'status': 'todo',
                 'priority': '1',
@@ -620,11 +488,11 @@ class AIOnboarding(models.Model):
     def action_start_interview(self):
         """Starta onboarding — öppna wizard för intervju."""
         self.ensure_one()
-        coworker = self.coworker_id or self.env.company._ai_default_coworker()
+        coworker = self.coworker_id or self.env['ai.coworker'].search([
+            ('is_default', '=', True)], limit=1)
         if not coworker:
             raise models.ValidationError(
-                _('No default coworker found. Set one in Settings → AI Agents '
-                  '→ Default AI Coworker, or install ai_agent_core first.'))
+                _('No default coworker found. Install ai_agent_core first.'))
         self.write({
             'coworker_id': coworker.id,
             'state': 'scanning',

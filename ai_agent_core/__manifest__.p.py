@@ -1,0 +1,216 @@
+# -*- coding: utf-8 -*-
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
+{
+    'name': 'AI: Agent Core',
+    'version': '2.0.90',
+    'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
+    'category': 'AI Orchestration',
+    'description': """
+        AI Agent Core — self-sufficient AI agent platform for Odoo.
+        
+        Now includes organization layer:
+        * AI Organization Goals (OKR) — hierarchical with cascade
+        * AI Tasks — persistent with atomic checkout, blockers, work products
+        * Heartbeat system — proactive coworkers that wake and work
+        * AI CEO Onboarding — scans modules, interviews CEO, creates org
+        * AI Orchestration Dashboard — org chart with kanban, onboarding button
+        * Bridge Protocol — connect strategy, marketing, helpdesk modules
+        * hr integration — AI coworkers as hr.employees, AI department managers
+    """,
+    'author': 'Vertel Sverige AB',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core',
+    'license': 'AGPL-3',
+    # ai_agent (legacy) definierar samma modeller/xmlids (ai.tool,
+    # view_ai_tool_*) och är inkompatibel. Odoo 18 läser inte denna nyckel,
+    # men den dokumenterar avsikten; faktisk spärr = pre_init_hook.
+    'conflicts': ['ai_agent'],
+    'depends': [
+        'base',
+        'mail',
+        'html_editor',
+        'hr',
+        'base_automation',
+        'web_pwa_push',
+        # cron_tick provides the cron.task registry, the scheduling engine
+        # and the POST /cron/trigger/<technical_name> route. Since
+        # 18.0.2.0.0 EVERY scheduled job in this module is a cron.task —
+        # an `ir.cron` that is rewritten on module load cannot be updated
+        # while the job is running ("Record cannot be modified right now"),
+        # which is what broke the upgrade on 2026-10-25. It depends only on
+        # base and mail, so this adds no transitive weight.
+        'cron_tick',
+    ],
+    # B12 (ai-agent-core-fault-remediation): FAISS-vägen i ai.memory använder
+    # langchain. Paketen fanns tidigare bara som en tyst förutsättning —
+    # saknades de föll `_get_embeddings` tillbaka på en HuggingFace-modell
+    # som laddades ner i runtime. Nu deklareras de, så en installation utan
+    # dem syns vid modulinstall i stället för i en request-tråd.
+    # `python` = importnamnet Odoo prövar.
+    'external_dependencies': {
+        'python': ['langchain_core', 'pgvector'],
+    },
+    'data': [
+        'security/ai_groups.xml',
+        # #if VERSION >= "20.0"
+        'security/ir.access.csv',
+        # #else
+        'security/ir.model.access.csv',
+        # #endif
+        'security/ai_hitl_rules.xml',
+        'views/ai_actions.xml',
+        'views/ai_okf_record_views.xml',
+        'data/okf_default_artifact_types.xml',
+        'data/okf_artifact_types_personal.xml',
+        'data/okf_access_resolvers.xml',
+        'data/cron_personal_index.xml',
+        'data/cron_discuss_learning.xml',
+        'data/cron_okf_index_dirty.xml',
+        'data/search_sources.xml',
+        'data/cron_session_idle.xml',
+        'data/cron_external_runtime.xml',
+        'data/skill_sync_cron.xml',
+        'data/partner_enrichment_tools.xml',
+        # builtin_tools_seed skapar ai.tool-poster för de inbyggda verktygen
+        # (core/tools.py) via _ensure_builtin_tool_records(). Den MÅSTE köra
+        # före varje fil som refererar dem — annars faller ref() med
+        # "External ID not found". FYND 2026-09-22: partner_enrichment_
+        # coworker.xml låg före och blockerade all nyinstallation.
+        'data/builtin_tools_seed.xml',
+        'data/partner_enrichment_coworker.xml',
+        'data/cron_okf_process_uploads.xml',
+        'data/cron_okf_retention.xml',
+        'data/cron_memory_reembed.xml',
+        'data/cron_company_memory_indexers.xml',
+        'data/okf_migrate_legacy.xml',
+        'data/skill_odoo_core.xml',
+        # push-notification (4.2): ligger efter builtin_tools_seed.xml
+        # eftersom skillen refererar verktyget push_notification.
+        'data/skill_push_notification.xml',
+        'data/skill_office_dokument.xml',
+        'data/news_skills.xml',
+        'data/tool_verification_contracts.xml',
+        'data/youtube_tools.xml',
+        'data/default_coworker.xml',
+        'data/vertel_skills.xml',
+        'data/git_identity_skill.xml',
+        'views/ai_artifact_type_views.xml',
+        'views/ai_okf_concept_views.xml',
+        'views/ai_access_resolver_views.xml',
+        'views/ai_okf_dashboard_views.xml',
+        'views/ai_okf_upload_views.xml',
+        'data/memory_scopes.xml',
+        'data/provider_openai.xml',
+        'data/provider_anthropic.xml',
+        'data/provider_deepseek.xml',
+        'data/provider_google.xml',
+        'data/provider_cerebras.xml',
+        'data/provider_groq.xml',
+        'data/provider_ollama.xml',
+        'data/provider_openrouter.xml',
+        'data/provider_bifrost.xml',
+        'data/ensure_init_resources.xml',
+        'data/cron_hitl.xml',
+        'data/cron_mail_reply.xml',
+        'data/cron_watch_process.xml',
+        'data/cron_view_guard.xml',
+        'data/ai_invoice_coworker.xml',
+        'data/identity_templates.xml',
+        'data/cron_monthly_summary.xml',
+        'data/cron_bifrost_sync.xml',
+        'data/cron_burn_rate.xml',
+        'data/cron_model_drift.xml',
+        'data/cron_kaizen.xml',
+        'data/cron_skill_improve.xml',
+        'data/cron_onboard.xml',
+        'data/cron_memory_consolidation.xml',
+        'data/cron_scheduled_coworkers.xml',
+        'data/cron_workspace_distill.xml',
+        'data/cron_website_rag.xml',
+        'data/cron_heartbeat.xml',
+        'data/cron_heartbeat_dispatch.xml',
+        'data/cron_heartbeat_process.xml',
+        'data/cron_graph_sync.xml',
+        'data/cron_cost_aggregate.xml',
+        'views/ai_cost_period_views.xml',
+        'data/orchestration_skill.xml',
+        'data/bridge_config.xml',
+        'data/browser_tools.xml',
+        'data/graph_base.xml',
+        'views/hr_department_views.xml',
+        'views/ai_orchestration_dashboard.xml',
+        'views/ai_lineage_views.xml',
+        'views/ai_monthly_summary_views.xml',
+        'views/ai_personal_goal_views.xml',
+        'views/ai_provider_views.xml',
+        'views/ai_model_views.xml',
+        'views/ai_coworker_buzz_agent_wizard_views.xml',
+        'views/server_action_wizard_views.xml',
+        'views/ai_coworker_views.xml',
+        'views/ai_coworker_hitl_views.xml',
+        'views/ai_agent_views.xml',
+        'views/ai_identity_views.xml',
+        'views/ai_skill_views.xml',
+        'views/ai_tool_views.xml',
+        'views/ai_tag_views.xml',
+        'views/ai_coworker_init_type_views.xml',
+        'views/ai_personal_memory_views.xml',
+        'views/ai_company_memory_views.xml',
+        'views/ai_company_memory_category_views.xml',
+        'views/ai_graph_node_views.xml',
+        'views/res_company_views.xml',
+        'views/res_company_memory_views.xml',
+        'data/company_memory_categories.xml',
+        'views/res_users_personal_memory_views.xml',
+        'views/powerbox_templates.xml',
+        'views/ai_session_views.xml',
+        'views/ai_session_object_views.xml',
+        'views/ai_session_trace_views.xml',
+        'views/workspace_activity_views.xml',
+        'views/workspace_para_views.xml',
+        'views/ai_coworker_error_views.xml',
+        'views/mail_test_wizard_views.xml',
+        'views/res_config_settings_views.xml',
+        'views/templates.xml',
+        'views/ai_org_goal_views.xml',
+        'views/ai_org_task_views.xml',
+        'views/ai_org_review_views.xml',
+        'views/ai_org_board_views.xml',
+        'views/ai_onboarding_views.xml',
+        'views/ai_onboarding_wizard_views.xml',
+        'views/hr_employee_views.xml',
+        'views/hr_job_views.xml',
+        'data/cron_workspace_gap.xml',
+        'views/menu.xml',
+        'data/cron_eval.xml',
+        'views/ai_eval_views.xml',
+    ],
+    'assets': {
+        'web.assets_backend': [
+            'ai_agent_core/static/src/js/ai_record_context_patch.js',
+            'ai_agent_core/static/src/js/many2many_tags_avatar_overflow_patch.js',
+            'ai_agent_core/static/src/js/many2many_tags_avatar_overflow_patch.xml',
+            'ai_agent_core/static/src/js/powerbox.js',
+            'ai_agent_core/static/src/js/wysiwyg_powerbox.js',
+            'ai_agent_core/static/src/js/user_menu_ai_chat.js',
+            'ai_agent_core/static/src/js/okf_debug_menu.js',
+            'ai_agent_core/static/src/js/okf_global_search.js',
+            'ai_agent_core/static/src/xml/okf_global_search.xml',
+            'ai_agent_core/static/src/css/powerbox.css',
+            'ai_agent_core/static/src/org_chart/*',
+        ],
+    },
+    'installable': True,
+    'auto_install': False,
+    'application': True,
+    'demo': [
+        'demo/demo_data.xml',
+    ],
+    # OBS: peka på post_init_hook (den sammanhållande), INTE
+    # post_init_hook_personal_memory. Manifestet registrerade tidigare
+    # personal_memory-hooken direkt, vilket gjorde att post_init_hook —
+    # med _ensure_default_model, okf_ensure_search_infrastructure och
+    # Quest/Skill Builder — aldrig kördes. post_init_hook anropar nu
+    # post_init_hook_personal_memory internt.
+    'post_init_hook': 'post_init_hook',
+    'pre_init_hook': 'pre_init_hook_check_conflicts',
+}

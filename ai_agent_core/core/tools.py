@@ -3688,6 +3688,29 @@ def _attach_workdir():
     return path
 
 
+def attachment_bytes(att):
+    """Return the content of an ``ir.attachment`` as bytes.
+
+    20.0 removed ``datas`` (base64 text) from ``ir.attachment``; the content
+    now lives in ``raw``, which returns a ``BinaryValue`` (``LocalBinaryFile``
+    or ``BinaryBytes``), not ``bytes``. Reading ``.datas`` there raises
+    AttributeError; writing base64 to ``raw`` stores the base64 *text*.
+
+    This helper is the one place that knows the difference, so callers do not
+    have to repeat the version dance:
+
+        data = attachment_bytes(att)     # bytes, both editions
+
+    Returns b'' when the attachment is empty.
+    """
+    import base64 as _b64
+    if not att:
+        return b''
+    if not att.datas:
+        return b''
+    return _b64.b64decode(att.datas)
+
+
 def _binary_read_field(rec, field):
     """Läs ett binärfält som rådata — utan att gissa på returtypen.
 

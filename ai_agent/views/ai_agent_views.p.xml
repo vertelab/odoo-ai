@@ -4,7 +4,6 @@
       <field name="name">ai.agent.list</field>
       <field name="model">ai.agent</field>
       <field name="arch" type="xml">
-        <!-- #if VERSION >= "18.0" -->
         <list string="AI Agents" decoration-info="status=='draft'" decoration-success="status=='active'" decoration-muted="status=='done'" decoration-danger="status=='error'" multi_edit="1">
           <field name="name" />
           <field name="ai_type" />
@@ -21,24 +20,6 @@
           <field name="debug" optional="hide" />
           <field name="company_id" groups="base.group_multi_company" />
         </list>
-        <!-- #elif VERSION <= "17.0" -->
-        <tree string="AI Agents" decoration-info="status=='draft'" decoration-success="status=='active'" decoration-muted="status=='done'" decoration-danger="status=='error'" multi_edit="1">
-          <field name="name" />
-          <field name="ai_type" />
-          <field name="ai_agent_llm_id" />
-          <field name="ai_role" optional="show" />
-          <field name="ai_temperature" optional="hide" />
-          <field name="object_id" optional="hide" />
-          <field name="session_count" optional="hide" />
-          <field name="session_line_count" optional="hide" />
-          <field name="quest_count" optional="hide" />
-          <field name="last_run" optional="show" />
-          <field name="status" widget="badge" decoration-info="status == 'draft'" decoration-success="status == 'active'" decoration-muted="status == 'done'" decoration-danger="status == 'error'" />
-          <field name="is_favorite" widget="boolean_favorite" optional="hide" />
-          <field name="debug" optional="hide" />
-          <field name="company_id" groups="base.group_multi_company" />
-        </tree>
-        <!-- #endif -->
       </field>
     </record>
     <record id="ai_agent_search" model="ir.ui.view">
@@ -55,17 +36,17 @@
           <field name="ai_goal" />
           <field name="ai_backstory" />
           <field name="company_id" groups="base.group_multi_company" />
-          <!-- #if VERSION >= "16.0" -->
           <field name="tag_ids" />
-          <!-- #endif -->
           <field name="object_id" />
           <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
           <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
+          <!-- #if VERSION <= "19.0" -->
           <group expand="0" string="Group By">
             <filter string="AI Agent LLM" name="group_by_llm" context="{'group_by': 'ai_agent_llm_id'}" />
             <filter string="AI Type" name="group_by_type" context="{'group_by': 'ai_type'}" />
             <filter string="Company" name="group_by_company_id" context="{'group_by': 'company_id'}" />
           </group>
+          <!-- #endif -->
         </search>
       </field>
     </record>
@@ -101,23 +82,12 @@
               <group>
                 <field name="ai_type" />
                 <field name="object_id" />
-                <!-- #if VERSION == 16.0 -->
-                <field name="tag_ids" widget="many2many_tags" />
-                <!-- #endif -->
                 <field name="company_id" groups="base.group_multi_company" />
               </group>
               <group>
-                <!-- #if VERSION >= "17.0" -->
                 <field name="ai_agent_llm_id" required="status != 'draft'" />
-                <!-- #elif VERSION <= "16.0" -->
-                <field name="ai_agent_llm_id" attrs="{'required': [('status', '!=', 'draft')]}" />
-                <!-- #endif -->
                 <field name="has_temperature" invisible="1" />
-                <!-- #if VERSION >= "17.0" -->
                 <field name="ai_temperature" invisible="not has_temperature" />
-                <!-- #elif VERSION <= "16.0" -->
-                <field name="ai_temperature" attrs="{'invisible': [('has_temperature', '=', False)]}" />
-                <!-- #endif -->
                 <field name="last_run" />
               </group>
             </group>
@@ -137,7 +107,6 @@
               </page>
               <page string="Memory" id="memory">
                 <field name="ai_memory_ids">
-                  <!-- #if VERSION >= "18.0" -->
                   <list editable="bottom">
                     <field name="sequence" widget="handle" />
                     <field name="ai_memory_id" />
@@ -151,49 +120,19 @@
 -->
                     <button name="run" string="Run" type="object" icon="" />
                   </list>
-                  <!-- #elif VERSION <= "17.0" -->
-                  <tree editable="bottom">
-                    <field name="sequence" widget="handle" />
-                    <field name="ai_memory_id" />
-                    <field name="ai_memory_status" />
-                    <field name="ai_memory_llm_id" />
-                    <field name="ai_memory_llm_status" />
-                    <field name="ai_memory_url" optional='hide' />
-                    <field name="last_run" optional='hide' />
-<!--
-                    <field name="nbr_days" optional='hide' />
--->
-                    <button name="run" string="Run" type="object" icon="" />
-                  </tree>
-                  <!-- #endif -->
                 </field>
               </page>
               <page string="Tools" id="tool">
                 <field name="ai_tool_ids">
-                  <!-- #if VERSION >= "18.0" -->
                   <list editable="bottom">
                     <field name="sequence" widget="handle" />
                     <field name="ai_tool_id" nolabel="1" />
                   </list>
-                  <!-- #elif VERSION <= "17.0" -->
-                  <tree editable="bottom">
-                    <field name="sequence" widget="handle" />
-                    <field name="ai_tool_id" nolabel="1" />
-                  </tree>
-                  <!-- #endif -->
                 </field>
               </page>
             </notebook>
           </sheet>
-          <!-- #if VERSION >= "18.0" -->
           <chatter />
-          <!-- #elif VERSION <= "17.0" -->
-          <div class="oe_chatter">
-            <field name="message_follower_ids" widget="mail_followers" />
-            <field name="activity_ids" widget="mail_activity" />
-            <field name="message_ids" widget="mail_thread" />
-          </div>
-          <!-- #endif -->
         </form>
       </field>
     </record>
@@ -215,7 +154,6 @@
           <field name="status_color" />
           <field name="ai_description" />
           <templates>
-            <!-- #if VERSION >= "18.0" -->
             <t t-name="menu">
               <t t-if="widget.editable">
                 <a role="menuitem" type="open" class="dropdown-item">Edit</a>
@@ -260,59 +198,6 @@
                 </footer>
               </main>
             </t>
-            <!-- #elif VERSION <= "17.0" -->
-            <t t-name="kanban-box">
-              <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
-                <div class="o_kanban_image me-1">
-                  <img t-att-src="kanban_image('ai.agent', 'base_image_128', record.id.raw_value)" alt="LLM Agents" class="o_image_64_contain" />
-                </div>
-                <div class="oe_kanban_details">
-                  <div class="o_kanban_record_top mb-0">
-                    <div class="o_kanban_record_headings">
-                      <span style="margin-right: 5px;">
-                        <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
-                      </span>
-                      <strong class="o_kanban_record_title">
-                        <field name="name" />
-                      </strong>
-                    </div>
-                    <div class="o_dropdown_kanban dropdown">
-                      <a role="button" class="dropdown-toggle o-no-caret btn" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
-                        <span class="fa fa-ellipsis-v" />
-                      </a>
-                      <div class="dropdown-menu" role="menu">
-                        <t t-if="widget.editable">
-                          <a role="menuitem" type="edit" class="dropdown-item">Edit</a>
-                        </t>
-                        <t t-if="widget.deletable">
-                          <a role="menuitem" type="delete" class="dropdown-item">Delete</a>
-                        </t>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="oe_kanban_content flex-grow-1 flex-column">
-                    <div class="oe_kanban_details">
-                      <div class="oe_kanban_left">
-                        <field name="ai_type" widget="label_selection" options="{'classes': {'default': 'default'}}" />
-                      </div>
-                    </div>
-                  </div>
-                  <div class="oe_kanban_footer mt-3">
-                    <div class="o_kanban_record_bottom">
-                      <div class="oe_kanban_bottom_left" />
-                      <div class="oe_kanban_bottom_right">
-                        <t t-if="record.last_run.value != False">
-                          <span class="fa fa-clock-o me-2" title="Dates" />
-                          <field name="last_run" />
-                          <field name="company_id" groups="base.group_multi_company" />
-                        </t>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </t>
-            <!-- #endif -->
           </templates>
         </kanban>
       </field>
@@ -333,11 +218,7 @@
     <record id="action_ai_agent" model="ir.actions.act_window">
       <field name="name">Agents</field>
       <field name="res_model">ai.agent</field>
-      <!-- #if VERSION >= "18.0" -->
       <field name="view_mode">kanban,list,form,calendar</field>
-      <!-- #elif VERSION <= "17.0" -->
-      <field name="view_mode">kanban,tree,form,calendar</field>
-      <!-- #endif -->
     </record>
     <menuitem id="ai_agent.menu_ai_agent_menu_menu" parent="ai_agent.menu_ai_agent_menu" groups="ai_agent.group_ai_agent_manager" name="Agents" action="action_ai_agent" />
     <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" groups="group_ai_agent_supervisor" sequence="99" />

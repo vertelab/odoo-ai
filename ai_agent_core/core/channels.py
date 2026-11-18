@@ -78,12 +78,13 @@ def attachment_texts(attachment_ids):
     bilaga; bilagor över 10 000 tecken hoppas över). En bilaga som inte kan
     läsas hoppas över — extraktionen får aldrig fälla mailet.
     """
+    from odoo.addons.ai_agent_core.core.tools import attachment_bytes
     from odoo.addons.ai_agent_core.models.ai_coworker import _extract_text
 
     texts = []
     for att in attachment_ids:
         try:
-            text = _extract_text(att.name, base64.b64decode(att.datas))
+            text = _extract_text(att.name, attachment_bytes(att))
             if text and len(text) < 10000:
                 texts.append(f'--- {att.name} ---\n{text[:2000]}')
         except Exception:
