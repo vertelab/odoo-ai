@@ -4,7 +4,6 @@
             <field name="name">ai.quest.sesion.list</field>
             <field name="model">ai.quest.session</field>
             <field name="arch" type="xml">
-                <!-- #if VERSION >= "18.0" -->
                 <list string="AI Session">
                     <field name="startdate" />
                     <field name="session" />
@@ -15,17 +14,6 @@
                     <field name="enddate" optional="hide" />
                     <field name="time_difference_ms" optional="hide" />
                 </list>
-                <!-- #elif VERSION <= "17.0" -->
-                <tree string="AI Session">
-                    <field name="startdate" />
-                    <field name="session" />
-                    <field name="ai_type" />
-                    <field name="ai_quest_id" />
-                    <field name="status" />
-                    <field name="enddate" optional="hide" />
-                    <field name="time_difference_ms" optional="hide" />
-                </tree>
-                <!-- #endif -->
             </field>
         </record>
         <record id="ai_quest_session_search" model="ir.ui.view">
@@ -44,6 +32,7 @@
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
                     <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
+                    <!-- #if VERSION <= "19.0" -->
                     <group expand="0" string="Group By">
                         <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
                         <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
@@ -52,6 +41,7 @@
                         <filter string="Start Date" name="group_by_startdate" context="{'group_by': 'startdate'}" />
                         <filter string="End Date" name="group_by_enddate" context="{'group_by': 'enddate'}" />
                     </group>
+                    <!-- #endif -->
                 </search>
             </field>
         </record>
@@ -103,15 +93,7 @@
                         </group>
                         <notebook />
                     </sheet>
-                    <!-- #if VERSION >= "18.0" -->
                     <chatter/>
-                    <!-- #elif VERSION <= "17.0" -->
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids" widget="mail_followers" />
-                        <field name="activity_ids" widget="mail_activity" />
-                        <field name="message_ids" widget="mail_thread" />
-                    </div>
-                    <!-- #endif -->
                 </form>
             </field>
         </record>
@@ -131,11 +113,7 @@
         <record id="action_ai_quest_session" model="ir.actions.act_window">
             <field name="name">AI Session</field>
             <field name="res_model">ai.quest.session</field>
-            <!-- #if VERSION >= "18.0" -->
             <field name="view_mode">list,form,calendar</field>
-            <!-- #elif VERSION <= "17.0" -->
-            <field name="view_mode">tree,form,calendar</field>
-            <!-- #endif -->
         </record>
         <menuitem id="ai_agent.menu_ai_quest_session" name="AI Session" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session" />
         <!--  Session Object -->
@@ -143,21 +121,12 @@
             <field name="name">aisesion.object.list</field>
             <field name="model">ai.session.object</field>
             <field name="arch" type="xml">
-                <!-- #if VERSION >= "18.0" -->
                 <list string="AI Session Object">
                     <field name="datetime" />
                     <field name="ai_quest_id" />
                     <field name="ai_session_id" />
                     <field name="display_name" />
                 </list>
-                <!-- #elif VERSION <= "17.0" -->
-                <tree string="AI Session Object">
-                    <field name="datetime" />
-                    <field name="ai_quest_id" />
-                    <field name="ai_session_id" />
-                    <field name="display_name" />
-                </tree>
-                <!-- #endif -->
             </field>
         </record>
         <record id="ai_session_object_search" model="ir.ui.view">
@@ -170,6 +139,7 @@
                     <field name="model_id" />
                     <field name="object_id" />
                     <field name="datetime" />
+                    <!-- #if VERSION <= "19.0" -->
                     <group expand="0" string="Group By">
                         <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
                         <filter string="AI Session" name="group_by_ai_session" context="{'group_by': 'ai_session_id'}" />
@@ -177,6 +147,7 @@
                         <filter string="Object" name="group_by_object" context="{'group_by': 'object_id'}" />
                         <filter string="Date" name="group_by_date" context="{'group_by': 'datetime'}" />
                     </group>
+                    <!-- #endif -->
                 </search>
             </field>
         </record>
@@ -217,11 +188,7 @@
         <record id="action_ai_session_object" model="ir.actions.act_window">
             <field name="name">Object</field>
             <field name="res_model">ai.session.object</field>
-            <!-- #if VERSION >= "18.0" -->
             <field name="view_mode">list,form,calendar</field>
-            <!-- #elif VERSION <= "17.0" -->
-            <field name="view_mode">tree,form,calendar</field>
-            <!-- #endif -->
         </record>
         <menuitem id="ai_agent.menu_ai_session_object" name="Object" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_session_object" />
     </data>

@@ -14,8 +14,6 @@ from datetime import date, datetime, timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 
-from ..fields.pg_vector import PgVector
-
 _logger = logging.getLogger(__name__)
 
 
@@ -105,16 +103,9 @@ class AICompanyMemory(models.Model):
     # ════════════════════════════════════════════
     # SEARCH
     # ════════════════════════════════════════════
-    # PgVector, inte fields.Text (rättat 2026-11-01) — samma skäl som i
-    # ai_personal_memory: kolumnen är vector(1024) sedan migration
-    # 18.0.2.0.23, och ett `fields.Text` fick Odoo att försöka konvertera
-    # den tillbaka till text vid varje uppgradering. Det föll på
-    # ivfflat-indexet ("operator class vector_cosine_ops does not accept
-    # data type text"). `PgVector.column_type[0] == 'vector'` matchar
-    # kolumnens typnamn, så Odoo lämnar den orörd.
-    embedding = PgVector(
-        string='Vector Embedding', dimension=1024,
-        help='pgvector(1024) embedding — the column is vector(1024) type.')
+    embedding = fields.Text(
+        string='Vector Embedding',
+        help='pgvector(1536d) as PostgreSQL vector literal.')
     entities = fields.Json(
         string='Extracted Entities',
         help='Entities extracted for entity linking boost.')
@@ -337,6 +328,7 @@ class AICompanyMemory(models.Model):
             ('scope', '=', 'company'),
             ('owner_company_id', '=', company_id),
             ('archived', '=', False),
+            ('status', '!=', 'superseded'),
         ])
         if okf_count:
             try:
@@ -412,11 +404,8 @@ class AICompanyMemory(models.Model):
                 'archive_date': fields.Datetime.now(),
             })
 
-        # IS NULL, inte `= False`: sedan 18.0.2.0.23 är kolumnen
-        # vector(1024) och Odoo genererar `= ''` för False, vilket inte är
-        # en giltig vector-literal (InvalidTextRepresentation).
         no_emb = self.search([
-            ('embedding', '=', None),
+            ('embedding', '=', False),
             ('archived', '=', False),
         ], limit=200)
         emb_count = 0
@@ -482,7 +471,7 @@ class AICompanyMemory(models.Model):
                 )
                 n += 1
             except Exception as e:
-                _logger.warning('Partner indexing failed for %s: %s',
+                _logger.warning('Partner indexering misslyckades för %s: %s',
                                 p.id, e)
         return n
 
@@ -508,8 +497,8 @@ class AICompanyMemory(models.Model):
         else:
             partners = self.env['res.partner'].search(domain)
         n = self._okf_index_partner_batch(
-            partners, company_id, 'Vendor')
-        _logger.info('OKF vendor indexer: %s vendors indexed', n)
+            partners, company_id, 'Leverantör')
+        _logger.info('OKF leverantörs-indexerare: %s leverantörer indexerade', n)
         return {'kind': 'supplier', 'indexed': n}
 
     @api.model
@@ -523,7 +512,8 @@ class AICompanyMemory(models.Model):
             ('knowledge.article', 'title', 'body'),
         ]:
             if model_name not in self.env:
-                _logger.debug('OKF knowledge indexer: model %s is missing — skipping', model_name)
+                _logger.debug('OKF knowledge-indexerare: modellen %s '
+                              'saknas — hoppar över', model_name)
                 continue
             Model = self.env[model_name]
             if not hasattr(Model, 'search'):
@@ -547,7 +537,8 @@ class AICompanyMemory(models.Model):
                     )
                     n += 1
                 except Exception as e:
-                    _logger.warning('Knowledge indexing failed for %s: %s', art.id, e)
+                    _logger.warning('Knowledge-indexering misslyckades '
+                                    'för %s: %s', art.id, e)
         _logger.info('OKF knowledge-indexerare: %s artiklar indexerade', n)
         return {'kind': 'knowledge', 'indexed': n}
 
@@ -604,7 +595,7 @@ class AICompanyMemory(models.Model):
                         content = doc._index() if hasattr(doc, '_index') \
                             else doc.raw.decode('utf-8', errors='ignore')
                     except Exception:
-                        pass  # best-effort: tyst fallback — se etiketteringsregeln
+                        pass
                     if not content or len(content) < 20:
                         continue
                     source_ref = f"ir.attachment,{doc.id}"
@@ -718,6 +709,7 @@ class AICompanyMemory(models.Model):
             ('scope', '=', 'company'),
             ('owner_company_id', '=', company_id),
             ('archived', '=', False),
+            ('status', '!=', 'superseded'),
         ], limit=200)
         if not concepts:
             return {'kind': 'management_summary', 'indexed': 0}
@@ -725,7 +717,7 @@ class AICompanyMemory(models.Model):
         # Gruppera efter artifact type
         by_type = {}
         for c in concepts:
-            atype = c.artifact_type_id.name or 'other'
+            atype = c.artifact_type_id.name or 'övrigt'
             by_type.setdefault(atype, []).append(c)
 
         lines = []
