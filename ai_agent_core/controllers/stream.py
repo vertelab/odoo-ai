@@ -1625,17 +1625,14 @@ class AIStreamController(http.Controller):
                 if q.show_in_chat and not q.group_ids and not q.user_ids:
                     accessible_quests.append(q)
 
-        # Filter to only quests that are marked for the web chat UI.
-        #
-        # Fragan stalls till coworkern sjalv (`_is_web_ui_coworker()`), inte
-        # till init_type-raderna har. Skalet (drift 2026-11-16): tva coworkers
-        # hade dubblettrader for web_ui - en enabled=False och en enabled=True
-        # - medan deras `init_web_ui`-boolean var osatt. `filtered(it.enabled)`
-        # sag den ena raden och slappte igenom dem, sa coworkers som inte ar
-        # markerade for web-UI dok upp i valjaren. En enda sanning ligger nu i
-        # modellen, dar aven datafilerna och formularets kryssruta hor hemma.
-        web_ui_quests = [q for q in accessible_quests
-                         if q._is_web_ui_coworker()]
+        # Filter to only quests with an active web_ui init type
+        web_ui_quests = []
+        for q in accessible_quests:
+            web_ui_init = q.init_type_ids.filtered(
+                lambda it: it.init_type == 'web_ui' and it.enabled
+            )
+            if web_ui_init:
+                web_ui_quests.append(q)
 
         # Default AI-medarbetare: bolagets val (res.company), annars första
         # tillgängliga web_ui-coworker. Default-valet är ett bolagsbeslut —
@@ -4184,8 +4181,7 @@ class PICallbackController(http.Controller):
             if art.get('name') and art.get('data'):
                 request.env['ir.attachment'].sudo().create({
                     'name': art['name'],
-                    # 20.0: `datas` is gone; `raw` takes bytes, not base64.
-                    'raw': base64.b64decode(art['data']),
+                    'datas': art['data'],
                     'res_model': 'ai.coworker.session',
                     'res_id': session.id,
                 })

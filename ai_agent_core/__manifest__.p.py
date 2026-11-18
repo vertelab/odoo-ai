@@ -51,7 +51,11 @@
     },
     'data': [
         'security/ai_groups.xml',
+        # #if VERSION >= "20.0"
+        'security/ir.access.csv',
+        # #else
         'security/ir.model.access.csv',
+        # #endif
         'security/ai_hitl_rules.xml',
         'views/ai_actions.xml',
         'views/ai_okf_record_views.xml',

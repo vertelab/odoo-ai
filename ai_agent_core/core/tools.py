@@ -3703,12 +3703,12 @@ def attachment_bytes(att):
 
     Returns b'' when the attachment is empty.
     """
+    import base64 as _b64
     if not att:
         return b''
-    raw = att.raw
-    if not raw:
+    if not att.datas:
         return b''
-    return raw.content
+    return _b64.b64decode(att.datas)
 
 
 def _binary_read_field(rec, field):
@@ -3734,10 +3734,6 @@ def _binary_read_field(rec, field):
     raw = rec.with_context(bin_size=False)[read_field]
     if raw is None:
         return b''
-    # 20.0: `raw` returns a BinaryValue (LocalBinaryFile/BinaryBytes) whose
-    # content is already raw bytes. base64-decoding it would corrupt the file.
-    if hasattr(raw, 'content'):
-        return raw.content
     if isinstance(raw, bytes):
         try:
             return _b64.b64decode(raw)
