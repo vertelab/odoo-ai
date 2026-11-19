@@ -347,7 +347,7 @@ class AIMemory(models.Model):
         return Document(id=str(uuid.uuid4()), page_content=text, metadata=metadata)
 
     def create_documents_from_file(self, attachment_id):
-        file = base64.b64decode(attachment_id.raw)
+        file = attachment_id.raw.content
         documents = []
         if attachment_id.name.split(".")[-1] == "pdf":
             pages = pymupdf.open(stream=file)

@@ -1277,6 +1277,56 @@ def _tool_describe_available(env, question=''):
     return _json.dumps({'models': out}, ensure_ascii=False, default=str)
 
 
+# session_trace (session-trace-durability 5.1–5.3)
+def _tool_session_trace(env, limit=20):
+    """Vad hände? Sessionens verktygsspår — metadata, inte resultattext.
+
+    Pi Durable:s demo-förmåga ("hur långt kom du?" -> läs loggen -> "15")
+    fanns inte hos oss trots att datan gjorde det: `ai.coworker.session.
+    tool_call` bär namn, status, executor och duration, men agenten hade
+    ingen väg till den.
+
+    Vi returnerar MEDVETET inte `result_preview`: 50 anrop x 2 KB blir
+    100 KB i kontexten för en fråga som handlar om VILKA verktyg som körde.
+    Vill agenten se ett resultat finns `line.content` — men det är en annan
+    fråga, och den ska ställas explicit.
+    """
+    sess_id = 0
+    if env.context.get('_ai_context_model') == 'ai.coworker.session':
+        sess_id = env.context.get('_ai_context_id') or 0
+    if not sess_id:
+        sess_id = env.context.get('ai_lineage_session_id') or 0
+    if not sess_id:
+        return _json.dumps({
+            'error': 'no session in context - the trace needs a session'},
+            ensure_ascii=False)
+    session = env['ai.coworker.session'].sudo().browse(int(sess_id))
+    if not session.exists():
+        return _json.dumps({'error': 'session not found'},
+                           ensure_ascii=False)
+    try:
+        limit = max(1, min(int(limit or 20), 100))
+    except (TypeError, ValueError):
+        limit = 20
+    rows = env['ai.coworker.session.tool_call'].sudo().search(
+        [('session_id', '=', session.id)],
+        order='started_at desc, id desc', limit=limit)
+    out = [{
+        'tool': r.tool_name,
+        'status': r.status or 'done',
+        'executor': r.executor,
+        'duration_ms': r.duration_ms or 0,
+        'is_error': bool(r.is_error),
+        'started_at': str(r.started_at or ''),
+    } for r in rows]
+    return _json.dumps({
+        'session': session.id,
+        'trace_complete': bool(session.trace_complete),
+        'count': len(out),
+        'calls': out,
+    }, ensure_ascii=False, default=str)
+
+
 def _tool_push_notification(env, title='', body='', url=None):
     """Skicka en push-notis till sessionens användare (push-notification 1.1).
 
@@ -1960,6 +2010,31 @@ def builtin_tools() -> list[Tool]:
                 "required": ["question"],
             },
             handler=_tool_describe_available,
+            risk_level="read_only",
+            source="odoo_model",
+            trust="tool",
+        ),
+        Tool(
+            name="session_trace",
+            description=(
+                "What did I actually do in this session? Returns the tool "
+                "calls with name, status (started/done/error/abandoned), "
+                "where each ran, how long it took and whether it failed — "
+                "without the result text. Use it after a crash, or when you "
+                "are unsure what already ran, instead of guessing."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": ("How many of the most recent calls "
+                                        "to return. Default 20, max 100."),
+                        "example": 20,
+                    },
+                },
+                "required": [],
+            },
+            handler=_tool_session_trace,
             risk_level="read_only",
             source="odoo_model",
             trust="tool",

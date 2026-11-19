@@ -31,12 +31,7 @@ def install():
     from odoo import http
     from odoo.exceptions import UserError
 
-    # #if VERSION >= "20.0"
-    from odoo.http import dispatcher as http_dispatcher
-    original = http_dispatcher.HttpDispatcher.handle_error
-    # #else
     original = http.HttpDispatcher.handle_error
-    # #endif
 
     def handle_error(self, exc):
         request = getattr(self, "request", None)
@@ -84,11 +79,7 @@ def install():
             status=status,
         )
 
-    # #if VERSION >= "20.0"
-    http_dispatcher.HttpDispatcher.handle_error = handle_error
-    # #else
     http.HttpDispatcher.handle_error = handle_error
-    # #endif
     _INSTALLED = True
     _logger.info("ai_agent_core: /ai/** svarar alltid JSON (http_guard installerad)")
     return True

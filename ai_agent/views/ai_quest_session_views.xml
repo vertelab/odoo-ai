@@ -32,6 +32,12 @@
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
                     <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
+                        <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
+                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
+                        <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}" />
+                        <filter string="AI Agent LLM" name="group_by_ai_agent_llm" context="{'group_by': 'ai_agent_llm_id'}" />
+                        <filter string="Start Date" name="group_by_startdate" context="{'group_by': 'startdate'}" />
+                        <filter string="End Date" name="group_by_enddate" context="{'group_by': 'enddate'}" />
                 </search>
             </field>
         </record>
@@ -129,6 +135,11 @@
                     <field name="model_id" />
                     <field name="object_id" />
                     <field name="datetime" />
+                        <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
+                        <filter string="AI Session" name="group_by_ai_session" context="{'group_by': 'ai_session_id'}" />
+                        <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}" />
+                        <filter string="Object" name="group_by_object" context="{'group_by': 'object_id'}" />
+                        <filter string="Date" name="group_by_date" context="{'group_by': 'datetime'}" />
                 </search>
             </field>
         </record>

@@ -91,7 +91,7 @@ class AiQuest(models.Model):
     </record>
 
     """.strip() + "\n"
-                        attachments.append((f"{module_name}/files/{att.name}",base64.b64decode(att.datas)))
+                        attachments.append((f"{module_name}/files/{att.name}", att.raw.content))
                 if m.memory_faiss:
                     attachments.append((f"{module_name}/files/{m.name}.faiss",base64.b64decode(m.memory_faiss)))
                 if m.memory_markdown:
