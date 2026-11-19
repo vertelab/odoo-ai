@@ -2,6 +2,8 @@
 """ai.memory — FAISS/pgvector memory for agents."""
 
 import logging
+# Chunk-lagret (chunk-baserad minnessökning) finns bara på 18.0/19.0.
+# 20.0-porten är en tidig kopia som aldrig fick det.
 import os
 
 from odoo import models, fields, api

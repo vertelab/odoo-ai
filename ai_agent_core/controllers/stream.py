@@ -1240,6 +1240,14 @@ class AIStreamController(http.Controller):
                                 data["tool"] = _denial.get("tool", "")
                                 data["reason"] = _denial.get("reason", "")
                             elif event.type == "tool_call_start":
+                                # Första verktygsanropet (webui-thinking-and-
+                                # turn-metrics 4.1): `first_tool_seconds`
+                                # fanns på modellen men stämplades aldrig —
+                                # 0 på samtliga rader i drift. En stämpel per
+                                # anrop räcker; _compute_turn_timing tar den
+                                # första.
+                                _timing_marks.append(
+                                    ('tool', time.perf_counter()))
                                 if event.tool_call:
                                     data["tool_call"] = {
                                         "id": event.tool_call.id,
@@ -3004,19 +3012,33 @@ async def _collect(agen):
 
 
 def _compute_turn_timing(marks, started=None):
-    """Räkna de tre tidsmåtten ur en serie stämpelpar (kanalprestanda 2.2).
+    """Räkna tidsmåtten ur en serie stämpelpar (kanalprestanda 2.2).
 
-    Indata: ``marks`` — lista av ``(kind, t)`` där ``kind`` är ``'token'``
-    eller ``'thinking'`` (en innehållshändelse) och ``t`` är
-    ``time.perf_counter()``. ``started`` — när turen började behandlas;
-    saknas den används första stämpeln.
+    Indata: ``marks`` — lista av ``(kind, t)`` där ``kind`` är ``'token'``,
+    ``'thinking'`` eller ``'tool'`` och ``t`` är ``time.perf_counter()``.
+    ``started`` — när turen började behandlas; saknas den används första
+    stämpeln.
 
-    Utdata: ``{'first_token': s, 'longest_gap': s, 'stream': s}`` i sekunder
-    med tre decimaler.
+    Utdata: ``{'first_token': s, 'first_visible_token': s, 'first_tool': s,
+    'longest_gap': s, 'stream': s}`` i sekunder med tre decimaler.
+
+    Skillnaden mellan ``first_token`` och ``first_visible_token``
+    (webui-thinking-and-turn-metrics 3.1): ``first_token`` är den FÖRSTA
+    innehållshändelsen oavsett typ — för en resonerande modell är det
+    resonemanget, som användaren inte ser. ``first_visible_token`` räknar
+    bara ``'token'``, dvs. det som faktiskt ritas. Session 28674: 2,676 s
+    till första händelsen, ~40 s till första synliga tecknet. Ett enda fält
+    gjorde att turen såg snabb ut medan användaren väntade en minut.
+
+    ``first_tool`` (3.1/4.1): första ``'tool'``-stämpeln, 0 om turen aldrig
+    anropade ett verktyg. Fältet ``first_tool_seconds`` fanns på modellen men
+    fylldes aldrig — noll på samtliga rader i drift.
 
     Gränsfallen (2.2):
-    * tom serie → alla tre 0 (inget att mäta — inte "snabb").
+    * tom serie → alla 0 (inget att mäta — inte "snabb").
     * en enda händelse → gap 0, stream 0, first_token = t − started.
+    * bara ``'thinking'`` → ``first_visible_token`` = 0, INTE ``first_token``
+      och inte ``None``: användaren fick inget synligt svar.
     * ett långt uppehåll → gap = det LÄNGSTA enskilda intervallet, inte
       summan av alla.
 
@@ -3025,10 +3047,13 @@ def _compute_turn_timing(marks, started=None):
     en ``Queue.get`` per chunk).
     """
     if not marks:
-        return {'first_token': 0.0, 'longest_gap': 0.0, 'stream': 0.0}
+        return {'first_token': 0.0, 'first_visible_token': 0.0,
+                'first_tool': 0.0, 'longest_gap': 0.0, 'stream': 0.0}
     first_t = marks[0][1]
     last_t = marks[-1][1]
     base = started if started is not None else first_t
+    first_visible_t = next((t for kind, t in marks if kind == 'token'), None)
+    first_tool_t = next((t for kind, t in marks if kind == 'tool'), None)
     longest_gap = 0.0
     for (_kind_a, t_a), (_kind_b, t_b) in zip(marks, marks[1:]):
         gap = t_b - t_a
@@ -3036,6 +3061,12 @@ def _compute_turn_timing(marks, started=None):
             longest_gap = gap
     return {
         'first_token': round(max(first_t - base, 0.0), 3),
+        'first_visible_token': (
+            round(max(first_visible_t - base, 0.0), 3)
+            if first_visible_t is not None else 0.0),
+        'first_tool': (
+            round(max(first_tool_t - base, 0.0), 3)
+            if first_tool_t is not None else 0.0),
         'longest_gap': round(max(longest_gap, 0.0), 3),
         'stream': round(max(last_t - first_t, 0.0), 3),
     }
@@ -3444,6 +3475,16 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
             line_vals.update({
                 'first_token_seconds': float(
                     timing.get('first_token', 0.0) or 0.0),
+                # Första SYNLIGA tecknet (webui-thinking-and-turn-metrics
+                # 3.3): `first_token_seconds` ovan räknar även resonemang,
+                # så en tänkande modell såg snabb ut medan användaren vän-
+                # tade. 0 = turen gav inget synligt svar (bara resonemang).
+                'first_visible_token_seconds': float(
+                    timing.get('first_visible_token', 0.0) or 0.0),
+                # Första verktygsanropet (4.1). Fältet fanns men fylldes
+                # aldrig — 0 på samtliga rader i drift.
+                'first_tool_seconds': float(
+                    timing.get('first_tool', 0.0) or 0.0),
                 'longest_gap_seconds': float(
                     timing.get('longest_gap', 0.0) or 0.0),
                 'stream_seconds': float(timing.get('stream', 0.0) or 0.0),

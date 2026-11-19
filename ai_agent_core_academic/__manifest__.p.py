@@ -1,0 +1,32 @@
+# -*- coding: utf-8 -*-
+{
+    'name': 'AI: Academic Research Skills',
+    'version': '18.0.1.0.0',
+    'summary': 'Academic paper writing pipeline — 8-agent team for research to publication.',
+    'description': '''
+AI Agent Core — Academic Research Skills
+========================================
+
+    Academic paper writing pipeline — 8-agent team for research to publication.
+
+    Features:
+
+        - Focused Fix: A small, targeted improvement to standard Odoo behaviour.
+    ''',
+    'category': 'AI Orchestration',
+    'author': 'Vertel Sverige AB',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core_academic',
+    'license': 'AGPL-3',
+    'depends': ['ai_agent_core'],
+    'data': [
+        # #if VERSION >= "20.0"
+        'security/ir.access.csv',
+        # #else
+        'security/ir.model.access.csv',
+        # #endif
+    ],
+    'post_init_hook': 'post_init_hook',
+    'installable': True,
+    'auto_install': False,
+    'application': False,
+}

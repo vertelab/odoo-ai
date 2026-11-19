@@ -2,12 +2,18 @@
 """ai.memory — FAISS/pgvector memory for agents."""
 
 import logging
+# #if VERSION <= "19.0"
+# Chunk-lagret (chunk-baserad minnessökning) finns bara på 18.0/19.0.
+# 20.0-porten är en tidig kopia som aldrig fick det.
 import os
 
 from odoo import models, fields, api
 
 from ..core.tools import attachment_bytes
 from ..fields.pg_vector import PgVector
+# #else
+from odoo import models, fields, api
+# #endif
 from .ai_okf_concept import EMBEDDING_DIM as _OKF_EMBEDDING_DIM
 
 _logger = logging.getLogger(__name__)
@@ -26,9 +32,11 @@ _logger = logging.getLogger(__name__)
 # default, kalibrerad för en annan modell) släppte igenom precis allt.
 # 0.70 ligger i glappet mellan de två grupperna.
 #
+# #if VERSION <= "19.0"
 # OBS: byts embeddingmodell måste denna kalibreras om. Den är en
 # egenskap hos MODELLEN, inte hos koden.
 _CHUNK_MIN_COSINE = 0.70
+# #endif
 
 # ── OpenMP-trådar: faiss segfaultar annars i worker-kontext ─────────────
 # faiss-cpu (pip-hjul) bär SIN EGEN libgomp + OpenBLAS
