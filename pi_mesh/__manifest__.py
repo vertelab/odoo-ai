@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI: Pi Agent Mesh',
-    'version': '1.6.0',
+    'version': '18.0.1.6.0',
     'license': 'AGPL-3',
     'category': 'AI',
     'summary': 'Historik och överblick för Pi-agenternas mesh',
@@ -23,7 +23,7 @@ trasig avsändare inte fastnar i retry-loopar.
 Depends on:
     - ai_agent_core: coworker- och sessionsmodellerna
     """,
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se',
     'depends': ['ai_agent_core'],
     'data': [

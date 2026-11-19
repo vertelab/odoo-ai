@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Pi MCP Developer Server',
-    'version': '1.0.0',
+    'version': '18.0.1.0.0',
     'summary': 'Standalone MCP streamable-HTTP server for Pi system development against this database.',
     'category': 'AI Orchestration',
     'description': '''
@@ -55,7 +55,7 @@ Pi MCP Developer Server
         - Web integration: Exposes HTTP endpoints for external systems.
         - Extends Odoo: Builds on ai_pi_mcp.dev_tools, mcp.session, mcp.tool, mcp.tool.mixin.
     ''',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_pi_mcp',
     'license': 'AGPL-3',
     'depends': [

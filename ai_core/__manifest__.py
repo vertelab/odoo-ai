@@ -4,7 +4,7 @@
 
 {
     "name": "AI: LLM Provider Abstraction",
-    "version": "1.0.0",
+    "version": "18.0.1.0.0",
     "summary": "Provider abstraction, model discovery, rate limiting, token tracking",
     "category": "AI",
     "author": "Vertel Sverige AB",
@@ -12,7 +12,7 @@
     "license": "AGPL-3",
     "depends": ["mail"],
     "data": [
-        "security/ir.access.csv",
+        'security/ir.access.csv',
         "views/llm_provider_views.xml",
         "data/demo_providers.xml",
     ],

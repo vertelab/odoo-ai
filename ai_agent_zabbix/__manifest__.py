@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI: Zabbix Integration',
-    'version': '1.0.0',
+    'version': '18.0.1.0.0',
     'license': 'AGPL-3',
     'category': 'AI',
     'summary': 'Zabbix integration for AI agent monitoring.',
@@ -22,7 +22,7 @@ AI Agent Zabbix
         - UI Integration: Extends 1 view(s) in the Odoo interface.
         - Extends Odoo: Builds on ai.zabbix.config.
     ''',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_zabbix',
     'depends': ['ai_agent_core'],
     'data': [

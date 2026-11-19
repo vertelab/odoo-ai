@@ -116,7 +116,7 @@ class AIContextBridge(http.Controller):
 
     # ── Endpoints ─────────────────────────────────────────────────────
 
-    @http.route('/ai/context/set', type='jsonrpc', auth='user',
+    @http.route('/ai/context/set', type='json', auth='user',
                 methods=['POST'], csrf=False, sitemap=False)
     def set_context(self, channel_id=None, coworker_id=None, model=None,
                     res_id=None, res_ids=None, view_type=None,
@@ -142,7 +142,7 @@ class AIContextBridge(http.Controller):
                                   view_type, record_data)
         return {'success': True, 'channel_id': channel.id}
 
-    @http.route('/ai/context/launch', type='jsonrpc', auth='user',
+    @http.route('/ai/context/launch', type='json', auth='user',
                 methods=['POST'], csrf=False, sitemap=False)
     def launch(self, coworker_id, model=None, res_id=None, res_ids=None,
                view_type=None, record_data=None, prompt=None, **kw):
