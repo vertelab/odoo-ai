@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_pi_mesh_agent_user,pi.mesh.agent user,model_pi_mesh_agent,base.group_user,1,0,0,0
+access_pi_mesh_agent_officer,pi.mesh.agent officer,model_pi_mesh_agent,ai_agent_core.group_ai_officer,1,1,1,1
+access_pi_mesh_message_user,pi.mesh.message user,model_pi_mesh_message,base.group_user,1,0,0,0
+access_pi_mesh_message_officer,pi.mesh.message officer,model_pi_mesh_message,ai_agent_core.group_ai_officer,1,1,1,1
+access_pi_mesh_lock_user,pi.mesh.lock user,model_pi_mesh_lock,base.group_user,1,0,0,0
+access_pi_mesh_lock_officer,pi.mesh.lock officer,model_pi_mesh_lock,ai_agent_core.group_ai_officer,1,1,1,1
+access_pi_mesh_task_user,pi.mesh.task user,model_pi_mesh_task,base.group_user,1,0,0,0
+access_pi_mesh_task_officer,pi.mesh.task officer,model_pi_mesh_task,ai_agent_core.group_ai_officer,1,1,1,1

@@ -20,7 +20,7 @@
 
 {
     'name': 'AI: Context Injection',
-    'version': '1.1.0',
+    'version': '18.0.1.1.0',
     'summary': 'Injects record data and chatter history as context into AI Quest sessions.',
     'category': 'AI Orchestration',
     'description': '''
