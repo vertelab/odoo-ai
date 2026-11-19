@@ -101,6 +101,11 @@ _ROLE_MARKER_RE = re.compile(
     re.IGNORECASE)
 
 
+# #if VERSION <= "19.0"
+# Spårningen (session-observability) finns bara på 18.0/19.0.
+# 20.0-porten är en tidig kopia som aldrig fick den. Att ta bort den
+# där eller villkora den är ett porteringsbeslut — p-filen bär
+# skillnaden tills beslutet är taget.
 def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
                       executor='odoo', line=None, status='done'):
     """Skriv en `tool_call`-rad per exekverat verktyg (session-observability).
@@ -189,7 +194,7 @@ def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
         if outcome == 'created':
             created += 1
     return created
-
+# #endif
 
 def _to_message_list(raw_messages):
     """Konvertera en OpenAI-format meddelandelista till `Message`-objekt.
@@ -5498,10 +5503,12 @@ class AIOpenAIAPI(http.Controller):
                 # körningen. Utan spår finns inget att skriva — Pi:s egna
                 # verktyg syns då bara som text i historiken.
                 _pi_trace = _selected_skills.get('pi_trace') or {}
+                # #if VERSION <= "19.0"
                 if _pi_trace.get('tools'):
                     _trace_tool_calls(
                         sess, _pi_trace['tools'], _pi_trace['tools'],
                         agent_run=run, executor='pi_local')
+                # #endif
             except Exception as e:
                 _logger.warning(
                     'agent_run persist failed (session=%s): %s',
@@ -6321,6 +6328,7 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'session_id': 0, 'created': 0}),
                             content_type='application/json')
 
+        # #if VERSION <= "19.0"
         try:
             created = _trace_tool_calls(
                 sess, tool_calls, [], executor='pi_local', status='started')
@@ -6329,6 +6337,9 @@ class AIOpenAIAPI(http.Controller):
                 'tools/begin: could not write the start rows (session %s): %s',
                 sess.id, _err)
             created = 0
+        # #else
+        created = 0
+        # #endif
         return Response(json.dumps({
             'session_id': sess.id, 'created': created}),
             content_type='application/json')
@@ -6759,6 +6770,7 @@ class AIOpenAIAPI(http.Controller):
             #
             # Best-effort: spåret får aldrig fälla verktygssvaret. Ett fel
             # här loggas och resultaten returneras ändå.
+            # #if VERSION <= "19.0"
             if sess.exists():
                 try:
                     _trace_tool_calls(sess, tool_calls, results)
@@ -6766,6 +6778,7 @@ class AIOpenAIAPI(http.Controller):
                     _logger.warning(
                         'tools/run: could not write the tool trace '
                         '(session %s): %s', sess.id, _trace_err)
+            # #endif
 
             # `session_uuid` krävs av godkännandekanalen: klienten pollar
             # `/ai/interrupt/poll` och svarar på `/ai/interrupt/respond`

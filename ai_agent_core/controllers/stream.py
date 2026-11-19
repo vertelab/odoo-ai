@@ -101,6 +101,10 @@ _ROLE_MARKER_RE = re.compile(
     re.IGNORECASE)
 
 
+# Spårningen (session-observability) finns bara på 18.0/19.0.
+# 20.0-porten är en tidig kopia som aldrig fick den. Att ta bort den
+# där eller villkora den är ett porteringsbeslut — p-filen bär
+# skillnaden tills beslutet är taget.
 def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
                       executor='odoo', line=None, status='done'):
     """Skriv en `tool_call`-rad per exekverat verktyg (session-observability).
@@ -189,7 +193,6 @@ def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
         if outcome == 'created':
             created += 1
     return created
-
 
 def _to_message_list(raw_messages):
     """Konvertera en OpenAI-format meddelandelista till `Message`-objekt.
