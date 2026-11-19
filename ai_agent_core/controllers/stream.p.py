@@ -102,7 +102,7 @@ _ROLE_MARKER_RE = re.compile(
 
 
 def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
-                      executor='odoo', line=None):
+                      executor='odoo', line=None, status='done'):
     """Skriv en `tool_call`-rad per exekverat verktyg (session-observability).
 
     EN källa för spårningen, delad av `/ai/v1/tools/run` (kör Odoo-verktyg)
@@ -117,6 +117,11 @@ def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
     hela historiken varje tur). Rader utan id får ingen dedup-nyckel och
     skrivs därför bara när de bär ett id — annars skulle en tom sträng
     kollidera med sig själv i UNIQUE-constrainten.
+
+    `status` (session-trace-durability): `'started'` när raden skrivs innan
+    verktyget körs (`/tools/begin`), annars den slutstatus som resultatet
+    ger. Skrivningen är en UPSERT med statusrank: en rad som redan nått ett
+    slut får aldrig nedgraderas av en sen startrad.
 
     Returnerar antalet skapade rader. Kastar vid fel; anroparen fångar.
     """
@@ -157,6 +162,10 @@ def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
             duration = res.get('duration_ms')
         parent = (tc.get('parent_tool_call_id')
                   or res.get('parent_tool_call_id') or False)
+        is_error = bool(res.get('is_error'))
+        row_status = 'started' if status == 'started' else (
+            'error' if is_error else 'done')
+        now = fields.Datetime.now()
         vals = {
             'session_id': sess.id,
             'agent_run_id': agent_run.id if agent_run else False,
@@ -167,18 +176,18 @@ def _trace_tool_calls(sess, tool_calls, results, agent_run=None,
             'executor': res.get('executor') or executor,
             'args': args or {},
             'result_preview': str(preview or '')[:2000],
-            'is_error': bool(res.get('is_error')),
+            'is_error': is_error,
             'duration_ms': int(duration or 0),
-            'started_at': fields.Datetime.now(),
+            'status': row_status,
+            # `started_at` är när anropet BÖRJADE, inte när raden skrevs.
+            # En startrad som anländer efter sin slutrad får därför inte
+            # flytta den (se `_upsert_trace`).
+            'started_at': now,
+            'finished_at': now if row_status != 'started' else False,
         }
-        if call_id:
-            exists = Trace.search([
-                ('session_id', '=', sess.id),
-                ('tool_call_id', '=', call_id)], limit=1)
-            if exists:
-                continue
-        Trace.create(vals)
-        created += 1
+        outcome = Trace._upsert_trace(vals)
+        if outcome == 'created':
+            created += 1
     return created
 
 
@@ -6220,6 +6229,68 @@ class AIOpenAIAPI(http.Controller):
             'data': schemas,
             'coworker': self._coworker_alias(quest),
         }), content_type='application/json')
+
+    @http.route('/ai/v1/tools/begin', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def tools_begin(self, **kw):
+        """POST /ai/v1/tools/begin — Pi signalerar att ett verktyg börjar.
+
+        session-trace-durability D3: på Pi-vägen körs verktyget i en annan
+        process på en annan maskin. Vi kan inte skriva raden "före
+        exekvering" på servern — bara Pi kan. Utan startraden lämnar en tur
+        som kraschar mitt i inga spår alls, och det är den mest intressanta
+        händelsen.
+
+        Body: {"session_id": N, "pi_session_id": "...",
+               "tool_calls": [{id, name, arguments}]}
+
+        Anropet är fire-and-forget från Pi: det får aldrig fördröja
+        verktyget. Svaret är därför minimalt och alltid 200 när sessionen
+        hittades — Pi loggar en varning och går vidare annars.
+        """
+        if not self._check_api_key():
+            return Response(json.dumps({
+                'error': {'message': 'Unauthorized',
+                          'type': 'authentication_error'}}),
+                status=401, content_type='application/json')
+        try:
+            body = json.loads(request.httprequest.data or '{}')
+        except json.JSONDecodeError:
+            return Response(json.dumps({
+                'error': {'message': 'Invalid JSON',
+                          'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
+
+        session_id = int(body.get('session_id') or 0)
+        pi_session_id = (body.get('pi_session_id') or '').strip()
+        tool_calls = body.get('tool_calls') or []
+        if not tool_calls:
+            return Response(json.dumps({
+                'error': {'message': 'Missing tool_calls',
+                          'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
+
+        Session = request.env['ai.coworker.session'].sudo()
+        sess = Session.browse(session_id) if session_id else Session
+        if (not sess or not sess.exists()) and pi_session_id:
+            sess = Session.search(
+                [('pi_session_id', '=', pi_session_id)], limit=1)
+        if not sess or not sess.exists():
+            # Ingen session att hänga raden på — Pi fortsätter ändå.
+            return Response(json.dumps({'session_id': 0, 'created': 0}),
+                            content_type='application/json')
+
+        try:
+            created = _trace_tool_calls(
+                sess, tool_calls, [], executor='pi_local', status='started')
+        except Exception as _err:
+            _logger.warning(
+                'tools/begin: could not write the start rows (session %s): %s',
+                sess.id, _err)
+            created = 0
+        return Response(json.dumps({
+            'session_id': sess.id, 'created': created}),
+            content_type='application/json')
 
     @http.route('/ai/v1/tools/run', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)

@@ -175,11 +175,85 @@ class AICoworkerSessionToolCall(models.Model):
         help='Runtime in milliseconds. 0 = not measured.')
     started_at = fields.Datetime('Started')
 
+    # ── Livscykel (session-trace-durability) ─────────────────────────────
+    # Raden skrivs när anropet BÖRJAR och uppdateras när det slutar, så att
+    # en tur som kraschar mitt i lämnar ett spår. Utan `status` gick det
+    # inte att skilja "kördes och blev klar" från "började och dog" — och
+    # just den händelsen var den vi loggade minst om.
+    #
+    # `started_at` är när anropet började, inte när raden skrevs. En
+    # startrad som anländer EFTER sin slutrad (långsamt nät, D2) får
+    # därför inte flytta den.
+    status = fields.Selection([
+        ('started', 'Started'),
+        ('done', 'Done'),
+        ('error', 'Error'),
+        ('abandoned', 'Abandoned'),
+    ], string='Status', required=True, default='done', index=True,
+        help='Where in the lifecycle the call is. `started` = the call began '
+             'and has not reported a result yet; `abandoned` = it never did '
+             '(set by the cron after the threshold). Default `done` keeps '
+             'rows written before this field existed correct.')
+    finished_at = fields.Datetime('Finished',
+        help='When the call reported its result. Empty while `status` is '
+             '`started`.')
+
+    #: Rangordning för UPSERT: en rad som redan nått ett slut får aldrig
+    #: nedgraderas till `started` av en sen startrad.
+    _STATUS_RANK = {'started': 0, 'done': 1, 'error': 1, 'abandoned': 1}
+
     _sql_constraints = [
         ('tool_call_dedup',
          'UNIQUE(session_id, tool_call_id)',
          'The same tool call is logged once per session.'),
     ]
+
+    @api.model
+    def _status_rank(self, status):
+        """Rang för en status — högre vinner vid UPSERT."""
+        return self._STATUS_RANK.get(status or '', 0)
+
+    @api.model
+    def _upsert_trace(self, vals):
+        """Skriv eller uppdatera en spårrad (UPSERT på tool_call_id).
+
+        `vals` är en komplett rad som `_trace_tool_calls` bygger: den bär
+        alltid `session_id`, `tool_call_id` och `status`.
+
+        Tre regler:
+
+        1. Ingen befintlig rad → skapa den.
+        2. Befintlig rad med LÄGRE eller lika rank → uppdatera den.
+        3. Befintlig rad med HÖGRE rank (en slutrad finns redan) → rör den
+           inte alls. En sen startrad får varken status eller `finished_at`.
+
+        Returnerar 'created', 'updated' eller 'skipped'.
+        """
+        call_id = (vals.get('tool_call_id') or '').strip()
+        if not call_id:
+            # Utan id finns ingen dedup-nyckel — raden skrivs som en egen
+            # rad (UNIQUE-constrainten hoppar över NULL/False).
+            self.create(vals)
+            return 'created'
+        existing = self.search([
+            ('session_id', '=', vals['session_id']),
+            ('tool_call_id', '=', call_id)], limit=1)
+        if not existing:
+            self.create(vals)
+            return 'created'
+        new_rank = self._status_rank(vals.get('status'))
+        old_rank = self._status_rank(existing.status)
+        if new_rank < old_rank:
+            return 'skipped'
+        # Samma rank: slutraden vinner över en startrad, men två slutrader
+        # får uppdatera varandra (t.ex. en förfinad preview). `finished_at`
+        # skrivs bara när den nya raden är ett slut.
+        update = dict(vals)
+        update.pop('session_id', None)
+        if new_rank == old_rank and vals.get('status') != 'started':
+            update.pop('started_at', None)  # behåll ursprunglig starttid
+        existing.write(update)
+        return 'updated'
 
 
 class AICoworkerSessionCloseEvent(models.Model):

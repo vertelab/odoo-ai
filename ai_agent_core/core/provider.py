@@ -41,6 +41,10 @@ _FINISH_ALIASES = {
     'end_turn': 'stop',
     'stop_sequence': 'stop',
     'function_call': 'tool_calls',
+    # Anthropic säger `tool_use` när modellen vill anropa ett verktyg. Utan
+    # mappningen sparas ett värde som inte finns i `finish_reason`-Selection
+    # och varje Anthropic-tur med verktyg får ett ogiltigt utfall.
+    'tool_use': 'tool_calls',
     'completed': 'stop',
 }
 
@@ -171,6 +175,11 @@ class Message:
                 'Message.role was a string — normalised to %s',
                 self.role.name)
 
+    # `is_error: true` på `tool_result`-blocket — utan det presenteras ett
+    # misslyckat verktyg som lyckat för modellen, som då upprepar anropet i
+    # stället för att rätta det (pi-coworker-awareness D4).
+    is_error: bool = False
+
     def to_openai(self) -> dict:
         """Serialize to OpenAI format. Sidecars are stripped."""
         msg = {"role": self.role.value, "content": self.content}
@@ -190,14 +199,16 @@ class Message:
         if self.role == Role.SYSTEM:
             return None  # Anthropic handles system separately
         if self.role == Role.TOOL:
-            return {
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": self.tool_call_id,
-                    "content": self.content,
-                }],
+            block = {
+                "type": "tool_result",
+                "tool_use_id": self.tool_call_id,
+                "content": self.content,
             }
+            # Fältet utelämnas när det är falskt, så lyckade anrop är
+            # byte-identiska med före ändringen.
+            if self.is_error:
+                block["is_error"] = True
+            return {"role": "user", "content": [block]}
         content = self.content
         if self.tool_calls:
             content = [

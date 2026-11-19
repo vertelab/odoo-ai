@@ -187,6 +187,15 @@ class AICoworkerSession(models.Model):
         'Tool Errors', compute='_compute_trace_counts', store=False)
     trace_agent_count = fields.Integer(
         'Agents', compute='_compute_trace_counts', store=False)
+    # Ärlighetsflagga (session-trace-durability): sant när Pi rapporterade
+    # ett spår, falskt när ingen trace anlände. Utan den läser både människa
+    # och agent en tom spårlista som "noll verktyg kördes" — vilket är den
+    # farligaste sorten tysta lögn. Samma mönster som `is_wired` på
+    # ai.search.source: fältet säger vad vi VET, inte vad som är bra.
+    trace_complete = fields.Boolean(
+        'Trace Complete', default=True,
+        help='True when Pi reported a trace for this session. False means '
+             'we do not know what ran — not that nothing ran.')
 
     @api.depends('close_event_ids', 'close_event_ids.at')
     def _compute_close_event_count(self):
