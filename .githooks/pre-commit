@@ -12,7 +12,7 @@
 # Utgåvorna som matchas sätts av Salt vid deploy (PFILES_EDITIONS nedan).
 set -e
 
-PFILES_EDITIONS="17.0,18.0,19.0"
+PFILES_EDITIONS="18.0,20.0"
 
 V="${GEANY_PFILES_VERSION:-}"
 if [ -z "$V" ]; then
@@ -41,8 +41,19 @@ files=$(git diff --cached --name-only --diff-filter=ACM \
 printf '%s\n' "$files" | while IFS= read -r f; do
     [ -f "$f" ] || continue
     o=$(printf '%s' "$f" | sed 's/\.p\././')
-    "$CMD" -f -D VERSION="$V" -o "$o" "$f"
-    git add "$o"
+    # preprocess chmod:ar utdata 0777, vilket faller i /usr/share (root-agda
+    # filer, 0644). Generera till temp och kopiera - da blir behorigheterna
+    # som filen redan har.
+    tmp=$(mktemp)
+    if "$CMD" -f -D VERSION="$V" -o "$tmp" "$f"; then
+        cat "$tmp" > "$o"
+        rm -f "$tmp"
+        git add "$o"
+    else
+        rm -f "$tmp"
+        echo "pfiles: expansionen av $f misslyckades" >&2
+        exit 1
+    fi
     echo "pfiles: $f -> $o (VERSION=$V)"
 done
 exit 0

@@ -1,0 +1,10 @@
+name: pfiles
+
+on:
+  push:
+    branches: ['*.0', 'ci/**', 'pfiles/**']
+  pull_request:
+
+jobs:
+  pfiles:
+    uses: vertelab/pfiles-ci/.github/workflows/pfiles.yml@v1
