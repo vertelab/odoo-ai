@@ -129,6 +129,119 @@ class AIModel(models.Model):
             maker = r.source_provider or r.provider
             r.real_provider = maker.name if maker else ''
 
+    # ── Systemtoken-kalibrering (systemtoken-calibration D1/D2) ─────────
+
+    @api.model
+    def _calibration_params(self):
+        """Systemtoken-priset och vikterna — EN källa för beräkningen.
+
+        Samma nycklar och samma defaults som
+        `bifrost.valuation._pricing_params()` läser, så de två sidorna av
+        bryggan inte kan glida isär. `ai_agent_core` importerar INTE
+        `bifrost` — formeln är tre rader aritmetik på två fält som redan
+        finns här, och att duplicera *aritmetiken* är billigare än att
+        skapa ett modulberoende.
+
+        Returnerar ``(price, w_in, w_out)``.
+        """
+        icp = self.env['ir.config_parameter'].sudo()
+
+        def _f(key, default):
+            try:
+                return float(icp.get_param(key) or default)
+            except (TypeError, ValueError):
+                return float(default)
+
+        price = _f('bifrost.systemtoken_price',
+                   _f('bifrost.systemtoken_price_sek', 35))
+        return (
+            price,
+            _f('bifrost.systemtoken_input_weight', 0.25),
+            _f('bifrost.systemtoken_output_weight', 0.75),
+        )
+
+    def _calibration_cost_per_1m(self, w_in, w_out):
+        """Viktad modellkostnad per 1M tokens, i modellens prisvaluta.
+
+        Samma formel som `bifrost.valuation._blended_price_company`:
+        ``(input_pris × w_in + output_pris × w_out) × 1_000_000``.
+
+        `cost_input_1k`/`cost_output_1k` är per 1K-token, så ×1000 ger
+        per 1M. Valutan är `pricing_currency_id` (vanligen USD) —
+        systemtoken-priset är i bolagsvalutan, vilket är en känd
+        avvikelse som `calibration_cost_per_1m` gör synlig.
+        """
+        self.ensure_one()
+        return (
+            (self.cost_input_1k or 0.0) * w_in
+            + (self.cost_output_1k or 0.0) * w_out
+        ) * 1000.0
+
+    @api.depends('cost_input_1k', 'cost_output_1k', 'pricing_currency_id')
+    def _compute_sys_multiplier(self):
+        """Systemtokens per riktig token — ur priset, aldrig ur namnet.
+
+            kostnad_per_1M = (cost_input_1k × w_in + cost_output_1k × w_out) × 1000
+            sys_multiplier = kostnad_per_1M / systemtoken_pris
+
+        En billig modell ger en LITEN faktor (få systemtokens per riktig
+        token); en dyr ger en stor. Det är motsatsen till Bifrosts
+        `systemtokens_per_block` (pris / kostnad), som svarar på hur många
+        systemtokens en miljon riktiga tokens är värd — de två är varandras
+        inverterade, vilket är avsiktligt.
+
+        Pris 0 ger faktor 0.0 och en varning: att gissa ett pris vore värre
+        än att visa att det saknas.
+        """
+        price, w_in, w_out = self._calibration_params()
+        for r in self:
+            cost_per_1m = r._calibration_cost_per_1m(w_in, w_out)
+            if not price:
+                r.sys_multiplier = 0.0
+                _logger.warning(
+                    'sys_multiplier: systemtoken-priset är 0 — modell %s '
+                    'får faktor 0.0', r.display_name or r.name)
+            elif not cost_per_1m:
+                r.sys_multiplier = 0.0
+                _logger.warning(
+                    'sys_multiplier: modell %s saknar pris '
+                    '(cost_input_1k=0, cost_output_1k=0) — faktor 0.0',
+                    r.display_name or r.name)
+            else:
+                r.sys_multiplier = cost_per_1m / price
+
+    @api.model
+    def _cron_recalculate_calibration(self):
+        """Månadsvis omräkning av `sys_multiplier` (systemtoken-calibration D2).
+
+        Körs vid månadsskifte så att en prisändring hos leverantören slår
+        igenom i stället för att aldrig slå igenom. Idempotent: samma månad
+        ger samma faktor.
+
+        Faktorn fryses på varje session line vid skapande — rader från
+        föregående månad behåller sin sats.
+        """
+        from datetime import date
+        month = date.today().strftime('%Y-%m')
+        price, w_in, w_out = self._calibration_params()
+        models = self.search([])
+        changed = 0
+        for m in models:
+            before = m.sys_multiplier
+            cost_per_1m = m._calibration_cost_per_1m(w_in, w_out)
+            m.write({
+                'calibration_month': month,
+                'calibration_price': price,
+                'calibration_cost_per_1m': cost_per_1m,
+            })
+            if abs((m.sys_multiplier or 0.0) - (before or 0.0)) > 1e-12:
+                changed += 1
+        _logger.info(
+            'systemtoken-kalibrering %s: %d modeller omräknade, %d ändrade '
+            '(pris=%s, w_in=%s, w_out=%s)',
+            month, len(models), changed, price, w_in, w_out)
+        return changed
+
     # Capabilities
     is_vision = fields.Boolean('Vision', help='Supports image input')
     is_embedded = fields.Boolean('Embedding', help='Supports text embeddings')
@@ -153,9 +266,39 @@ class AIModel(models.Model):
     cost_input_1k = fields.Float('Input Cost per 1K tokens', digits=(12, 8))
     cost_output_1k = fields.Float('Output Cost per 1K tokens', digits=(12, 8))
 
-    # Systemtoken pricing (admin-styrd)
-    sys_multiplier = fields.Float('Systemtoken-multiplikator', default=1.0,
-        help='How many systemtokens 1 real token costs. 1.0 = DeepSeek, 5.0 = GPT-4o, 6.0 = Claude. Includes Vertel margin.')
+    # Systemtoken pricing (beräknad — systemtoken-calibration D1/D2)
+    #
+    # Faktorn är INTE en åsikt: den härleds ur modellens faktiska pris och
+    # systemtoken-priset. En riktig token för en billig modell är värd få
+    # systemtokens; för en dyr modell många.
+    #
+    #   kostnad_per_1M = (cost_input_1k x w_in + cost_output_1k x w_out) x 1000
+    #   sys_multiplier = kostnad_per_1M / systemtoken_pris
+    #
+    # `systemtoken_pris` läses ur `bifrost.systemtoken_price` (fallback
+    # `bifrost.systemtoken_price_sek`, default 35). Vikterna ur
+    # `bifrost.systemtoken_input_weight` (0.25) och
+    # `bifrost.systemtoken_output_weight` (0.75) — samma parametrar som
+    # `bifrost.valuation` använder, så de två sidorna av bryggan inte kan
+    # glida isär. Faktorn räknas om en gång per månad (cron) och fryses på
+    # varje session line vid skapande.
+    sys_multiplier = fields.Float(
+        'Systemtoken-multiplikator', compute='_compute_sys_multiplier',
+        store=True, readonly=True, digits=(16, 8),
+        help='Systemtokens per real token for this model. Derived from the '
+             'model price and the systemtoken price — never from the model '
+             'name. Frozen on each session line when it is created.')
+    calibration_month = fields.Char(
+        'Calibration Month', readonly=True,
+        help='YYYY-MM of the month the multiplier was calculated for.')
+    calibration_cost_per_1m = fields.Float(
+        'Cost per 1M (company currency)', readonly=True, digits=(16, 6),
+        help='The blended model price per 1M tokens, in company currency, '
+             'that the multiplier was derived from.')
+    calibration_price = fields.Float(
+        'Systemtoken Price', readonly=True, digits=(16, 4),
+        help='The systemtoken price (company currency per 1M systemtokens) '
+             'used in the calculation.')
     provider_cost_1M = fields.Float('Provider $/1M tokens',
         help='What the provider actually charges per 1M tokens. For admin insight only.')
 

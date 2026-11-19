@@ -1025,69 +1025,13 @@ class AIProvider(models.Model):
             vals['is_text2image'] = True
 
         if existing:
-            # Update existing — preserve sys_multiplier if manually set
+            # Uppdatera befintlig — `sys_multiplier` ägs av compute:n
+            # (systemtoken-calibration D5) och skrivs inte här.
             existing.write(vals)
         else:
-            # New model — set default sys_multiplier
-            vals['sys_multiplier'] = self._default_sys_multiplier(model_id)
+            # Ny modell — `sys_multiplier` räknas ur priset av
+            # `_compute_sys_multiplier`. Ingen namnheuristik.
             self.env['ai.model'].create(vals)
-
-    def _default_sys_multiplier(self, model_id: str) -> float:
-        """Determine default sys_multiplier for a model based on its name.
-        
-        These defaults include Vertel's margin and reflect the relative
-        cost/quality of each model family.
-        """
-        name = model_id.lower()
-        
-        # Embedding models — very cheap
-        if any(k in name for k in ('embed', 'text-embedding')):
-            return 0.1
-        
-        # Cheap/fast models
-        if any(k in name for k in ('deepseek', 'gpt-oss', 'llama-3.1-8b', 'gemma',
-                                    'allam', 'orpheus', 'qwen-2.5', 'ministral')):
-            return 1.0
-        
-        # Budget balanced
-        if any(k in name for k in ('gpt-4o-mini', 'llama-3.3-70b', 'mistral',
-                                    'claude-haiku', 'haiku', 'mixtral')):
-            return 1.5
-        
-        # Mid-tier
-        if any(k in name for k in ('gpt-4o', 'gpt-4-', 'command-r', 'llama-4')):
-            return 5.0
-        
-        # Premium models
-        if any(k in name for k in ('claude-sonnet', 'claude-3', 'claude-4',
-                                    'claude-opus', 'gemini-2', 'gpt-5')):
-            return 6.0
-        
-        # Audio/speech models
-        if any(k in name for k in ('whisper', 'tts', 'audio')):
-            return 2.0
-        
-        # Default for unknown models
-        return 1.0
-
-    def action_set_default_multipliers(self):
-        """Admin action: recalculate sys_multiplier defaults for all models.
-        
-        Only sets multiplier on models that still have the default 1.0
-        (does NOT overwrite manually adjusted multipliers).
-        """
-        self.ensure_one()
-        models = self.env['ai.model'].search([
-            ('provider', '=', self.id),
-            ('sys_multiplier', '=', 1.0),  # only untouched defaults
-        ])
-        count = 0
-        for m in models:
-            new_mult = self._default_sys_multiplier(m.name)
-            if new_mult != 1.0:
-                m.sys_multiplier = new_mult
-                count += 1
-        return count
 
     def action_view_models(self):
         """Smart button: open models linked to this provider."""

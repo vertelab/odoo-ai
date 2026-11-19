@@ -277,9 +277,13 @@
                             </group>
                         </page>
                         <page string="Systemtoken" name="systemtoken">
-                            <group string="Pricing">
-                                <field name="sys_multiplier"
-                                       help="How many systemtokens 1 real token costs. Includes Vertel margin."/>
+                            <group string="Beräknad faktor">
+                                <field name="sys_multiplier"/>
+                                <field name="calibration_month"/>
+                                <field name="calibration_cost_per_1m"/>
+                                <field name="calibration_price"/>
+                            </group>
+                            <group string="Provider (insyn)">
                                 <field name="provider_cost_1M"
                                        help="What the provider charges per 1M tokens. Admin insight only."/>
                             </group>

@@ -5,8 +5,12 @@ Bryggan mellan `ai.coworker.session.line` och företagets likviditetsprognos
 (ai-kostnad-till-likviditet). Två tal hålls ALLTID åtskilda:
 
 - **Faktisk kostnad** (`cost_usd` → SEK per radens datum) — vad AI:n kostade.
-- **Debiteringsgrund** (`token_sys` × `sys_multiplier`) — vad kunden debiteras,
-  inkl. Vertel-marginal. Inte samma tal.
+- **Debiteringsgrund** (summan av `token_sys`) — vad kunden debiteras, inkl.
+  Vertel-marginal. Inte samma tal.
+
+`token_sys` bär redan omräkningsfaktorn (`sys_multiplier`) — den multipliceras
+INTE en gång till här. Att göra det vore att räkna marginalen två gånger
+(systemtoken-calibration D4).
 
 Att slå ihop dem vore att felaktigt fakturera eller felaktigt prognostisera.
 Omätta rader (`usage_reported=False`) bärs som `unreported_line_count` +
@@ -52,7 +56,9 @@ class AiCostPeriodLine(models.Model):
         help='cost_usd converted to the company currency at the ROW date — a later rate change does not alter historical periods.')
     billing_base = fields.Float(
         'Debiteringsgrund', digits=(16, 4),
-        help='Sum of token_sys x sys_multiplier — the margin-loaded basis. NOT the same number as cost_usd.')
+        help='Sum of token_sys — the margin-loaded basis. token_sys already '
+             'carries the sys_multiplier factor, so it is NOT multiplied '
+             'again here. NOT the same number as cost_usd.')
 
     # ── Ärlighetsflagga ──────────────────────────────────────────────
     line_count = fields.Integer('Rader')

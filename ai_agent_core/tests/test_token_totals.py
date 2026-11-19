@@ -253,3 +253,42 @@ class TestTokenTotals(TransactionCase):
         # 4M tokens över 2 dagar med data = 2.0 M/dag.
         self.assertAlmostEqual(self.coworker.burn_rate_mtokens_day, 2.0,
                                places=4)
+
+    # ── total_sys_tokens som derivat (systemtoken-calibration D3) ────────
+
+    def test_total_sys_tokens_is_derived_from_lines(self):
+        """2.4: totalen är summan av radernas token_sys, inte ett inkrement.
+
+        Fältet var tidigare `self.total_sys_tokens += ...` per körning, vilket
+        gav två sanningar för samma sak och kunde dubbelräkna när en körning
+        passerade flera skrivvägar. Nu är det ett lagrat compute.
+        """
+        self._line(400_000)
+        self._line(600_000)
+        self.coworker.invalidate_recordset()
+        self.assertEqual(self.coworker.total_sys_tokens, 1_000_000)
+
+    def test_total_sys_tokens_grows_with_new_line(self):
+        """En ny rad ökar totalen med exakt radens token_sys."""
+        self._line(100_000)
+        self.coworker.invalidate_recordset()
+        before = self.coworker.total_sys_tokens
+        self.assertEqual(before, 100_000)
+
+        self._line(5_000)
+        self.coworker.invalidate_recordset()
+        self.assertEqual(self.coworker.total_sys_tokens, before + 5_000)
+
+    def test_total_sys_tokens_excludes_informative(self):
+        """Informativa rader bär spårbarhet, inte budget — samma regel som
+        `_token_totals` och `_compute_session_line_count`."""
+        self._line(100_000)
+        self._line(900_000, informative=True)
+        self.coworker.invalidate_recordset()
+        self.assertEqual(self.coworker.total_sys_tokens, 100_000)
+
+    def test_total_sys_tokens_zero_without_lines(self):
+        """En medarbetare utan rader ger 0, inte KeyError eller ett gammalt
+        inkrementellt värde."""
+        self.other.invalidate_recordset()
+        self.assertEqual(self.other.total_sys_tokens, 0)

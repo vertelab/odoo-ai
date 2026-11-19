@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Månadsvis omräkning av systemtoken-faktorn
+             (systemtoken-calibration 4.1).
+
+             `ai.model.sys_multiplier` härleds ur modellens faktiska pris och
+             systemtoken-priset. En prisändring hos leverantören ska slå
+             igenom — men bara vid månadsskiftet, inte mitt i en faktura.
+             Rader fryser sin faktor vid skapande, så en rad från september
+             behåller septembersatsen även om oktoberpriset är ett annat.
+
+             cron.task (inte ir.cron): samma skäl som cron_cost_aggregate —
+             ett ir.cron som skrivs vid modulladdning kan inte uppdateras
+             medan jobbet kör, och uppgraderingen faller på "Record cannot be
+             modified right now". -->
+        <record id="cron_task_cron_recalculate_calibration" model="cron.task">
+            <field name="name">AI: Räkna om systemtoken-faktorn</field>
+            <field name="technical_name">ai_recalculate_calibration</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.model</field>
+            <field name="method_name">_cron_recalculate_calibration</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">months</field>
+            <field name="sequence">15</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

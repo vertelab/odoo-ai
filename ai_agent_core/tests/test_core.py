@@ -905,63 +905,54 @@ class TestQuestAccessControl(unittest.TestCase):
 class TestSystemtoken(unittest.TestCase):
     """Test systemtoken computation and quest tracking."""
 
-    def test_sys_multiplier_defaults(self):
-        """T1.6: _default_sys_multiplier logic returns correct defaults.
-        
-        We test the logic by extracting it from the source, avoiding
-        Odoo model import issues in unit tests.
+    def test_sys_multiplier_follows_price_not_name(self):
+        """3.6: faktorn följer priset, inte namnet (systemtoken-calibration).
+
+        Den gamla namnheuristiken (`deepseek` -> 1.0, `claude-3` -> 6.0) är
+        borta. Faktorn är `kostnad_per_1M / systemtoken_pris`, så två
+        modeller med samma pris får samma faktor oavsett namn, och en modell
+        med 20x priset får 20x faktorn.
+
+        Logiken testas som ren aritmetik — samma formel som
+        `_compute_sys_multiplier` använder.
         """
-        import os, re
-        path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_provider.py'
-        )
-        path = os.path.abspath(path)
+        W_IN, W_OUT, PRICE = 0.25, 0.75, 35.0
+
+        def factor(cost_in_1k, cost_out_1k):
+            cost_per_1m = (cost_in_1k * W_IN + cost_out_1k * W_OUT) * 1000.0
+            if not PRICE or not cost_per_1m:
+                return 0.0
+            return cost_per_1m / PRICE
+
+        # Samma pris, olika namn -> samma faktor.
+        cheap = factor(0.0001, 0.0001)
+        self.assertAlmostEqual(cheap, factor(0.0001, 0.0001), places=12)
+
+        # 20x priset -> 20x faktorn.
+        pricey = factor(0.002, 0.002)
+        self.assertAlmostEqual(pricey / cheap, 20.0, places=9)
+
+        # Konkret: $0,10/1M med 0,25/0,75-vikter = 0,0001 per token.
+        # kostnad_per_1M = 0,1 i prisvalutan; /35 = 0,002857...
+        self.assertAlmostEqual(cheap, 0.1 / 35.0, places=9)
+
+        # Pris 0 -> faktor 0, ingen gissning.
+        self.assertEqual(factor(0.0, 0.0), 0.0)
+
+    def test_sys_multiplier_source_is_computed(self):
+        """3.6: ai.model.sys_multiplier är en compute, inte ett default-fält."""
+        import os
+        path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_model.py'))
         with open(path) as f:
             content = f.read()
-        
-        # Extract the _default_sys_multiplier function
-        match = re.search(r'def _default_sys_multiplier\(self, model_id: str\) -> float:(.*?)(?=\n    def |\n    @|\nclass )', content, re.DOTALL)
-        if not match:
-            self.skipTest("Cannot extract _default_sys_multiplier from source")
-        
-        # Define a simple test function that replicates the logic
-        def _default_sys_multiplier(model_id: str) -> float:
-            name = model_id.lower()
-            if any(k in name for k in ('embed', 'text-embedding')):
-                return 0.1
-            if any(k in name for k in ('deepseek', 'gpt-oss', 'llama-3.1-8b', 'gemma',
-                                        'allam', 'orpheus', 'qwen-2.5', 'ministral')):
-                return 1.0
-            if any(k in name for k in ('gpt-4o-mini', 'llama-3.3-70b', 'mistral',
-                                        'claude-haiku', 'haiku', 'mixtral')):
-                return 1.5
-            if any(k in name for k in ('gpt-4o', 'gpt-4-', 'command-r', 'llama-4')):
-                return 5.0
-            if any(k in name for k in ('claude-sonnet', 'claude-3', 'claude-4',
-                                        'claude-opus', 'gemini-2', 'gpt-5')):
-                return 6.0
-            if any(k in name for k in ('whisper', 'tts', 'audio')):
-                return 2.0
-            return 1.0
-
-        test_cases = [
-            ('deepseek-v4-flash', 1.0),
-            ('cerebras/gpt-oss-120b', 1.0),
-            ('groq/llama-3.1-8b-instant', 1.0),
-            ('openai/gpt-4o-mini', 1.5),
-            ('groq/llama-3.3-70b-versatile', 1.5),
-            ('openai/gpt-4o', 5.0),
-            ('anthropic/claude-sonnet-4', 6.0),
-            ('anthropic/claude-3-opus', 6.0),
-            ('google/gemini-2.0-flash', 6.0),
-            ('openai/text-embedding-3-small', 0.1),
-            ('openai/whisper-1', 2.0),
-            ('unknown-model-123', 1.0),
-        ]
-        for model_id, expected in test_cases:
-            result = _default_sys_multiplier(model_id)
-            self.assertEqual(result, expected,
-                f"_default_sys_multiplier({model_id!r}) = {result}, expected {expected}")
+        self.assertIn("_compute_sys_multiplier", content)
+        self.assertIn("_calibration_params", content)
+        self.assertIn("_cron_recalculate_calibration", content)
+        self.assertIn("calibration_month", content)
+        self.assertIn("calibration_cost_per_1m", content)
+        # Namnheuristiken ska inte finnas kvar någonstans.
+        self.assertNotIn("_default_sys_multiplier", content)
 
     def test_token_sys_source(self):
         """T1.6: session line model source contains sys_multiplier and token_sys."""
@@ -1008,17 +999,19 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("sys_multiplier", content)
         self.assertIn("provider_cost_1M", content)
 
-    def test_provider_default_multiplier_source(self):
-        """T1.6: ai.provider source contains _default_sys_multiplier."""
+    def test_provider_has_no_name_heuristic(self):
+        """3.4: namnheuristiken är avvecklad (systemtoken-calibration D5).
+
+        `_default_sys_multiplier` och `action_set_default_multipliers` ska
+        inte finnas kvar — faktorn räknas ur priset, inte ur namnet.
+        """
         import os
-        path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_provider.py'
-        )
-        path = os.path.abspath(path)
+        path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_provider.py'))
         with open(path) as f:
             content = f.read()
-        self.assertIn("_default_sys_multiplier", content)
-        self.assertIn("action_set_default_multipliers", content)
+        self.assertNotIn("def _default_sys_multiplier", content)
+        self.assertNotIn("def action_set_default_multipliers", content)
 
     def test_controller_respond_source(self):
         """T1.6: stream controller accepts token tracking fields."""

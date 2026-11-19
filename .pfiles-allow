@@ -584,3 +584,4 @@ pi_mesh/views/pi_mesh_lock_views.xml
 pi_mesh/views/pi_mesh_menu.xml
 pi_mesh/views/pi_mesh_message_views.xml
 pi_mesh/views/pi_mesh_task_views.xml
+ai_agent_core/data/cron_calibration.xml
