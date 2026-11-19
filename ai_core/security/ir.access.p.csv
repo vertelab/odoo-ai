@@ -1,7 +1,0 @@
-id,name,model_id:id,group_id:id,operation,domain
-access_llm_provider_user,llm.provider,model_llm_provider,base.group_user,r,
-access_llm_provider_manager,llm.provider manager,model_llm_provider,base.group_system,crud,
-access_llm_model_user,llm.model,model_llm_model,base.group_user,r,
-access_llm_model_manager,llm.model manager,model_llm_model,base.group_system,crud,
-access_llm_session_line_user,llm.session.line,model_llm_session_line,base.group_user,r,
-access_llm_session_line_manager,llm.session.line manager,model_llm_session_line,base.group_system,crud,

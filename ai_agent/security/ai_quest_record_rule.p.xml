@@ -1,5 +1,4 @@
 <odoo>
-    <!-- #if VERSION <= "19.0" -->
     <data noupdate="1">
 
         <record id="record_ai_agent_developer_quest_rule" model="ir.rule">
@@ -56,5 +55,4 @@
             </field>
         </record>    
     </data>
-    <!-- #endif -->
 </odoo>

@@ -1,2 +1,0 @@
-id,name,model_id:id,group_id:id,operation,domain
-access_ai_coworker_session_context,ai.coworker.session.context,model_ai_coworker_session,base.group_user,crud,

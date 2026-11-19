@@ -42,11 +42,7 @@ class AITrend(models.Model):
             return self.env['ai.trend'].search_count([('video_id','=',video_id)]) > 0
         
         
-        # #if VERSION >= "20.0"
-        youtube_api_key = self.env['ir.config_parameter'].sudo().get_str('ai_agent_trend.youtube_api_key',None)
-        # #else
         youtube_api_key = self.env['ir.config_parameter'].sudo().get_param('ai_agent_trend.youtube_api_key',None)
-        # #endif
         if not youtube_api_key:
             raise UserError('Missing Youtube API Key Keys are created at https://console.cloud.google.com')
         youtube = build('youtube', 'v3', developerKey=youtube_api_key)

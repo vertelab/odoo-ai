@@ -1,2 +1,0 @@
-id,name,model_id:id,group_id:id,operation,domain
-ai_agent_pgvector.access_ai_memory_rag,access_ai_memory_rag,ai_agent_pgvector.model_ai_memory_rag,base.group_user,crud,

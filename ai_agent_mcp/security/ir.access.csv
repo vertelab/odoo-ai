@@ -1,2 +1,0 @@
-id,name,model_id:id,group_id:id,operation,domain
-access_res_mcp,res.mcp access,model_res_mcp,,crud,

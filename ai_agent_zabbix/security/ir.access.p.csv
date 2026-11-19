@@ -1,3 +1,0 @@
-id,name,model_id:id,group_id:id,operation,domain
-access_ai_zabbix_config_admin,ai.zabbix.config admin,model_ai_zabbix_config,base.group_system,crud,
-access_ai_zabbix_config_user,ai.zabbix.config user,model_ai_zabbix_config,base.group_user,r,
