@@ -40,6 +40,7 @@
           <field name="object_id" />
           <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
           <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
+          <!-- Odoo 20: <group> is gone from <search>; filters sit flat. -->
           <group expand="0" string="Group By">
             <filter string="AI Agent LLM" name="group_by_llm" context="{'group_by': 'ai_agent_llm_id'}" />
             <filter string="AI Type" name="group_by_type" context="{'group_by': 'ai_type'}" />

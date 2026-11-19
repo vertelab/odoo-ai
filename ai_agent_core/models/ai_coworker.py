@@ -8882,15 +8882,19 @@ class AICoworkerAgent(models.Model):
         for rec in self:
             rec.agent_model_id = rec.agent_id.model_id
 
-    @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name',
-                 'agent_id.rag_memory_ids.name')
+    # `rag_memory_ids` togs bort från ai.agent i f68ef4b2 (OKF-format:
+    # agent-kopplingen är many-to-many via `memory_ids`). Referensen här kom
+    # tillbaka när cafff7e5 skrev in en äldre version av den här filen, och
+    # gjorde att hela modulen föll vid registry-laddning:
+    #     ValueError: Wrong @depends on '_compute_agent_display' ...
+    #     Dependency field 'rag_memory_ids' not found in model ai.agent.
+    # `memory_ids.memory_id` bär redan alla minnen — den parallella envägs-
+    # vägen är precis den driftfälla ai_agent.py:63 varnar för.
+    @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name')
     def _compute_agent_display(self):
         for rec in self:
             tools = rec.agent_id.tool_ids.mapped('name')
-            memories = (
-                rec.agent_id.memory_ids.mapped('memory_id.name')
-                + rec.agent_id.rag_memory_ids.mapped('name')
-            )
+            memories = rec.agent_id.memory_ids.mapped('memory_id.name')
             rec.agent_tools_display = ', '.join([t for t in tools if t])
             rec.agent_memories_display = ', '.join([m for m in memories if m])
 

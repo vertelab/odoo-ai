@@ -798,10 +798,16 @@ class AICoworker(models.Model):
     # sak: fältet kunde driva iväg från `session_line_count` när en körning
     # passerade flera skrivvägar. Nu räknas det ur `token_sys` på raderna, så
     # det inte kan glida isär.
+    # #if VERSION >= "18.0"
     total_sys_tokens = fields.Integer(
         'Totalt systemtokens', compute='_compute_total_sys_tokens', store=True,
         help='All-time systemtoken consumption — the sum of token_sys over '
              'the coworker\'s session lines. Derived, never incremented.')
+    # #else
+    total_sys_tokens = fields.Integer(
+        'Totalt systemtokens', default=0,
+        help='All-time systemtoken consumption. Incremented per session line.')
+    # #endif
     total_input_tokens = fields.Integer('Totalt input tokens', default=0)
     total_output_tokens = fields.Integer('Totalt output tokens', default=0)
 
@@ -8898,15 +8904,19 @@ class AICoworkerAgent(models.Model):
         for rec in self:
             rec.agent_model_id = rec.agent_id.model_id
 
-    @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name',
-                 'agent_id.rag_memory_ids.name')
+    # `rag_memory_ids` togs bort från ai.agent i f68ef4b2 (OKF-format:
+    # agent-kopplingen är many-to-many via `memory_ids`). Referensen här kom
+    # tillbaka när cafff7e5 skrev in en äldre version av den här filen, och
+    # gjorde att hela modulen föll vid registry-laddning:
+    #     ValueError: Wrong @depends on '_compute_agent_display' ...
+    #     Dependency field 'rag_memory_ids' not found in model ai.agent.
+    # `memory_ids.memory_id` bär redan alla minnen — den parallella envägs-
+    # vägen är precis den driftfälla ai_agent.py:63 varnar för.
+    @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name')
     def _compute_agent_display(self):
         for rec in self:
             tools = rec.agent_id.tool_ids.mapped('name')
-            memories = (
-                rec.agent_id.memory_ids.mapped('memory_id.name')
-                + rec.agent_id.rag_memory_ids.mapped('name')
-            )
+            memories = rec.agent_id.memory_ids.mapped('memory_id.name')
             rec.agent_tools_display = ', '.join([t for t in tools if t])
             rec.agent_memories_display = ', '.join([m for m in memories if m])
 

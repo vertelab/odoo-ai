@@ -127,6 +127,7 @@
         'data/cron_heartbeat_process.xml',
         'data/cron_graph_sync.xml',
         'data/cron_cost_aggregate.xml',
+        # systemtoken-calibration: the cron exists only on 18.0/19.0.
         'data/cron_calibration.xml',
         'views/ai_cost_period_views.xml',
         'data/orchestration_skill.xml',

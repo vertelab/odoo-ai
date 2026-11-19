@@ -32,6 +32,7 @@
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
                     <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
+                    <!-- Odoo 20: <group> is gone from <search>. -->
                     <group expand="0" string="Group By">
                         <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
                         <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
@@ -137,6 +138,7 @@
                     <field name="model_id" />
                     <field name="object_id" />
                     <field name="datetime" />
+                    <!-- Odoo 20: <group> is gone from <search>. -->
                     <group expand="0" string="Group By">
                         <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
                         <filter string="AI Session" name="group_by_ai_session" context="{'group_by': 'ai_session_id'}" />
