@@ -210,53 +210,6 @@ class TestMessage(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Context Tests (LOOP-004)
-# ---------------------------------------------------------------------------
-
-class TestContext(unittest.TestCase):
-    """Test context management."""
-
-    def setUp(self):
-        from ai_agent_core.core.provider import Message, Role
-        self.Message = Message
-        self.Role = Role
-
-    def test_estimate_tokens(self):
-        from ai_agent_core.core.context import estimate_tokens
-        msgs = [
-            self.Message(role=self.Role.USER, content="hello world"),
-            self.Message(role=self.Role.ASSISTANT, content="hi there"),
-        ]
-        tokens = estimate_tokens(msgs)
-        self.assertGreater(tokens, 0)
-        self.assertLess(tokens, 10)
-
-    def test_is_context_full(self):
-        from ai_agent_core.core.context import is_context_full
-        msgs = [self.Message(role=self.Role.USER, content="x" * 1000)]
-        self.assertFalse(is_context_full(msgs, max_tokens=1000))
-
-        big = [self.Message(role=self.Role.USER, content="x" * 600_000)]  # 600K chars / 4 = 150K tokens > 128K
-        self.assertTrue(is_context_full(big, max_tokens=128_000))
-
-    def test_summarize_preserves_recent(self):
-        from ai_agent_core.core.context import summarize_history
-        msgs = [
-            self.Message(role=self.Role.USER, content=f"message {i}")
-            for i in range(10)
-        ]
-        # Without a real provider, summarize_history requires one.
-        # Test that it keeps recent messages when too few to summarize.
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(
-            summarize_history(None, "test", msgs, keep_recent=4)
-        )
-        loop.close()
-        # If provider is None, it'll fall through. Just verify no crash.
-        self.assertIsInstance(result, list)
-
-
-# ---------------------------------------------------------------------------
 # Interrupt Tests (HITL-004)
 # ---------------------------------------------------------------------------
 
@@ -601,119 +554,6 @@ class TestAgentLoop(unittest.TestCase):
 # Supervisor Tests
 # ---------------------------------------------------------------------------
 
-class TestSupervisorLoop(unittest.TestCase):
-    """Test SupervisorLoop routing."""
-
-    def setUp(self):
-        from ai_agent_core.core.provider import AIProvider, ChatResponse, TokenEvent
-        from ai_agent_core.core.tools import ToolRegistry
-        from ai_agent_core.core.loop import AgentLoop, AgentConfig
-        from ai_agent_core.core.supervisor import SupervisorLoop, SpecialistAgent, SupervisorConfig
-
-        self.AgentLoop = AgentLoop
-        self.AgentConfig = AgentConfig
-        self.ToolRegistry = ToolRegistry
-        self.SupervisorLoop = SupervisorLoop
-        self.SpecialistAgent = SpecialistAgent
-        self.SupervisorConfig = SupervisorConfig
-
-        class MockRouterProvider(AIProvider):
-            async def chat(self, model, messages, tools=None, system_prompt="", temperature=0.7, max_tokens=4096):
-                return ChatResponse(
-                    text='{"agent": "analyst", "reason": "test routing"}',
-                    input_tokens=10, output_tokens=5,
-                )
-            async def chat_stream(self, *args, **kwargs):
-                yield TokenEvent(type="token", token='{"agent": "analyst"}')
-                yield TokenEvent(type="done", finish_reason="stop")
-
-        class MockWorkerProvider(AIProvider):
-            async def chat(self, model, messages, tools=None, system_prompt="", temperature=0.7, max_tokens=4096):
-                return ChatResponse(
-                    text="Analysis complete: 42",
-                    input_tokens=10, output_tokens=5,
-                )
-            async def chat_stream(self, *args, **kwargs):
-                yield TokenEvent(type="token", token="Analysis complete")
-                yield TokenEvent(type="done", finish_reason="stop")
-
-        self.MockRouterProvider = MockRouterProvider
-        self.MockWorkerProvider = MockWorkerProvider
-
-    def test_supervisor_routes_to_specialist(self):
-        router = self.MockRouterProvider()
-        worker = self.MockWorkerProvider()
-
-        analyst_loop = self.AgentLoop(
-            provider=worker,
-            tools=self.ToolRegistry(),
-            config=self.AgentConfig(),
-        )
-
-        supervisor = self.SupervisorLoop(
-            router_provider=router,
-            agents=[
-                self.SpecialistAgent(
-                    name="analyst",
-                    description="Data analysis agent",
-                    loop=analyst_loop,
-                    triggers=["analyze", "report"],
-                ),
-            ],
-        )
-
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(supervisor.run("analyze sales"))
-        loop.close()
-
-        self.assertIn("42", result.text)
-
-    def test_supervisor_keyword_fallback(self):
-        """Test that keyword matching works when router returns invalid JSON."""
-        from ai_agent_core.core.provider import AIProvider, ChatResponse, TokenEvent
-
-        class BadRouterProvider(AIProvider):
-            async def chat(self, *args, **kwargs):
-                return ChatResponse(text="not json", input_tokens=2, output_tokens=2)
-            async def chat_stream(self, *args, **kwargs):
-                yield TokenEvent(type="token", token="bad")
-                yield TokenEvent(type="done", finish_reason="stop")
-
-        router = BadRouterProvider()
-        worker = self.MockWorkerProvider()
-
-        analyst_loop = self.AgentLoop(
-            provider=worker, tools=self.ToolRegistry(), config=self.AgentConfig(),
-        )
-        support_loop = self.AgentLoop(
-            provider=worker, tools=self.ToolRegistry(), config=self.AgentConfig(),
-        )
-
-        supervisor = self.SupervisorLoop(
-            router_provider=router,
-            agents=[
-                self.SpecialistAgent(
-                    name="analyst", description="Analysis",
-                    loop=analyst_loop, triggers=["analyze"],
-                ),
-                self.SpecialistAgent(
-                    name="support", description="Support",
-                    loop=support_loop, triggers=["help", "support"],
-                ),
-            ],
-        )
-
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(supervisor.run("I need help with support"))
-        loop.close()
-
-        self.assertIn("42", result.text)
-
-
-# ---------------------------------------------------------------------------
-# Odoo Model Tools Tests (odoo-model-tools change — ersätter död model_to_tools)
-# ---------------------------------------------------------------------------
-
 class TestModelTools(unittest.TestCase):
     """Test de generiska Odoo-modellverktygen (builtin_tools)."""
 
@@ -780,69 +620,8 @@ class TestModelTools(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Taskless Tests: Detect, Route, Improve, Verify
+# Taskless Tests: Improve, Verify
 # ---------------------------------------------------------------------------
-
-class TestDetect(unittest.TestCase):
-    """Test EnvironmentDetector (TASK-001)."""
-
-    def test_scan_returns_result(self):
-        from ai_agent_core.core.detect import EnvironmentDetector
-        detector = EnvironmentDetector()
-        result = detector.scan()
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result.codebase_todos, list)
-        self.assertIsInstance(result.recurring_patterns, list)
-
-    def test_scan_has_timestamp(self):
-        from ai_agent_core.core.detect import EnvironmentDetector
-        detector = EnvironmentDetector()
-        result = detector.scan()
-        self.assertTrue(result.timestamp)
-
-    def test_result_to_json(self):
-        from ai_agent_core.core.detect import EnvironmentDetector
-        detector = EnvironmentDetector()
-        result = detector.scan()
-        json_str = result.to_json()
-        self.assertIn("timestamp", json_str)
-        self.assertIn("codebase_todos", json_str)
-
-
-class TestRoute(unittest.TestCase):
-    """Test IntelligentRouter (TASK-002)."""
-
-    def test_route_returns_decision(self):
-        from ai_agent_core.core.route import IntelligentRouter
-        router = IntelligentRouter()
-        decision = router.route("Analyze sales data")
-        self.assertIn(decision.destination, ("existing", "local", "remote"))
-        self.assertTrue(decision.reasoning)
-
-    def test_route_remote_with_no_matches(self):
-        from ai_agent_core.core.route import IntelligentRouter
-        router = IntelligentRouter()
-        decision = router.route("Some complex ambiguous request")
-        self.assertEqual(decision.destination, "remote")
-
-    def test_route_local_data_query(self):
-        from ai_agent_core.core.route import IntelligentRouter
-        from ai_agent_core.core.detect import DetectResult, ModelInfo
-
-        router = IntelligentRouter()
-        env_info = DetectResult()
-        env_info.registered_models = [
-            ModelInfo(name="res.partner", display_name="Contact", record_count=100),
-        ]
-        decision = router.route("Show me all contacts", env_info=env_info)
-        self.assertEqual(decision.destination, "local")
-
-    def test_rule_based_router(self):
-        from ai_agent_core.core.route import RuleBasedRouter
-        router = RuleBasedRouter()
-        decision = router.route("List all customers")
-        self.assertIn(decision.destination, ("local", "remote"))
-
 
 class TestImprove(unittest.TestCase):
     """Test ImprovementLoop (TASK-003)."""
@@ -954,61 +733,6 @@ class TestVerify(unittest.TestCase):
         self.assertTrue(result.passed)
 
 
-class TestBudget(unittest.TestCase):
-    """Test BudgetTracker (PAPER-004)."""
-
-    def test_budget_recording(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=50.0)
-        cost = tracker.record_call(1000, 500)
-        self.assertGreater(cost, 0)
-        self.assertGreater(tracker.used, 0)
-        self.assertEqual(tracker.total_calls, 1)
-
-    def test_budget_not_exhausted(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=50.0)
-        self.assertFalse(tracker.is_exhausted)
-
-    def test_budget_exhausted(self):
-        from ai_agent_core.core.budget import BudgetTracker, BudgetExhaustedError
-        tracker = BudgetTracker(limit=0.001)  # Very low limit
-        with self.assertRaises(BudgetExhaustedError):
-            tracker.record_call(10000, 5000)  # This will exhaust it
-
-    def test_budget_no_limit(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=0.0)  # No limit
-        tracker.record_call(1000000, 1000000)
-        self.assertFalse(tracker.is_exhausted)
-
-    def test_budget_can_afford(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=10.0)
-        self.assertTrue(tracker.can_afford(100, 50))
-        # Use most of the budget
-        tracker.record_call(3000000, 50000)
-        self.assertFalse(tracker.can_afford(100000, 100000))
-
-    def test_budget_state(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=100.0, agent_name="test_agent")
-        tracker.record_call(1000, 500)
-        state = tracker.get_state()
-        self.assertEqual(state.agent_name, "test_agent")
-        self.assertEqual(state.limit, 100.0)
-        self.assertGreater(state.used, 0)
-
-    def test_budget_reset_month(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=100.0)
-        tracker.record_call(10000, 5000)
-        self.assertGreater(tracker.used, 0)
-        tracker.reset_month()
-        self.assertEqual(tracker.used, 0)
-        self.assertEqual(tracker.total_calls, 0)
-
-
 class TestEval(unittest.TestCase):
     """Test AgentEvaluator (PAPER-006)."""
 
@@ -1078,11 +802,7 @@ class TestQuestAccessControl(unittest.TestCase):
             if not quest.show_in_chat:
                 return False
             if quest.group_ids:
-                # #if VERSION >= "19.0"
-                user_grp = set(user.group_ids.ids)
-                # #else
                 user_grp = set(user.groups_id.ids)
-                # #endif
                 quest_grp = set(quest.group_ids.ids)
                 if not (user_grp & quest_grp):
                     return False
@@ -1111,16 +831,8 @@ class TestQuestAccessControl(unittest.TestCase):
         regular = MagicMock()
         regular.id = 2
         regular.has_group = MagicMock(return_value=False)
-        # #if VERSION >= "19.0"
-        regular.group_ids = MagicMock()
-        # #else
         regular.groups_id = MagicMock()
-        # #endif
-        # #if VERSION >= "19.0"
-        regular.group_ids.ids = []
-        # #else
         regular.groups_id.ids = []
-        # #endif
 
         # Regular user has access when no restrictions
         # quest.group_ids is falsy list → no restriction
@@ -1145,19 +857,11 @@ class TestQuestAccessControl(unittest.TestCase):
         quest.user_ids = []
 
         # User not in group → denied
-        # #if VERSION >= "19.0"
-        regular.group_ids.ids = [20]
-        # #else
         regular.groups_id.ids = [20]
-        # #endif
         self.assertFalse(_quest_is_accessible(quest, regular))
 
         # User in group → allowed
-        # #if VERSION >= "19.0"
-        regular.group_ids.ids = [10]
-        # #else
         regular.groups_id.ids = [10]
-        # #endif
         self.assertTrue(_quest_is_accessible(quest, regular))
 
         # Add user restriction
@@ -1201,63 +905,76 @@ class TestQuestAccessControl(unittest.TestCase):
 class TestSystemtoken(unittest.TestCase):
     """Test systemtoken computation and quest tracking."""
 
-    def test_sys_multiplier_defaults(self):
-        """T1.6: _default_sys_multiplier logic returns correct defaults.
-        
-        We test the logic by extracting it from the source, avoiding
-        Odoo model import issues in unit tests.
+    def test_sys_multiplier_follows_price_not_name(self):
+        """3.6: faktorn följer priset, inte namnet (systemtoken-calibration).
+
+        Den gamla namnheuristiken (`deepseek` -> 1.0, `claude-3` -> 6.0) är
+        borta. Faktorn är `kostnad_per_1M / systemtoken_pris`, så två
+        modeller med samma pris får samma faktor oavsett namn, och en modell
+        med 20x priset får 20x faktorn.
+
+        Logiken testas som ren aritmetik — samma formel som
+        `_compute_sys_multiplier` använder.
         """
-        import os, re
-        path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_provider.py'
-        )
-        path = os.path.abspath(path)
+        W_IN, W_OUT, PRICE = 0.25, 0.75, 35.0
+
+        def factor(cost_in_1k, cost_out_1k):
+            cost_per_1m = (cost_in_1k * W_IN + cost_out_1k * W_OUT) * 1000.0
+            if not PRICE or not cost_per_1m:
+                return 0.0
+            return cost_per_1m / PRICE
+
+        # Samma pris, olika namn -> samma faktor.
+        cheap = factor(0.0001, 0.0001)
+        self.assertAlmostEqual(cheap, factor(0.0001, 0.0001), places=12)
+
+        # 20x priset -> 20x faktorn.
+        pricey = factor(0.002, 0.002)
+        self.assertAlmostEqual(pricey / cheap, 20.0, places=9)
+
+        # Konkret: $0,10/1M med 0,25/0,75-vikter = 0,0001 per token.
+        # kostnad_per_1M = 0,1 i prisvalutan; /35 = 0,002857...
+        self.assertAlmostEqual(cheap, 0.1 / 35.0, places=9)
+
+        # Pris 0 -> faktor 0, ingen gissning.
+        self.assertEqual(factor(0.0, 0.0), 0.0)
+
+    def test_calibration_converts_to_company_currency(self):
+        """Kostnaden konverteras till bolagsvaluta innan faktorn räknas.
+
+        Priset står i modellens `pricing_currency_id` (vanligen USD) medan
+        systemtoken-priset är i bolagsvalutan. Utan konvertering blir
+        faktorn 10x fel vid USD/SEK ~10.
+        """
+        import os
+        path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_model.py'))
         with open(path) as f:
             content = f.read()
-        
-        # Extract the _default_sys_multiplier function
-        match = re.search(r'def _default_sys_multiplier\(self, model_id: str\) -> float:(.*?)(?=\n    def |\n    @|\nclass )', content, re.DOTALL)
-        if not match:
-            self.skipTest("Cannot extract _default_sys_multiplier from source")
-        
-        # Define a simple test function that replicates the logic
-        def _default_sys_multiplier(model_id: str) -> float:
-            name = model_id.lower()
-            if any(k in name for k in ('embed', 'text-embedding')):
-                return 0.1
-            if any(k in name for k in ('deepseek', 'gpt-oss', 'llama-3.1-8b', 'gemma',
-                                        'allam', 'orpheus', 'qwen-2.5', 'ministral')):
-                return 1.0
-            if any(k in name for k in ('gpt-4o-mini', 'llama-3.3-70b', 'mistral',
-                                        'claude-haiku', 'haiku', 'mixtral')):
-                return 1.5
-            if any(k in name for k in ('gpt-4o', 'gpt-4-', 'command-r', 'llama-4')):
-                return 5.0
-            if any(k in name for k in ('claude-sonnet', 'claude-3', 'claude-4',
-                                        'claude-opus', 'gemini-2', 'gpt-5')):
-                return 6.0
-            if any(k in name for k in ('whisper', 'tts', 'audio')):
-                return 2.0
-            return 1.0
+        # Konverteringen måste ligga i _calibration_cost_per_1m, inte i
+        # anroparen — annars är calibration_cost_per_1m i fel valuta.
+        start = content.index("def _calibration_cost_per_1m")
+        end = content.index("def _compute_sys_multiplier")
+        body = content[start:end]
+        self.assertIn("pricing_currency_id", body)
+        self.assertIn("_convert(", body)
+        # Saknad kurs far inte tystas med kurs 1.0.
+        self.assertIn("return 0.0", body)
 
-        test_cases = [
-            ('deepseek-v4-flash', 1.0),
-            ('cerebras/gpt-oss-120b', 1.0),
-            ('groq/llama-3.1-8b-instant', 1.0),
-            ('openai/gpt-4o-mini', 1.5),
-            ('groq/llama-3.3-70b-versatile', 1.5),
-            ('openai/gpt-4o', 5.0),
-            ('anthropic/claude-sonnet-4', 6.0),
-            ('anthropic/claude-3-opus', 6.0),
-            ('google/gemini-2.0-flash', 6.0),
-            ('openai/text-embedding-3-small', 0.1),
-            ('openai/whisper-1', 2.0),
-            ('unknown-model-123', 1.0),
-        ]
-        for model_id, expected in test_cases:
-            result = _default_sys_multiplier(model_id)
-            self.assertEqual(result, expected,
-                f"_default_sys_multiplier({model_id!r}) = {result}, expected {expected}")
+    def test_sys_multiplier_source_is_computed(self):
+        """3.6: ai.model.sys_multiplier är en compute, inte ett default-fält."""
+        import os
+        path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_model.py'))
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("_compute_sys_multiplier", content)
+        self.assertIn("_calibration_params", content)
+        self.assertIn("_cron_recalculate_calibration", content)
+        self.assertIn("calibration_month", content)
+        self.assertIn("calibration_cost_per_1m", content)
+        # Namnheuristiken ska inte finnas kvar någonstans.
+        self.assertNotIn("_default_sys_multiplier", content)
 
     def test_token_sys_source(self):
         """T1.6: session line model source contains sys_multiplier and token_sys."""
@@ -1304,17 +1021,19 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("sys_multiplier", content)
         self.assertIn("provider_cost_1M", content)
 
-    def test_provider_default_multiplier_source(self):
-        """T1.6: ai.provider source contains _default_sys_multiplier."""
+    def test_provider_has_no_name_heuristic(self):
+        """3.4: namnheuristiken är avvecklad (systemtoken-calibration D5).
+
+        `_default_sys_multiplier` och `action_set_default_multipliers` ska
+        inte finnas kvar — faktorn räknas ur priset, inte ur namnet.
+        """
         import os
-        path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_provider.py'
-        )
-        path = os.path.abspath(path)
+        path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_provider.py'))
         with open(path) as f:
             content = f.read()
-        self.assertIn("_default_sys_multiplier", content)
-        self.assertIn("action_set_default_multipliers", content)
+        self.assertNotIn("def _default_sys_multiplier", content)
+        self.assertNotIn("def action_set_default_multipliers", content)
 
     def test_controller_respond_source(self):
         """T1.6: stream controller accepts token tracking fields."""

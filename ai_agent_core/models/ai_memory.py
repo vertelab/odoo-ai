@@ -2,31 +2,122 @@
 """ai.memory — FAISS/pgvector memory for agents."""
 
 import logging
+# Chunk-lagret (chunk-baserad minnessökning) finns bara på 18.0/19.0.
+# 20.0-porten är en tidig kopia som aldrig fick det.
+import os
+
 from odoo import models, fields, api
 
+from ..core.tools import attachment_bytes
+from ..fields.pg_vector import PgVector
 from .ai_okf_concept import EMBEDDING_DIM as _OKF_EMBEDDING_DIM
 
 _logger = logging.getLogger(__name__)
 
+# Lägsta cosine-likhet för en chunktraff. Utan tröskel returnerar
+# pgvector alltid de närmaste grannarna — även för en fråga utan
+# semantisk koppling.
+#
+# Tröskeln är EMPIRISKT satt, inte kopierad. Mätt 2026-10-30 mot
+# mistral/mistral-embed (providern i drift, inte OpenAI):
+#
+#   relevant fråga    ('avtal', 'uppsägningstid')  0.71 – 0.83
+#   irrelevant fråga  ('obegripligtord', 'xyzzy')  0.59 – 0.65
+#
+# Modellen ger alltså hög baslikhet för allt — 0.1 (ai.memory.mixins
+# default, kalibrerad för en annan modell) släppte igenom precis allt.
+# 0.70 ligger i glappet mellan de två grupperna.
+#
+# OBS: byts embeddingmodell måste denna kalibreras om. Den är en
+# egenskap hos MODELLEN, inte hos koden.
+_CHUNK_MIN_COSINE = 0.70
+
+# ── OpenMP-trådar: faiss segfaultar annars i worker-kontext ─────────────
+# faiss-cpu (pip-hjul) bär SIN EGEN libgomp + OpenBLAS
+# (faiss_cpu.libs/libgomp-*.so, libopenblaso-*.so), medan numpy bär sin
+# (numpy.libs/libscipy_openblas64_*.so) och Odoo/gevent har egna trådar.
+# Två OpenMP-runtimes i samma process startar två trådpooler; vid import
+# av faiss i en Odoo-worker kolliderar de och processen dör på C-nivå:
+#
+#   Fatal Python error: Segmentation fault
+#     faiss/loader.py:187  from .swigfaiss import *
+#     faiss/swigfaiss.py:10  from . import _swigfaiss   ← kraschen
+#
+# Symptom (2026-10-29): /ai/stream?session_id=<n> gav 502 i Caddy och
+# "Empty reply from server" direkt mot :8069 — workern dog tyst, och
+# inget hamnade i odoo-server.log eftersom kraschen sker under import i
+# C-lagret. UTAN session_id gick det bra, eftersom _get_quest_memories()
+# då aldrig nådde faiss_search(). Samma anrop fungerade i `odoo shell`
+# (annan process, annan tråd-/biblioteksordning) — därför svårt att se.
+#
+# OMP_NUM_THREADS=1 tvingar faiss till en enda tråd: ingen pool-konflikt,
+# ingen segfault. Måste sättas INNAN faiss importeras — dvs. här, vid
+# modulimport, inte i load_faiss(). setdefault respekterar ett värde som
+# redan satts i processmiljön (t.ex. systemd-drop-in).
+for _var in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+    os.environ.setdefault(_var, '1')
+
 
 class AIMemory(models.Model):
     _name = 'ai.memory'
-
-    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
-    # pa en abstrakt mixin — den ger samma tabell for alla arvande).
-    okf_tags = fields.Many2many(
-        'ai.okf.tag', 'ai_memory_okf_tag_rel', 'res_id', 'tag_id',
-        string='OKF Tags')
     _description = 'AI Memory'
     _order = 'create_date desc'
 
+    # OKF-FORMATET, inte indexeringskontraktet (ai-memory-okf-format).
+    #
+    # ai.memory ärver ai.okf.format.mixin — okf_body, okf_summary,
+    # okf_links — men INTE ai.okf.mixin, som bär okf_dirty och
+    # okf_indexed_at. memory-specen förbjuder dem på artefakten: den är
+    # material, inte inlärning, och ska inte indexeras till
+    # ai.okf.concept av någon cron.
+    #
+    # Att regeln nu är STRUKTURELL (fältet finns inte) i stället för en
+    # kommentar är hela poängen med delningen.
+    _inherit = ['ai.okf.format.mixin']
+
+    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
+    # på en abstrakt mixin — den ger samma tabell för alla ärvande).
+    # Tabellnamnet är oförändrat sedan tidigare, så inga data flyttas.
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_memory_okf_tag_rel', 'res_id', 'tag_id',
+        string='OKF Tags')
+
     name = fields.Char('Memory Key')
-    content = fields.Text('Content')
+
+    # `content` är ett BAKÅTKOMPATIBELT ALIAS för okf_body
+    # (ai-memory-okf-format D4). Fältet läses på flera ställen
+    # (controllers/stream.py, ai_coworker.py, ai_memory_mixin.py) och
+    # byttes inte ut rakt av — ett compute/inverse-alias kostar noll
+    # anropare och kan tas bort när inget läser det längre.
+    content = fields.Text(
+        'Content', compute='_compute_content',
+        inverse='_inverse_content', search='_search_content',
+        help='Alias for okf_body — kept for backward compatibility.')
+
+    @api.depends('okf_body')
+    def _compute_content(self):
+        for rec in self:
+            rec.content = rec.okf_body
+
+    def _inverse_content(self):
+        for rec in self:
+            rec.okf_body = rec.content
+
+    def _search_content(self, operator, value):
+        return [('okf_body', operator, value)]
+    # memory_type betecknar artefaktens KÄLLA, inte dess lagringsformat
+    # (ai-memory-pgvector T6.1). Ett värde som 'faiss' beskrev en
+    # implementation och togs bort — lagringen är nu alltid pgvector.
     memory_type = fields.Selection([
-        ('faiss', 'FAISS Vector'),
-        ('pgvector', 'pgvector'),
+        ('pdf', 'PDF'),
+        ('website', 'Webbplats'),
+        ('markdown', 'Markdown'),
         ('text', 'Plain Text'),
-    ], default='text')
+        ('model', 'Odoo-modell'),
+        ('attachments', 'Bilagor'),
+        ('youtube', 'YouTube'),
+    ], default='text',
+        help='Where the content came from. The storage format is always pgvector and is not steered from here.')
 
     # Embedding
     embedding_model = fields.Char('Embedding Model')
@@ -34,7 +125,6 @@ class AIMemory(models.Model):
 
     # Relations
     identity_id = fields.Many2one('ai.identity', string='Identity')
-    agent_id = fields.Many2one('ai.agent', string='Agent')
 
     # Quest learning (quest-learning-memory)
     quest_id = fields.Many2one('ai.coworker', string='Quest',
@@ -81,22 +171,82 @@ class AIMemory(models.Model):
     last_accessed = fields.Datetime()
     access_count = fields.Integer(default=0)
 
-    # ── FAISS via ir.attachment ──
-    faiss_attachment_id = fields.Many2one('ir.attachment',
-        string='FAISS Index',
-        help='Serialized FAISS vector index stored as attachment')
+    # ── Vektorer (ai-memory-pgvector) ──
+    # Samma mönster som ai.okf.concept: en riktig pgvector-kolumn med
+    # dimension, inte en serialiserad FAISS-blob i en bilaga. Kolumnen
+    # sätts till vector(1024) av hooks.py (memory_ensure_search_infrastructure)
+    # EFTER att tabellen skapats — en migration som kör ALTER TABLE före
+    # tabellen finns svalde felet i migration 1.11 och loggade "klart"
+    # medan kolumnen aldrig uppstod.
+    embedding = PgVector(
+        string='Embedding', dimension=_OKF_EMBEDDING_DIM,
+        help='pgvector(%d) embedding of okf_body. The column is vector(%d) type.'
+             % (_OKF_EMBEDDING_DIM, _OKF_EMBEDDING_DIM))
+
+    # search_vector — GENERATED COLUMN, skapad av SQL i hooks.py.
+    # Är avsiktligt INTE ett ORM-fält: en genererad kolumn ska inte kunna
+    # glömmas bort av skrivsidan (samma skäl som i ai_okf_concept).
+    #   to_tsvector('swedish', coalesce(okf_body,'') || ' ' || coalesce(name,''))
+
+    # ── Legacy: FAISS-index ──
+    # Fältet är KVAR men är inte längre en sökväg. Det behövs av
+    # re-embedding-cronen: de artefakter som skapades före
+    # pgvector-övergången har ingen source_attachment_id och ibland ingen
+    # content — deras enda kvarvarande text ligger i FAISS-bloben
+    # (extract_legacy_faiss_text). Nya artefakter får aldrig detta fält
+    # satt; create_vector skriver chunkar i stället.
+    faiss_attachment_id = fields.Many2one(
+        'ir.attachment', string='Legacy FAISS Index', readonly=True,
+        help='Serialised FAISS index from before pgvector. Read only by the re-embedding cron — never used for search.')
     source_attachment_id = fields.Many2one('ir.attachment',
         string='Source File',
         help='The original uploaded file (ir.attachment) this memory '
              'was created from. Used by the chat UI to render a '
              'download link.')
-    chunk_count = fields.Integer('Chunk Count', default=0,
-        help='Number of document chunks in the FAISS index')
+    chunk_count = fields.Integer(
+        'Chunk Count', compute='_compute_chunk_count', store=True,
+        help='Number of chunks in the artifact. Computed from rag_ids — not a field anyone has to remember to write.')
 
-    # ── FAISS vector operations ──
+    # ── Chunkar (ai-memory-pgvector) ──
+    rag_ids = fields.One2many(
+        'ai.memory.chunk', 'memory_id', string='Chunks',
+        help='Chunks of the artifact text. Replaces the serialised FAISS index.')
+
+    @api.depends('rag_ids')
+    def _compute_chunk_count(self):
+        for rec in self:
+            rec.chunk_count = len(rec.rag_ids)
+
+    # ── Vektorlagring (pgvector) ──
+
+    def _split_documents(self, documents):
+        """Dela dokument i chunkar.
+
+        `add_start_index=True` bevaras: start_index är det enda som låter
+        oss citera tillbaka till rätt ställe i källan — utan det blir en
+        chunk en lösryckt mening.
+
+        Args:
+            documents: list[langchain Document]
+        Returns:
+            list[langchain Document]
+        """
+        if not documents:
+            return []
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            add_start_index=True,
+        )
+        return splitter.split_documents(documents)
 
     def create_vector(self, documents: list, embedding_model_name: str = ''):
-        """Split documents, embed, and store as FAISS via ir.attachment.
+        """Dela, embedda och lagra som ai.memory.chunk (pgvector).
+
+        Ersätter det serialiserade FAISS-indexet (ai-memory-pgvector).
+        Chunkarna blir egna rader med vector(1024)-kolumn — sökningen kan
+        då filtrera på ägare i SQL och fusioneras med svensk BM25.
 
         Args:
             documents: List of langchain Document objects
@@ -109,69 +259,117 @@ class AIMemory(models.Model):
         if not documents:
             return 0
 
-        try:
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
-            from langchain_community.vectorstores import FAISS
-            import base64 as b64
+        chunks = self._split_documents(documents)
+        if not chunks:
+            return 0
 
-            # Split documents
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200,
-                add_start_index=True,
-            )
-            chunks = splitter.split_documents(documents)
-            if not chunks:
-                return 0
+        texts = [d.page_content for d in chunks]
+        vectors = self._embed_texts(texts)
 
-            # Get embeddings from the quest's agent LLM
-            # Fall back to Bifrost for embeddings
-            embeddings = self._get_embeddings()
-            if not embeddings:
-                _logger.warning('No embedding model available, storing text-only')
-                self.memory_type = 'text'
-                self.content = '\n\n'.join(
-                    d.page_content[:1000] for d in chunks[:50]
-                )
-                return len(chunks)
+        Chunk = self.env['ai.memory.chunk']
+        # Ersätt tidigare chunkar — create_vector är en omskrivning av
+        # artefaktens innehåll, inte en påfyllning.
+        self.rag_ids.unlink()
 
-            # Build FAISS index
-            db = FAISS.from_documents(chunks, embeddings)
+        vals_list = []
+        for seq, (doc, vec) in enumerate(zip(chunks, vectors)):
+            vals = {
+                'memory_id': self.id,
+                'sequence': seq * 10,
+                'content': doc.page_content,
+                'start_index': (doc.metadata or {}).get('start_index', 0),
+                'metadata': doc.metadata or {},
+            }
+            if vec:
+                vals['embedding'] = vec
+            vals_list.append(vals)
 
-            # Serialize and store as ir.attachment
-            serialized = db.serialize_to_bytes()
-            attachment = self.env['ir.attachment'].create({
-                'name': f'faiss_{self.name}_{self.id}.bin',
-                'datas': b64.b64encode(serialized),
-                'res_model': 'ai.memory',
-                'res_id': self.id,
-                'mimetype': 'application/octet-stream',
-            })
+        Chunk.create(vals_list)
 
-            self.write({
-                'faiss_attachment_id': attachment.id,
-                'chunk_count': len(chunks),
-                'embedding_model': embedding_model_name or 'bifrost-default',
-                'memory_type': 'faiss',
-            })
+        # Förälderns egen vektor: artefakten ska gå att hitta även när
+        # ingen chunk matchar (t.ex. en kort sammanfattning).
+        #
+        # OBS: skrivs via write() med STRÄNGEN, inte `self.embedding = vec`.
+        # PgVector läser tillbaka som numpy-array, och Odoos write-cache
+        # jämför `val != value` — det ger "The truth value of an array with
+        # more than one element is ambiguous" (mätt 2026-10-30).
+        body = self._memory_body_text()
+        vals = {'embedding_model': embedding_model_name or 'bifrost-default'}
+        if body:
+            parent_vec = self._embed_texts([body[:8192]])[0]
+            if parent_vec:
+                vals['embedding'] = parent_vec
 
-            _logger.info('FAISS index created: %d chunks for memory %s',
-                        len(chunks), self.name)
-            return len(chunks)
+        self.write(vals)
 
-        except ImportError as e:
-            _logger.warning('FAISS dependencies missing: %s', e)
-            self.memory_type = 'text'
-            self.content = '\n\n'.join(
-                d.page_content[:1000] for d in documents[:50]
-            )
-            return len(documents)
-        except Exception as e:
-            _logger.error('FAISS create_vector failed: %s', e)
-            raise
+        _logger.info(
+            'pgvector: %d chunks for memory %s (%d with vector)',
+            len(chunks), self.name, sum(1 for v in vectors if v))
+        return len(chunks)
+
+    def _memory_body_text(self):
+        """Artefaktens text för embedding.
+
+        Läser `okf_body` DIREKT — inte `content`. Sedan `content` blev ett
+        compute/inverse-alias för `okf_body` skulle `self.content` här
+        skapa en cirkel (compute läser okf_body, som denna metod läste via
+        content).
+        """
+        self.ensure_one()
+        return self.okf_body or ''
+
+    def _embed_texts(self, texts):
+        """Embedda en lista texter via ai.provider (batch).
+
+        Returnerar list[list[float]|None]. LISTA, inte pgvector-literal:
+        PgVector-fältets convert_to_cache ger annars
+        "The truth value of an array with more than one element is
+        ambiguous" när Odoos write-cache jämför värdet (mätt 2026-10-30).
+
+        Saknas provider loggas en varning — chunkarna sparas utan vektor
+        (BM25 fungerar ändå), aldrig en tyst nedgradering av memory_type.
+        """
+        if not texts:
+            return []
+        Provider = self.env['ai.provider'].sudo()
+        provider = Provider._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'Embedding: ingen provider kan skapa vektorer — '
+                '%d chunkar sparas utan vektor (BM25-only)', len(texts))
+            return [None] * len(texts)
+
+        out = []
+        batch_size = 100
+        for i in range(0, len(texts), batch_size):
+            batch = [t[:8192] for t in texts[i:i + batch_size]]
+            try:
+                embs = provider._get_embedding_batch(
+                    inputs=batch, input_type='search_document')
+            except Exception as exc:
+                _logger.warning(
+                    'Embedding (batch %d-%d) misslyckades: %s',
+                    i, i + len(batch), exc)
+                embs = None
+            if not embs:
+                out.extend([None] * len(batch))
+                continue
+            for emb in embs:
+                if emb and isinstance(emb, (list, tuple)):
+                    out.append(list(emb))
+                else:
+                    out.append(None)
+        return out
 
     def load_faiss(self):
-        """Load FAISS index from ir.attachment.
+        """Läs ett LEGACY FAISS-index ur en bilaga — endast för utdrag.
+
+        Behövs av re-embedding-cronen (ai_memory_reembed): de artefakter
+        som skapades före ai-memory-pgvector har ingen `source_attachment_id`
+        och ibland ingen `content` — deras enda kvarvarande text ligger i
+        FAISS-bloben. Utan denna väg skulle de bli osökbara.
+
+        Används INTE av sökvägen längre (faiss_search söker pgvector).
 
         Returns:
             FAISS vector store or None if not available
@@ -194,13 +392,11 @@ class AIMemory(models.Model):
             _root = self.env.ref('base.user_root', raise_if_not_found=False)
             if _root and att.create_uid and att.create_uid.id != _root.id:
                 _logger.error(
-                    'FAISS load avvisad för memory %s: bilagan är inte '
-                    'systemskapad (create_uid=%s) — pickle-deserialisering '
-                    'skulle köra godtycklig kod.',
+                    'FAISS load refused for memory %s: the attachment was not created by the system (create_uid=%s) — pickle deserialisation would execute arbitrary code.',
                     self.name, att.create_uid.login)
                 return None
 
-            data = b64.b64decode(att.datas)
+            data = attachment_bytes(att)
             embeddings = self._get_embeddings()
             if not embeddings:
                 return None
@@ -215,12 +411,159 @@ class AIMemory(models.Model):
             _logger.error('FAISS load failed for memory %s: %s', self.name, e)
             return None
 
-    def faiss_search(self, query: str, k: int = 3) -> list[str]:
-        """Search FAISS index for similar documents.
+    def extract_legacy_faiss_text(self):
+        """Dra ut all text ur ett legacy FAISS-index.
 
-        NOTE: heter faiss_search (inte search) — annars skuggar metoden
-        ORM:ts sökmetod och alla env['ai.memory'].search([domain])-anrop
-        träffar fel (ai-memory-shadowing-fix).
+        Enda källan för artefakter som varken har `content` eller
+        `source_attachment_id`. Returnerar en lista `Document` redo för
+        `create_vector`, eller tom lista.
+
+        Returns:
+            list[langchain Document]
+        """
+        self.ensure_one()
+        db = self.load_faiss()
+        if not db:
+            return []
+        try:
+            from langchain_core.documents import Document
+            docs = []
+            for _id, doc in (db.docstore._dict or {}).items():
+                text = getattr(doc, 'page_content', None)
+                if text and text.strip():
+                    docs.append(Document(
+                        page_content=text,
+                        metadata=dict(getattr(doc, 'metadata', {}) or {}),
+                    ))
+            _logger.info(
+                'Legacy FAISS: drog ut %d dokument ur minne %s',
+                len(docs), self.name)
+            return docs
+        except Exception as e:
+            _logger.error(
+                'Legacy FAISS extraction failed for %s: %s', self.name, e)
+            return []
+
+    # ── Re-embedding av legacy-artefakter (ai-memory-pgvector T4.3) ──
+
+    def _reembed_documents(self):
+        """Hämta artefaktens text som `Document` för re-embedding.
+
+        Ordningen är avsiktlig — den dyraste vägen sist:
+          1. `source_attachment_id` (källfilen, om den sparades)
+          2. `content` / `okf_body` (texten finns kvar)
+          3. legacy FAISS-index (enda kvarvarande källan)
+
+        Returnerar tom lista när ingen text finns — artefakten ska då
+        RAPPORTERAS, inte tyst bli en tom rad.
+
+        Returns:
+            list[langchain Document]
+        """
+        self.ensure_one()
+        from langchain_core.documents import Document
+
+        # 1. Källfilen
+        att = self.source_attachment_id
+        if att:
+            try:
+                import io
+                raw = attachment_bytes(att)
+                if raw and (att.mimetype or '').endswith('pdf'):
+                    import pymupdf
+                    pdf = pymupdf.open(stream=raw, filetype='pdf')
+                    docs = [
+                        Document(
+                            page_content=page.get_text(),
+                            metadata={'page': i + 1, 'source': att.name})
+                        for i, page in enumerate(pdf)
+                        if page.get_text().strip()
+                    ]
+                    pdf.close()
+                    if docs:
+                        return docs
+                elif raw:
+                    text = raw.decode('utf-8', errors='replace')
+                    if text.strip():
+                        return [Document(
+                            page_content=text,
+                            metadata={'source': att.name})]
+            except Exception as exc:
+                _logger.warning(
+                    'Re-embedding: could not read attachment %s: %s',
+                    att.name, exc)
+
+        # 2. Texten på posten
+        body = self._memory_body_text()
+        if body and body.strip():
+            return [Document(
+                page_content=body, metadata={'source': 'content'})]
+
+        # 3. Legacy FAISS-indexet
+        return self.extract_legacy_faiss_text()
+
+    @api.model
+    def _cron_reembed_legacy(self):
+        """Re-embedda artefakter som skapades före pgvector-övergången.
+
+        Kör som cron.task (ai_memory_reembed). Idempotent: hoppar över
+        artefakter som redan har chunkar.
+
+        FYND (mätt mot driftdata 2026-10-30): 6 faiss-artefakter, varav
+        3 hade `content` och 3 varken `content` eller
+        `source_attachment_id`. Den ursprungliga planen — "re-embedda från
+        source_attachment_id" — matchade NOLL rader. Utan FAISS-utdraget
+        skulle 3 artefakter tyst bli osökbara.
+
+        Artefakter där ingen text alls kan hittas loggas med namn och id,
+        så de syns i stället för att försvinna.
+        """
+        # Alla utan chunkar, oavsett memory_type: en 'text'-artefakt kan
+        # mycket väl ha content som aldrig blev chunkad.
+        candidates = self.search([
+            ('rag_ids', '=', False),
+            ('archived', '=', False),
+        ], limit=50)
+
+        done = skipped = 0
+        dead = []
+        for mem in candidates:
+            try:
+                docs = mem._reembed_documents()
+                if not docs:
+                    dead.append('%s (id=%s)' % (mem.name, mem.id))
+                    continue
+                n = mem.create_vector(docs)
+                if n:
+                    done += 1
+                else:
+                    skipped += 1
+            except Exception as exc:
+                _logger.warning(
+                    'Re-embedding failed for %s (id=%s): %s',
+                    mem.name, mem.id, exc, exc_info=True)
+                skipped += 1
+
+        if done or dead or skipped:
+            _logger.info(
+                'Re-embedding: %d done, %d skipped, %d without text',
+                done, skipped, len(dead))
+        if dead:
+            _logger.warning(
+                'Re-embedding: no text could be found for %s — these artifacts are unsearchable until a source is uploaded again',
+                ', '.join(dead))
+        return done
+
+    def faiss_search(self, query: str, k: int = 3) -> list[str]:
+        """Sök i artefaktens chunkar (pgvector).
+
+        Namnet behålls avsiktligt: `search` skulle skugga ORM:ets
+        `search(domain)` och göra varje env['ai.memory'].search([...]) fel
+        (ai-memory-shadowing-fix). Signatur och svarskontrakt är oförändrade
+        — controllers/stream.py:1948 är orörd.
+
+        Söker chunkar när artefakten har sådana; faller tillbaka på
+        artefaktens egen vektor (och sist på BM25) när den inte har det.
 
         Args:
             query: Search query string
@@ -230,53 +573,228 @@ class AIMemory(models.Model):
             List of document content strings
         """
         self.ensure_one()
-        db = self.load_faiss()
-        if not db:
+        if not query or not query.strip():
             return []
 
         try:
-            docs = db.similarity_search(query, k=k)
-            results = []
-            for doc in docs:
-                if doc and doc.page_content:
-                    results.append(doc.page_content)
+            hits = self._search_chunks(query, k=k)
+            if hits:
+                self.write({
+                    'last_accessed': fields.Datetime.now(),
+                    'access_count': self.access_count + 1,
+                })
+                return hits
 
-            self.write({
-                'last_accessed': fields.Datetime.now(),
-                'access_count': self.access_count + 1,
-            })
-            return results
+            # Ingen chunktraff: använd artefaktens egen text om den finns.
+            body = self._memory_body_text()
+            if body and self._bm25_matches(query):
+                self.write({
+                    'last_accessed': fields.Datetime.now(),
+                    'access_count': self.access_count + 1,
+                })
+                return [body[:2000]]
+            return []
 
         except Exception as e:
-            _logger.error('FAISS search failed for memory %s: %s', self.name, e)
+            _logger.error(
+                'Chunk search failed for memory %s: %s', self.name, e)
             return []
 
-    def _get_embeddings(self):
-        """Get embeddings instance from configured LLM or Bifrost fallback."""
+    def _bm25_matches(self, query):
+        """True om artefaktens search_vector matchar frågan (svensk FTS)."""
+        self.ensure_one()
         try:
-            # Try quest's agent LLM first
-            if self.quest_id:
-                for agent_rel in self.quest_id.agent_ids:
-                    agent = agent_rel.agent_id
-                    if agent and hasattr(agent, 'ai_agent_llm_id'):
-                        llm = agent.ai_agent_llm_id
-                        if llm and hasattr(llm, 'get_embedding'):
-                            emb = llm.get_embedding()
-                            if emb:
-                                return emb
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT 1 FROM ai_memory
+                    WHERE id = %s
+                      AND search_vector @@ plainto_tsquery('swedish', %s)
+                    LIMIT 1
+                """, (self.id, query))
+                return bool(self.env.cr.fetchone())
+        except Exception as exc:
+            _logger.warning('BM25-kontroll misslyckades: %s', exc)
+            return False
 
-            # Fallback: basic HuggingFace embedding
+    def _search_chunks(self, query, k=3):
+        """Hybrid sökning över chunkar: cosine + svensk BM25.
+
+        Två signaler i en fråga, samma mönster som ai.memory.mixin:s
+        _search_memory — men här söks CHUNKAR, inte rader. `limit` avser
+        chunkar: en artefakt med 900 chunkar får inte förbruka hela
+        budgeten på en enda artefakt.
+
+        Returns:
+            list[str] — chunktexter, högst `k` stycken.
+        """
+        self.ensure_one()
+        if not self.rag_ids:
+            return []
+
+        vec = None
+        try:
+            vecs = self._embed_texts([query])
+            raw = vecs[0] if vecs else None
+            # SQL-parametern ska vara en pgvector-literal, inte en Python-lista
+            if raw:
+                vec = '[' + ','.join(str(v) for v in raw) + ']'
+        except Exception as exc:
+            _logger.warning('Query embedding failed: %s', exc)
+
+        scored = {}
+
+        # SIGNAL 1: cosine (pgvector)
+        #
+        # Tröskeln är nödvändig: utan den returnerar cosine ALLTID de
+        # närmaste grannarna, även för en fråga som inte har någon
+        # semantisk koppling alls. Mätt 2026-10-30: frågan
+        # 'obegripligtord' gav 2 träffar mot en artefakt om avtal.
+        # Samma princip som _okf_search (memory-spec rad 87): varje signal
+        # får sin egen tröskel i sin egen enhet.
+        if vec:
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute("""
+                        SELECT id, content,
+                               1 - (embedding <=> %s::vector) AS score
+                        FROM ai_memory_chunk
+                        WHERE memory_id = %s
+                          AND embedding IS NOT NULL
+                          AND 1 - (embedding <=> %s::vector) >= %s
+                        ORDER BY score DESC
+                        LIMIT %s
+                    """, (vec, self.id, vec, _CHUNK_MIN_COSINE, k * 4))
+                    for row in self.env.cr.dictfetchall():
+                        scored[row['id']] = {
+                            'content': row['content'],
+                            'score': float(row['score'] or 0.0),
+                        }
+            except Exception as exc:
+                _logger.warning(
+                    'Cosine search over chunks failed: %s', exc)
+
+        # SIGNAL 2: svensk BM25 (tsvector)
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT id, content,
+                           ts_rank(search_vector,
+                                   plainto_tsquery('swedish', %s)) AS score
+                    FROM ai_memory_chunk
+                    WHERE memory_id = %s
+                      AND search_vector @@ plainto_tsquery('swedish', %s)
+                    ORDER BY score DESC
+                    LIMIT %s
+                """, (query, self.id, query, k * 4))
+                for row in self.env.cr.dictfetchall():
+                    prev = scored.get(row['id'])
+                    ts = float(row['score'] or 0.0)
+                    if prev:
+                        prev['score'] = min(1.0, prev['score'] + ts)
+                    else:
+                        scored[row['id']] = {
+                            'content': row['content'],
+                            'score': ts,
+                        }
+        except Exception as exc:
+            _logger.warning('BM25 search over chunks failed: %s', exc)
+
+        if not scored:
+            return []
+
+        ranked = sorted(
+            scored.values(), key=lambda r: r['score'], reverse=True)[:k]
+        return [r['content'] for r in ranked if r['content']]
+
+    def _get_embeddings(self):
+        """Embeddings-instans för FAISS — eller None med en begriplig orsak.
+
+        B12 (ai-agent-core-fault-remediation): den här metoden prövade
+        `hasattr(agent, 'ai_agent_llm_id')` — ett fält som inte längre finns
+        (enda förekomsten i kodbasen var raden själv). Grenen var alltså död
+        kod, och resultatet blev att varje FAISS-anrop föll tillbaka på
+        `HuggingFaceEmbeddings('sentence-transformers/all-MiniLM-L6-v2')`,
+        som **laddar ner modellen i runtime** vid första anropet — tyst, i en
+        request-tråd, utan att `langchain_community` deklareras i manifestet.
+
+        Ordningen är avsiktlig och speglar `ai.provider._embedding_provider()`
+        — den enda sanningen om vilken provider som kan skapa vektorer:
+
+          1. `ai.provider` via `_provider_embeddings()`. Detta är den väg som
+             FUNGERAR i drift: providern är konfigurerad, nyckeln finns och
+             `/embeddings` svarar.
+          2. Lokal HuggingFace-modell — men bara med ett uttalat ja i
+             systemparametern `ai_agent_core.faiss_allow_download`, eftersom
+             den laddar ner hundratals MB i en request-tråd.
+
+        Utan (1) och utan (2) returneras None med orsaken i loggen — ingen
+        nätverksåtkomst i runtime utan att någon bett om det.
+        """
+        try:
+            bridge = self._provider_embeddings()
+            if bridge is not None:
+                return bridge
+
+            allow = self.env['ir.config_parameter'].sudo().get_param(
+                'ai_agent_core.faiss_allow_download', '')
+            if str(allow).lower() not in ('1', 'true', 'yes'):
+                _logger.warning(
+                    'FAISS: no embedding provider configured, and local HuggingFace download is not allowed (set ai_agent_core.faiss_allow_download=1 to allow it). The memory index cannot be built.')
+                return None
+
             from langchain_community.embeddings import HuggingFaceEmbeddings
+            _logger.info(
+                'FAISS: using the local HuggingFace model (all-MiniLM-L6-v2) — download allowed via ai_agent_core.faiss_allow_download')
             return HuggingFaceEmbeddings(
                 model_name='sentence-transformers/all-MiniLM-L6-v2'
             )
 
-        except ImportError:
-            _logger.warning('No embedding backend available')
+        except ImportError as e:
+            _logger.warning(
+                'FAISS: embedding-backend saknas (%s) — minnesindexet kan '
+                'inte byggas. Deklarera langchain-beroendena eller '
+                'konfigurera en provider.', e)
             return None
         except Exception as e:
-            _logger.warning('Embedding init failed: %s', e)
+            _logger.warning('FAISS: embedding-init misslyckades: %s', e)
             return None
+
+    def _provider_embeddings(self):
+        """Brygga: `ai.provider` -> langchain `Embeddings`.
+
+        Returnerar None när ingen provider kan embedda, så att anroparen kan
+        falla vidare i stället för att få en halvfungerande instans.
+
+        `input_type` är asymmetriskt och måste vara rätt: dokument som ska
+        hittas embeddas som 'search_document', sökfrågan som 'search_query'.
+        Att skicka samma typ för båda ger sämre träffar utan att något fel
+        syns.
+        """
+        try:
+            from langchain_core.embeddings import Embeddings as LcEmbeddings
+        except ImportError:
+            return None
+
+        provider = self.env['ai.provider'].sudo()._embedding_provider()
+        if not provider:
+            return None
+
+        class _ProviderEmbeddings(LcEmbeddings):
+            def __init__(self, prov):
+                self._prov = prov
+
+            def embed_documents(self, texts):
+                return self._prov._get_embedding_batch(
+                    inputs=list(texts), input_type='search_document')
+
+            def embed_query(self, text):
+                return self._prov._get_embedding(
+                    input=text, input_type='search_query')
+
+        _logger.info(
+            'RAG-embeddings via provider %s (%s)',
+            provider.name, provider.embedding_model or 'default')
+        return _ProviderEmbeddings(provider)
 
     # ════════════════════════════════════════════
     # OKF trigger-modell (task 5.1)

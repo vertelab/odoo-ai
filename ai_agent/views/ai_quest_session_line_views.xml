@@ -42,6 +42,7 @@
                 <field name="ai_quest_session_id"/>
                 <field name="system_fingerprint"/>
                 <field name="finish_reason"/>
+                <!-- Odoo 20: <group> is gone from <search>. -->
                 <group expand="0" string="Group By">
                     <filter string="AI Quest Session" name="group_by_session" context="{'group_by': 'ai_quest_session_id'}"/>
                     <filter string="Token Type" name="group_by_token_type" context="{'group_by': 'token_type_id'}"/>

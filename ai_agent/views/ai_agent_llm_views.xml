@@ -58,6 +58,7 @@
           <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
           <filter string="Key Required" name="key_required" domain="[('is_key_required', '=', True)]" />
           <filter string="Not Confirmed" name="not_confirmed" domain="[('status', '=', 'not_confirmed')]" />
+          <!-- Odoo 20: <group> is gone from <search>. -->
           <group expand="0" string="Group By">
             <filter string="LLM Type" name="group_by_llm_type" context="{'group_by': 'llm_type'}" />
             <filter string="Last Run" name="group_by_last_run" context="{'group_by': 'last_run'}" />

@@ -4,6 +4,7 @@
 from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase
 from ._config_param_guard import ConfigParamGuardedCase
+from ._test_users import create_user
 
 
 class TestCoworkerHITL(TransactionCase):
@@ -17,26 +18,8 @@ class TestCoworkerHITL(TransactionCase):
             'orchestration_mode': 'single',
             'status': 'active',
         })
-        self.approver = self.env['res.users'].create({
-            'name': 'HITL Godkännare',
-            'login': 'hitl_approver_%s' % self.env['res.users'].search_count([]),
-            'password': 'approver-pass',
-            # #if VERSION >= "19.0"
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
-            # #else
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-            # #endif
-        })
-        self.stranger = self.env['res.users'].create({
-            'name': 'HITL Främling',
-            'login': 'hitl_stranger_%s' % self.env['res.users'].search_count([]),
-            'password': 'stranger-pass',
-            # #if VERSION >= "19.0"
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
-            # #else
-            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
-            # #endif
-        })
+        self.approver = create_user(self.env, name='HITL Godkännare', login='hitl_approver_%s' % self.env['res.users'].search_count([]), password='approver-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
+        self.stranger = create_user(self.env, name='HITL Främling', login='hitl_stranger_%s' % self.env['res.users'].search_count([]), password='stranger-pass', groups_id=[(6, 0, [self.env.ref('base.group_user').id])])
 
     def _session(self, user=None):
         """En körningssession — HITL kräver en (design D7)."""
@@ -189,7 +172,7 @@ class TestCoworkerHITL(TransactionCase):
             hitl.with_user(self.approver).action_approve()
 
     def test_auto_proposal_after_n_approvals(self):
-        self.env['ir.config_parameter'].set_str(
+        self.env['ir.config_parameter'].set_param(
             'ai_agent_core.hitl_trust_n', '3')
         self._approve_n(3)
         proposal = self.HITL.search([
@@ -201,7 +184,7 @@ class TestCoworkerHITL(TransactionCase):
         self.assertEqual(proposal.object_type, 'helpdesk.ticket')
 
     def test_no_duplicate_auto_proposal(self):
-        self.env['ir.config_parameter'].set_str(
+        self.env['ir.config_parameter'].set_param(
             'ai_agent_core.hitl_trust_n', '3')
         self._approve_n(3)
         # 4:e godkännandet — NYTT ärende (start=200), annars återanvänder
@@ -214,7 +197,7 @@ class TestCoworkerHITL(TransactionCase):
         self.assertEqual(count, 1)
 
     def test_approved_proposal_creates_standing_rule(self):
-        self.env['ir.config_parameter'].set_str(
+        self.env['ir.config_parameter'].set_param(
             'ai_agent_core.hitl_trust_n', '1')
         self._approve_n(1)
         proposal = self.HITL.search([
@@ -228,7 +211,7 @@ class TestCoworkerHITL(TransactionCase):
         self.assertIn('helpdesk.ticket', rule)
 
     def test_rejected_proposal_resets_counter(self):
-        self.env['ir.config_parameter'].set_str(
+        self.env['ir.config_parameter'].set_param(
             'ai_agent_core.hitl_trust_n', '3')
         self._approve_n(3)
         proposal = self.HITL.search([

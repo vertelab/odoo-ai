@@ -373,7 +373,7 @@ class AIMemory(models.Model):
 
     def create_documents_from_file(self, attachment_id):
         # #if VERSION >= "20.0"
-        file = base64.b64decode(attachment_id.raw)
+        file = attachment_id.raw.content
         # #else
         file = base64.b64decode(attachment_id.datas)
         # #endif

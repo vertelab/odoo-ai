@@ -25,6 +25,7 @@ class MailChannel(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="Quest", help="")
     ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session', string="Session", help="")
 
+    # @api.returns was removed in 20.0.
     @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
         message = super(MailChannel, self).message_post(**kwargs)
