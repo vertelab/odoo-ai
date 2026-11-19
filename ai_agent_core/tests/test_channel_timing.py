@@ -41,8 +41,9 @@ class TestTurnTimingComputation(common.TransactionCase):
         from odoo.addons.ai_agent_core.controllers.stream import (
             _compute_turn_timing)
         timing = _compute_turn_timing([], started=0.0)
-        self.assertEqual(
-            timing, {'first_token': 0.0, 'longest_gap': 0.0, 'stream': 0.0})
+        self.assertEqual(timing, {
+            'first_token': 0.0, 'first_visible_token': 0.0,
+            'first_tool': 0.0, 'longest_gap': 0.0, 'stream': 0.0})
 
     def test_single_event_has_no_gap_and_no_stream(self):
         """2.2: en enda händelse → gap 0, stream 0."""
@@ -65,6 +66,65 @@ class TestTurnTimingComputation(common.TransactionCase):
             started=0.0)
         self.assertAlmostEqual(timing['longest_gap'], 4.0, places=3)
         self.assertAlmostEqual(timing['stream'], 5.0, places=3)
+
+    def test_reasoning_before_answer_separates_the_two_measures(self):
+        """3.1: resonemang före svar — first_token ≠ first_visible_token.
+
+        Session 28674: första händelsen var `thinking` efter 2,7 s, första
+        SYNLIGA tecknet kom ~40 s senare. Ett enda fält gjorde att turen
+        såg snabb ut medan användaren väntade en minut.
+        """
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _compute_turn_timing)
+        timing = _compute_turn_timing(
+            _marks(('thinking', 2.676), ('thinking', 30.0),
+                   ('token', 42.0), ('token', 43.0)),
+            started=0.0)
+        self.assertAlmostEqual(timing['first_token'], 2.676, places=3)
+        self.assertAlmostEqual(timing['first_visible_token'], 42.0, places=3)
+        self.assertGreater(timing['first_visible_token'],
+                           timing['first_token'])
+
+    def test_no_reasoning_makes_the_two_measures_equal(self):
+        """3.1: utan resonemang mäter de två fälten samma sak."""
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _compute_turn_timing)
+        timing = _compute_turn_timing(
+            _marks(('token', 1.0), ('token', 2.0)), started=0.0)
+        self.assertAlmostEqual(timing['first_token'], 1.0, places=3)
+        self.assertAlmostEqual(timing['first_visible_token'], 1.0, places=3)
+
+    def test_reasoning_only_gives_zero_visible_token(self):
+        """3.1: bara resonemang → first_visible_token = 0, inte first_token.
+
+        Användaren fick inget synligt svar; att sätta first_visible_token
+        till first_token vore samma lögn som `kanalprestanda D4` förbjöd.
+        """
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _compute_turn_timing)
+        timing = _compute_turn_timing(
+            _marks(('thinking', 1.0), ('thinking', 2.0)), started=0.0)
+        self.assertAlmostEqual(timing['first_token'], 1.0, places=3)
+        self.assertEqual(timing['first_visible_token'], 0.0)
+        self.assertIsNotNone(timing['first_visible_token'])
+
+    def test_first_tool_is_stamped(self):
+        """4.1: första verktygsanropet får en tid — fältet var alltid 0."""
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _compute_turn_timing)
+        timing = _compute_turn_timing(
+            _marks(('thinking', 1.0), ('tool', 3.5), ('tool', 9.0),
+                   ('token', 12.0)),
+            started=0.0)
+        self.assertAlmostEqual(timing['first_tool'], 3.5, places=3)
+
+    def test_no_tool_call_leaves_first_tool_zero(self):
+        """4.1: en tur utan verktyg → first_tool = 0 (ej tillämpligt)."""
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _compute_turn_timing)
+        timing = _compute_turn_timing(
+            _marks(('token', 1.0), ('token', 2.0)), started=0.0)
+        self.assertEqual(timing['first_tool'], 0.0)
 
     def test_thinking_counts_as_content_event(self):
         """2.1: `thinking` är en innehållshändelse — den tidsätts också."""
@@ -114,6 +174,23 @@ class TestTimingPersistence(common.TransactionCase):
         self.assertAlmostEqual(line.first_token_seconds, 1.234, places=3)
         self.assertAlmostEqual(line.longest_gap_seconds, 0.5, places=3)
         self.assertAlmostEqual(line.stream_seconds, 2.0, places=3)
+
+    def test_timing_dict_writes_visible_token_and_first_tool(self):
+        """3.3/4.1: de två nya måtten skrivs på raden."""
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _persist_stream_answer)
+        session = self._session()
+        _persist_stream_answer(
+            self.env, session.id, 'svar',
+            timing={'first_token': 2.676, 'first_visible_token': 42.0,
+                    'first_tool': 3.5, 'longest_gap': 37.571,
+                    'stream': 45.626})
+        line = session.session_line_ids.filtered(
+            lambda l: l.role == 'assistant')
+        self.assertAlmostEqual(line.first_token_seconds, 2.676, places=3)
+        self.assertAlmostEqual(line.first_visible_token_seconds, 42.0,
+                               places=3)
+        self.assertAlmostEqual(line.first_tool_seconds, 3.5, places=3)
 
     def test_timing_from_state_prefers_computed_dict(self):
         """2.3: state['timing'] används när _stream() hunnit räkna."""

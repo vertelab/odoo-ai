@@ -366,6 +366,15 @@
                                  nollor som ser ut som en mätning. -->
                             <field name="first_token_seconds" readonly="1"
                                    invisible="not first_token_seconds"/>
+                            <!-- Första SYNLIGA tecknet (webui-thinking-and-
+                                 turn-metrics 3.4). Skiljer sig från
+                                 first_token_seconds när modellen resonerar
+                                 före svaret — det är den tid användaren
+                                 faktiskt väntade på något läsbart. -->
+                            <field name="first_visible_token_seconds" readonly="1"
+                                   invisible="not first_visible_token_seconds"/>
+                            <field name="first_tool_seconds" readonly="1"
+                                   invisible="not first_tool_seconds"/>
                             <field name="longest_gap_seconds" readonly="1"
                                    invisible="not longest_gap_seconds"/>
                             <field name="stream_seconds" readonly="1"
@@ -377,6 +386,10 @@
                              deltat mot föregående rad i sessionen. -->
                         <group string="Timing" name="timing">
                             <field name="first_token_seconds" readonly="1"
+                                   digits="[12,3]"/>
+                            <field name="first_visible_token_seconds" readonly="1"
+                                   digits="[12,3]"/>
+                            <field name="first_tool_seconds" readonly="1"
                                    digits="[12,3]"/>
                             <field name="longest_gap_seconds" readonly="1"
                                    digits="[12,3]"/>

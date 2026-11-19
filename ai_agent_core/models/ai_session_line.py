@@ -289,11 +289,27 @@ class AICoworkerSessionLine(models.Model):
     first_token_seconds = fields.Float(
         'Time to first token (s)', readonly=True, default=0.0,
         digits=(12, 3),
-        help='Seconds from the turn starting to the first content token '
-             'being available to the channel. 0 = not applicable (the '
+        help='Seconds from the turn starting to the first content event — '
+             'INCLUDING reasoning. A thinking model therefore looks fast here '
+             'while the user is still waiting. Use first_visible_token_seconds '
+             'for what the user actually saw. 0 = not applicable (the '
              'channel does not stream) or not measured. An upper bound: '
              'the stamp is taken when the chunk consumer sees the event, '
              'which is what the user waits for.')
+    first_visible_token_seconds = fields.Float(
+        'Time to first visible token (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Seconds from the turn starting to the first TOKEN event — the '
+             'first thing the user actually sees. Differs from '
+             'first_token_seconds when the model reasons before answering '
+             '(session 28674: 2.7 s to the first event, ~40 s to the first '
+             'visible character). 0 = the turn produced no visible answer '
+             '(reasoning only) or was not measured.')
+    first_tool_seconds = fields.Float(
+        'Time to first tool call (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Seconds from the turn starting to the first tool call. '
+             '0 = the turn called no tool, or was not measured.')
     longest_gap_seconds = fields.Float(
         'Longest gap (s)', readonly=True, default=0.0,
         digits=(12, 3),

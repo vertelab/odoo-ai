@@ -85,6 +85,21 @@
                             font-size: 13px; user-select: none;
                         }
                         .agent-card-body { font-size: 13px; }
+                        /* Tänk-sektion (webui-thinking-and-turn-metrics 2.3).
+                           Dämpad och kursiv: resonemang är metadata, inte svar.
+                           Samma visuella språk som supervisor.start-raden. */
+                        .ai-thinking {
+                            border-left: 2px solid var(--border); padding: 4px 0 4px 10px;
+                            margin-bottom: 8px;
+                        }
+                        .ai-thinking-header {
+                            font-size: 12px; color: var(--text-muted);
+                            cursor: pointer; user-select: none; margin-bottom: 4px;
+                        }
+                        .ai-thinking-body {
+                            font-size: 12px; font-style: italic; color: var(--text-muted);
+                            max-height: 220px; overflow-y: auto; white-space: pre-wrap;
+                        }
                         .tool-call {
                             font-size: 12px; color: var(--text-muted); padding: 4px 8px;
                             background: rgba(255,255,255,0.03); border-radius: 4px;
@@ -145,6 +160,13 @@
                     var activeQuestName = 'default';
                     var currentAiMessage = null;
                     var currentAgentCards = {};
+                    // Tänk-sektionen (webui-thinking-and-turn-metrics 2.1).
+                    // `thinking`-händelser sändes på tråden men hade inget
+                    // case här, så modellens resonemang var osynligt medan
+                    // användaren väntade. Session 28674: första händelsen
+                    // efter 2,7 s, första SYNLIGA tecknet efter ~40 s.
+                    var currentThinkingEl = null;
+                    var currentThinkingBody = null;
                     var streaming = false;
 
                     document.getElementById('coworker-list').addEventListener('click', function(e) {
@@ -192,6 +214,8 @@
                         currentAiMessage = _('div', 'message ai', '');
                         document.getElementById('messages').appendChild(currentAiMessage);
                         currentAgentCards = {};
+                        currentThinkingEl = null;
+                        currentThinkingBody = null;
                         scrollBottom();
 
                         var params = 'prompt=' + encodeURIComponent(prompt);
@@ -250,7 +274,18 @@
                                 currentAiMessage.innerHTML +=
                                     '<div style="color:var(--accent);margin-top:8px;font-weight:600">✅ Slutsats:</div>';
                                 break;
+                            case 'thinking':
+                                // Modellens resonemang (webui-thinking-and-
+                                // turn-metrics 2.1). Skapas vid första
+                                // händelsen och fylls löpande. textContent,
+                                // inte innerHTML — resonemangstext är inte HTML.
+                                appendThinking(event.token);
+                                break;
                             case 'token':
+                                // Första synliga tecknet: fäll ihop tänket så
+                                // svaret läses utan resonemanget framför sig
+                                // (2.2).
+                                collapseThinking();
                                 currentAiMessage.innerHTML += event.token;
                                 break;
                             case 'done':
@@ -267,7 +302,36 @@
                         scrollBottom();
                     }
 
+                    function appendThinking(text) {
+                        if (!text || !currentAiMessage) return;
+                        if (!currentThinkingEl) {
+                            currentThinkingEl = _('div', 'ai-thinking', '');
+                            var header = _('div', 'ai-thinking-header',
+                                '💭 <em>Resonemang</em>');
+                            header.onclick = function() {
+                                var body = currentThinkingEl.querySelector('.ai-thinking-body');
+                                if (!body) return;
+                                body.style.display = body.style.display === 'none' ? 'block' : 'none';
+                            };
+                            currentThinkingBody = _('div', 'ai-thinking-body', '');
+                            currentThinkingEl.appendChild(header);
+                            currentThinkingEl.appendChild(currentThinkingBody);
+                            // Före eventuellt svar: resonemanget ska stå överst.
+                            currentAiMessage.insertBefore(
+                                currentThinkingEl, currentAiMessage.firstChild);
+                        }
+                        currentThinkingBody.textContent += text;
+                    }
+
+                    function collapseThinking() {
+                        if (!currentThinkingEl || !currentThinkingBody) return;
+                        currentThinkingBody.style.display = 'none';
+                    }
+
                     function finishStream() {
+                        // `(inget svar)` bara om bubblan är TOM — en tur som
+                        // bara resonerade har innehåll och ska inte se ut som
+                        // om ingenting hände (2.4).
                         if (currentAiMessage && !currentAiMessage.textContent.trim()) {
                             currentAiMessage.innerHTML = '<em style="color:var(--text-muted)">(inget svar)</em>';
                         }
@@ -276,6 +340,8 @@
                         document.getElementById('prompt-input').focus();
                         currentAiMessage = null;
                         currentAgentCards = {};
+                        currentThinkingEl = null;
+                        currentThinkingBody = null;
                     }
 
                     function escapeHtml(text) {
