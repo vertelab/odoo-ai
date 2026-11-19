@@ -489,10 +489,10 @@ class AIStreamController(http.Controller):
         # default. Fångas som plain values (generatorn körs efter teardown).
         gen_tool_ids = list(
             quest._session_tool_ids(
-                access_groups=request.env.user.groups_id.ids)
+                access_groups=request.env.user.group_ids.ids)
         ) if quest and quest.exists() else []
         # Användarens grupper för PermissionEngine (defense-in-depth)
-        gen_user_group_ids = tuple(request.env.user.groups_id.ids)
+        gen_user_group_ids = tuple(request.env.user.group_ids.ids)
         # NATS executor config (tool-executor-nats)
         nats_api_secret = request.env['ir.config_parameter'].sudo().get_str(
             'ai_agent_core.api_secret', '')
@@ -3849,7 +3849,7 @@ class AIOpenAIAPI(http.Controller):
             # Samma verktygsurval som _run_coworker_chat tidigare hämtade:
             # settings-default + explicita verktyg, access-filtrerat.
             tool_ids = quest._session_tool_ids(
-                access_groups=request.env.user.groups_id.ids)
+                access_groups=request.env.user.group_ids.ids)
             tool_env = request.env(context=dict(
                 request.env.context,
                 _ai_context_model='ai.coworker.session',
@@ -3969,7 +3969,7 @@ class AIOpenAIAPI(http.Controller):
                 ai_lineage_session_id=sess.id,
             ))
             tool_ids = quest._session_tool_ids(
-                access_groups=request.env.user.groups_id.ids)
+                access_groups=request.env.user.group_ids.ids)
             reg = ToolRegistry()
             if tool_ids:
                 recs = tool_env['ai.tool'].browse(tool_ids).filtered(
