@@ -273,6 +273,7 @@
                                 <group string="Cost (per 1K tokens)">
                                     <field name="cost_input_1k"/>
                                     <field name="cost_output_1k"/>
+                                    <field name="pricing_currency_id"/>
                                 </group>
                             </group>
                         </page>

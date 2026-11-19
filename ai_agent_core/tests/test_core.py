@@ -939,6 +939,28 @@ class TestSystemtoken(unittest.TestCase):
         # Pris 0 -> faktor 0, ingen gissning.
         self.assertEqual(factor(0.0, 0.0), 0.0)
 
+    def test_calibration_converts_to_company_currency(self):
+        """Kostnaden konverteras till bolagsvaluta innan faktorn räknas.
+
+        Priset står i modellens `pricing_currency_id` (vanligen USD) medan
+        systemtoken-priset är i bolagsvalutan. Utan konvertering blir
+        faktorn 10x fel vid USD/SEK ~10.
+        """
+        import os
+        path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_model.py'))
+        with open(path) as f:
+            content = f.read()
+        # Konverteringen måste ligga i _calibration_cost_per_1m, inte i
+        # anroparen — annars är calibration_cost_per_1m i fel valuta.
+        start = content.index("def _calibration_cost_per_1m")
+        end = content.index("def _compute_sys_multiplier")
+        body = content[start:end]
+        self.assertIn("pricing_currency_id", body)
+        self.assertIn("_convert(", body)
+        # Saknad kurs far inte tystas med kurs 1.0.
+        self.assertIn("return 0.0", body)
+
     def test_sys_multiplier_source_is_computed(self):
         """3.6: ai.model.sys_multiplier är en compute, inte ett default-fält."""
         import os

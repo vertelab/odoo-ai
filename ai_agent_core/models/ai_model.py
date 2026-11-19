@@ -160,22 +160,53 @@ class AIModel(models.Model):
             _f('bifrost.systemtoken_output_weight', 0.75),
         )
 
-    def _calibration_cost_per_1m(self, w_in, w_out):
-        """Viktad modellkostnad per 1M tokens, i modellens prisvaluta.
+    def _calibration_cost_per_1m(self, w_in, w_out, date=None):
+        """Viktad modellkostnad per 1M tokens, i BOLAGETS valuta.
 
         Samma formel som `bifrost.valuation._blended_price_company`:
         ``(input_pris × w_in + output_pris × w_out) × 1_000_000``.
 
-        `cost_input_1k`/`cost_output_1k` är per 1K-token, så ×1000 ger
-        per 1M. Valutan är `pricing_currency_id` (vanligen USD) —
-        systemtoken-priset är i bolagsvalutan, vilket är en känd
-        avvikelse som `calibration_cost_per_1m` gör synlig.
+        `cost_input_1k`/`cost_output_1k` är per 1K-token, så ×1000 ger per
+        1M. Priset står i modellens `pricing_currency_id` (vanligen USD)
+        medan systemtoken-priset är i bolagsvalutan — utan konvertering
+        blir faktorn 10× fel när USD/SEK är ~10.
+
+        Konverteringen sker här, inte i `_compute_sys_multiplier`, så att
+        `calibration_cost_per_1m` alltid är i bolagsvaluta och direkt
+        jämförbart med `calibration_price`.
+
+        Saknas kursen returneras 0.0 — att räkna med kurs 1.0 vore att
+        tysta felet i stället för att visa det.
         """
         self.ensure_one()
-        return (
+        amount = (
             (self.cost_input_1k or 0.0) * w_in
             + (self.cost_output_1k or 0.0) * w_out
         ) * 1000.0
+        if not amount:
+            return 0.0
+
+        company = self.env.company
+        company_currency = company.currency_id
+        pricing_currency = (self.pricing_currency_id
+                            or self.env.ref('base.USD',
+                                            raise_if_not_found=False))
+        if not pricing_currency or not company_currency:
+            return amount
+        if pricing_currency.id == company_currency.id:
+            return amount
+
+        try:
+            return pricing_currency._convert(
+                amount, company_currency, company,
+                date or fields.Date.context_today(self))
+        except Exception as exc:  # noqa: BLE001 — kursen kan saknas
+            _logger.warning(
+                'sys_multiplier: kunde inte konvertera %s %s till %s för '
+                'modell %s (%s) — faktorn blir 0.0',
+                amount, pricing_currency.name, company_currency.name,
+                self.display_name or self.name, exc)
+            return 0.0
 
     @api.depends('cost_input_1k', 'cost_output_1k', 'pricing_currency_id')
     def _compute_sys_multiplier(self):
@@ -194,8 +225,9 @@ class AIModel(models.Model):
         än att visa att det saknas.
         """
         price, w_in, w_out = self._calibration_params()
+        today = fields.Date.context_today(self)
         for r in self:
-            cost_per_1m = r._calibration_cost_per_1m(w_in, w_out)
+            cost_per_1m = r._calibration_cost_per_1m(w_in, w_out, date=today)
             if not price:
                 r.sys_multiplier = 0.0
                 _logger.warning(
@@ -222,13 +254,16 @@ class AIModel(models.Model):
         föregående månad behåller sin sats.
         """
         from datetime import date
-        month = date.today().strftime('%Y-%m')
+        today = date.today()
+        month = today.strftime('%Y-%m')
         price, w_in, w_out = self._calibration_params()
         models = self.search([])
         changed = 0
         for m in models:
             before = m.sys_multiplier
-            cost_per_1m = m._calibration_cost_per_1m(w_in, w_out)
+            # Samma datum för hela körningen — annars kan två modeller i
+            # samma månad räknas med olika kurs om cronen går över midnatt.
+            cost_per_1m = m._calibration_cost_per_1m(w_in, w_out, date=today)
             m.write({
                 'calibration_month': month,
                 'calibration_price': price,
@@ -265,6 +300,14 @@ class AIModel(models.Model):
     # Cost
     cost_input_1k = fields.Float('Input Cost per 1K tokens', digits=(12, 8))
     cost_output_1k = fields.Float('Output Cost per 1K tokens', digits=(12, 8))
+    pricing_currency_id = fields.Many2one(
+        'res.currency', string='Pricing Currency',
+        default=lambda self: self.env.ref('base.USD',
+                                          raise_if_not_found=False),
+        help='Currency the cost_input_1k/cost_output_1k prices are stated '
+             'in. Usually USD. Converted to the company currency when the '
+             'systemtoken factor is calculated — without that conversion '
+             'the factor is off by the exchange rate.')
 
     # Systemtoken pricing (beräknad — systemtoken-calibration D1/D2)
     #

@@ -111,10 +111,16 @@ def _recalculate_sys_multipliers(cr):
 
     ⚠ Valuta: `cost_input_1k` är i modellens `pricing_currency_id`
     (vanligen USD) medan systemtoken-priset är i bolagsvalutan. Migrationen
-    räknar i SAMMA valuta som compute:n gör — dvs den konverterar inte här.
-    Compute:n (`_compute_sys_multiplier`) är den auktoritativa vägen och
-    körs vid nästa `--update`/cron; migrationen sätter ett startvärde så
-    ingen post ligger kvar på heuristikens tal i mellanläget.
+    konverterar INTE — den sätter ett startvärde så ingen post ligger kvar på
+    heuristikens tal i mellanläget. Compute:n (`_compute_sys_multiplier`) är
+    den auktoritativa vägen: den konverterar via `_convert()` och körs vid
+    nästa `--update`/cron.
+
+    ⚠ Det betyder att startvärdet kan vara upp till en växelkurs fel (10x
+    vid USD/SEK ~10). Det är avsiktligt: att konvertera i SQL skulle kräva
+    att migrationen känner till Odoos kursuppslag, och en felaktig kurs i en
+    migration är svårare att upptäcka än ett värde som rättas vid nästa
+    cron. `calibration_month` sätts, så avvikelsen syns.
 
     Modeller utan pris får 0.0 — att gissa ett pris vore värre.
     """
