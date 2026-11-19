@@ -47,7 +47,11 @@
     'depends': [
         'ai_agent',
     ],
+    # #if VERSION >= "20.0"
+    'data': ["security/ir.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
+    # #else
     'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
+    # #endif
     # PENSIONERAD (ai-memory-pgvector T6.2, 2026-10-30).
     #
     # Modulen får inte installeras. Skälen:
@@ -65,6 +69,10 @@
     #
     # pgvector-stödet bor nu i ai_agent_core (fields/pg_vector.py +
     # ai.memory.chunk), med samma PgVector-typ som ai.okf.concept använder.
+    #
+    # Flyttad hit 2026-11-15: kommentaren och 'installable': False fanns
+    # bara i 18.0-grenens UTDATA, aldrig i p-filen. 20.0-grenen skapades
+    # från p-filen och återaktiverade därför en pensionerad modul.
     'installable': False,
     'auto_install': False,
     'application': False,
