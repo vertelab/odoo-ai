@@ -17,8 +17,11 @@ PFILES_EDITIONS="18.0,20.0"
 V="${GEANY_PFILES_VERSION:-}"
 if [ -z "$V" ]; then
     b=$(git symbolic-ref --short -q HEAD || true)
-    case "$b" in
-    17.0|18.0|19.0) V="$b" ;;
+    # Harled V ur PFILES_EDITIONS i stallet for en hardkodad lista --
+    # annars slutar hooken expandera pa en gren som star i listan men inte
+    # i case-satsen (20.0 saknades, och hooken hoppade over allt).
+    case ",$PFILES_EDITIONS," in
+    *",$b,"*) V="$b" ;;
     esac
 fi
 if [ -z "$V" ]; then
