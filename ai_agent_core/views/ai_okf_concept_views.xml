@@ -6,18 +6,22 @@
         <field name="name">ai.okf.concept.list</field>
         <field name="model">ai.okf.concept</field>
         <field name="arch" type="xml">
-            <list string="OKF Concepts" limit="80">
+            <list string="OKF Concepts" limit="80"
+                  decoration-muted="archived">
                 <field name="scope"/>
-                <field name="concept_key"/>
                 <field name="title"/>
+                <field name="summary" optional="show"/>
                 <field name="artifact_type_id"/>
+                <field name="source_ref" optional="show"/>
                 <field name="status"/>
-                <field name="stale_after"/>
-                <field name="retention_end"/>
-                <field name="archived"/>
-                <field name="owner_company_id" optional="show"/>
-                <field name="owner_user_id" optional="show"/>
-                <field name="owner_coworker_id" optional="show"/>
+                <field name="write_date" optional="show"/>
+                <field name="stale_after" optional="hide"/>
+                <field name="retention_end" optional="hide"/>
+                <field name="archived" optional="show"/>
+                <field name="concept_key" optional="hide"/>
+                <field name="owner_company_id" optional="hide"/>
+                <field name="owner_user_id" optional="hide"/>
+                <field name="owner_coworker_id" optional="hide"/>
                 <field name="source_user_id" optional="hide"/>
             </list>
         </field>

@@ -120,6 +120,9 @@ class ResUsers(models.Model):
                 'default_scope': 'personal',
                 'default_owner_user_id': self.id,
                 'search_default_not_archived': 1,
+                # Gruppera per typ: roll, mål, preferens, korrigering —
+                # en berättelse, inte en platt lista (memory-self-image).
+                'search_default_group_artifact': 1,
             },
         }
 
