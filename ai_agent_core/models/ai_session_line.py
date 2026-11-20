@@ -294,6 +294,18 @@ class AICoworkerSessionLine(models.Model):
              'channel does not stream) or not measured. An upper bound: '
              'the stamp is taken when the chunk consumer sees the event, '
              'which is what the user waits for.')
+    # Tiden användaren upplever som "inget händer" innan agenten börjar
+    # arbeta. `first_token` fångar den INTE: en tur som resonerar i 45 s och
+    # sedan anropar ett verktyg har samma TTFT som en som svarar direkt,
+    # medan hela väntan hamnar i `longest_gap` utan förklaring (mätt:
+    # session 28674 — 37,6 s gap, 2,7 s TTFT). 0 = inget verktygsanrop i
+    # turen (inte "snabbt").
+    first_tool_seconds = fields.Float(
+        'Time to first tool call (s)', readonly=True, default=0.0,
+        digits=(12, 3),
+        help='Seconds from the turn starting to the model declaring its '
+             'first tool call. 0 = the turn made no tool call, or the '
+             'channel does not stream.')
     longest_gap_seconds = fields.Float(
         'Longest gap (s)', readonly=True, default=0.0,
         digits=(12, 3),

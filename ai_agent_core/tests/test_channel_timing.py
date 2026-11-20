@@ -75,6 +75,30 @@ class TestTurnTimingComputation(common.TransactionCase):
         self.assertAlmostEqual(timing['first_token'], 1.0, places=3)
         self.assertAlmostEqual(timing['longest_gap'], 0.2, places=3)
 
+    def test_first_tool_call_is_measured(self):
+        """Tiden till första verktygsanropet mäts separat.
+
+        Fallet som motiverade fältet (session 28674): 2,7 s till första
+        tecken, sedan 37,6 s tystnad innan första verktyget. TTFT sa inget
+        om väntan — `first_tool` gör det.
+        """
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _compute_turn_timing)
+        timing = _compute_turn_timing(
+            _marks(('thinking', 2.7), ('tool_call', 40.3),
+                   ('tool_call', 41.0)),
+            started=0.0)
+        self.assertAlmostEqual(timing['first_token'], 2.7, places=3)
+        self.assertAlmostEqual(timing['first_tool'], 40.3, places=3)
+
+    def test_first_tool_is_zero_without_tool_call(self):
+        """0 = inget verktygsanrop — inte "snabb"."""
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _compute_turn_timing)
+        timing = _compute_turn_timing(
+            _marks(('token', 1.0), ('token', 1.5)), started=0.0)
+        self.assertEqual(timing['first_tool'], 0.0)
+
 
 @tagged('post_install', '-at_install')
 class TestTimingPersistence(common.TransactionCase):
@@ -101,17 +125,18 @@ class TestTimingPersistence(common.TransactionCase):
         self.assertEqual(line.stream_seconds, 0.0)
 
     def test_timing_dict_writes_the_three_fields(self):
-        """2.3: en dict skriver de tre måtten på raden."""
+        """2.3: en dict skriver måtten på raden (inkl. första verktyg)."""
         from odoo.addons.ai_agent_core.controllers.stream import (
             _persist_stream_answer)
         session = self._session()
         _persist_stream_answer(
             self.env, session.id, 'svar',
-            timing={'first_token': 1.234, 'longest_gap': 0.5,
-                    'stream': 2.0})
+            timing={'first_token': 1.234, 'first_tool': 12.5,
+                    'longest_gap': 0.5, 'stream': 2.0})
         line = session.session_line_ids.filtered(
             lambda l: l.role == 'assistant')
         self.assertAlmostEqual(line.first_token_seconds, 1.234, places=3)
+        self.assertAlmostEqual(line.first_tool_seconds, 12.5, places=3)
         self.assertAlmostEqual(line.longest_gap_seconds, 0.5, places=3)
         self.assertAlmostEqual(line.stream_seconds, 2.0, places=3)
 
