@@ -193,6 +193,11 @@ class AICoworker(models.Model):
         ('L3', 'L3 — Full'),
     ], string='Memory Level', default='L1',
         help='Omfattning per scope (ärvs av kopplingar utan eget värde).')
+    memory_learning_direct = fields.Boolean(
+        'Direkt minnesinlärning', default=False,
+        help='När learning är aktiv: skriv minnen direkt under samtalet '
+             'istället för att låta ett separat steg destillera dem efteråt. '
+             'Snabbare, men fyller minnet med rådata.')
     memory_profile = fields.Selection([
         ('hermes', 'Hermes — lärande rådgivare'),
         ('balanced', 'Balanserad'),
@@ -241,6 +246,27 @@ class AICoworker(models.Model):
     session_graph_enabled = fields.Boolean(
         'Graf i session', default=False,
         help='Tillåt grafen att berika även sessionskontext (dyrare).')
+    # ── Tid och relaterade poster (vy: "Time and Related Records") ────────
+    # Samma klass av fel som heartbeat-fälten ovan: vyn refererade fält som
+    # saknades i modellen och fällde registret vid installation (2026-11-20).
+    temporal_default_enabled = fields.Boolean(
+        'Tidsfönster som standard', default=False,
+        help='Lägg ett standardtidsfönster på sökningar när användaren inte '
+             'anger ett eget.')
+    temporal_default_days = fields.Integer(
+        'Standardfönster (dagar)', default=30,
+        help='Hur många dagar bakåt standardfönstret sträcker sig.')
+    related_enrichment = fields.Boolean(
+        'Berika med relaterade poster', default=False,
+        help='Hämta närliggande poster (samma kund/projekt) när ett träffat '
+             'objekt hittats.')
+    related_enrichment_limit = fields.Integer(
+        'Max relaterade poster', default=5,
+        help='Hur många relaterade poster som får läggas till per träff.')
+    related_enrichment_budget = fields.Integer(
+        'Budget relaterade poster (tecken)', default=1500,
+        help='Max antal tecken berikningen med relaterade poster får lägga '
+             'till. Trunkeras närmast-först.')
     learning = fields.Selection([
         ('active', 'Active — lär sig av samtal'),
         ('passive', 'Passive — injicerar bara, lär sig inte'),
@@ -764,6 +790,78 @@ class AICoworker(models.Model):
         self.ensure_one()
         return self.env['ai.okf.concept']._okf_action_for_owner(
             'ai.coworker', self.id)
+
+    # ── Kandidater för befordran till eval-fall ──────────────────────────
+    # Kaizen-eval-learning-loop 2.1/2.2. En session är en kandidat när den
+    # slutade dåligt (error-lik finish_reason) ELLER användaren underkände
+    # den (`user_rating='down'`), och den ännu inte befordrats till ett
+    # `ai.eval.case`. Underkända sessioner är den billigaste källan: någon
+    # har redan sagt att svaret var fel.
+    #
+    # FÄLLAN (fixad 2026-11-20): vyn `ai_coworker_views.xml` hade en
+    # smartknapp för `action_open_promotion_candidates` och testfilen
+    # `tests/test_eval_pipeline.py` anropade både den och
+    # `_get_promotion_candidates()`, men INGEN av metoderna fanns i modellen.
+    # Följden var att hela registret föll vid installation:
+    #   ParseError: action_open_promotion_candidates är inte en giltig
+    #   åtgärd för ai.coworker
+    # och därmed gick `accounting_full.repo` (som drar in odoo-ai via
+    # account_3way_match_ai) inte att installera alls.
+
+    # Finish-reasons som räknas som "slutade dåligt". `stop` är det normala
+    # avslutet och räknas inte; `closed`/`new_session` är administrativa.
+    _PROMOTION_BAD_FINISH_REASONS = (
+        'error', 'setup_failed', 'timeout', 'max_rounds', 'max_tokens',
+        'content_filter', 'refusal', 'interrupted',
+    )
+
+    def _get_promotion_candidates(self):
+        """Sessioner värda att befordra till eval-fall.
+
+        Kandidat = medarbetarens session som (a) slutade dåligt eller
+        underkändes av användaren, och (b) ännu inte har ett `ai.eval.case`.
+        Listan är en beräkning, inte ett lagrat fält — den ska alltid spegla
+        nuläget.
+
+        Returns:
+            recordset: `ai.coworker.session` — tom om inget återstår.
+        """
+        self.ensure_one()
+        Session = self.env['ai.coworker.session']
+        if 'ai.eval.case' not in self.env:
+            return Session
+
+        # Sessioner som redan blivit testfall — de ska inte föreslås igen.
+        promoted = self.env['ai.eval.case'].search([
+            ('source_session_id', '!=', False),
+        ]).mapped('source_session_id').ids
+
+        domain = [
+            ('coworker_id', '=', self.id),
+            '|',
+            ('finish_reason', 'in', list(self._PROMOTION_BAD_FINISH_REASONS)),
+            ('user_rating', '=', 'down'),
+        ]
+        if promoted:
+            domain.append(('id', 'not in', promoted))
+        return Session.search(domain)
+
+    def action_open_promotion_candidates(self):
+        """Smartknapp: öppna medarbetarens eval-kandidater.
+
+        Returns:
+            dict: action mot `ai.coworker.session`, filtrerad på kandidaterna.
+        """
+        self.ensure_one()
+        candidates = self._get_promotion_candidates()
+        return {
+            'name': _('Evaluation Candidates'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session',
+            'view_mode': 'list,form',
+            'domain': [('id', 'in', candidates.ids)],
+            'context': {'create': False},
+        }
 
     @api.depends('session_ids')
     def _compute_session_object_count(self):
@@ -7709,6 +7807,30 @@ class AICoworker(models.Model):
         'Heartbeat Active', default=True,
         help='När True vaknar coworkern regelbundet för att checka '
              'budget, tasks, mål och nudge-behov.')
+
+    # ── Heartbeat-status (vy: ai_coworker_views.xml, sidan "Autonom") ──────
+    # FÄLLAN (fixad 2026-11-20): vyn visade `heartbeat_status` och
+    # `heartbeat_operational` men fälten fanns inte i modellen, så hela
+    # registret föll:
+    #   ParseError: Fältet "heartbeat_status" finns inte i modellen "ai.coworker"
+    # `heartbeat_operational` speglar `_is_receptive()` — samma grind som
+    # delegeringen använder, så vyn och körtiden aldrig kan säga olika saker.
+    heartbeat_operational = fields.Boolean(
+        'Heartbeat Operational', compute='_compute_heartbeat_status',
+        help='True när coworkern faktiskt kan vakna: aktiv, heartbeat på, '
+             'budget kvar och ett färskt livstecken.')
+    heartbeat_status = fields.Char(
+        'Heartbeat Status', compute='_compute_heartbeat_status',
+        help='Människoläsbar orsak till att heartbeat är i eller ur drift.')
+
+    def _compute_heartbeat_status(self):
+        for r in self:
+            try:
+                ok, reason = r._is_receptive()
+            except Exception:  # pragma: no cover — får aldrig fälla vyn
+                ok, reason = False, 'Kunde inte bedöma mottagbarhet.'
+            r.heartbeat_operational = bool(ok)
+            r.heartbeat_status = ('I drift' if ok else (reason or 'Ur drift'))
 
     department_id = fields.Many2one(
         'hr.department', string='Department',
