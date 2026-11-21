@@ -898,7 +898,14 @@ class AICoworker(models.Model):
     # sak: fältet kunde driva iväg från `session_line_count` när en körning
     # passerade flera skrivvägar. Nu räknas det ur `token_sys` på raderna, så
     # det inte kan glida isär.
-    total_sys_tokens = fields.Integer(
+    # FÄLLAN (mätt 2026-11-21): fältet var Integer (int4, tak 2 147 483 647)
+    # medan summan för "Allmän assistent" är ~3,3 miljarder systemtokens.
+    # Varje recompute skrev ett värde utanför intervallet och fällde
+    # "integer out of range" — vilket aborterade hela transaktionen och gav
+    # 500 även i kanaler som inte rör budgeten. Float räcker: värdet är en
+    # räknare för fakturering, inte ett belopp som ska vara exakt till öret
+    # (de exakta talen finns i raderna).
+    total_sys_tokens = fields.Float(
         'Totalt systemtokens', compute='_compute_total_sys_tokens', store=True,
         help='All-time systemtoken consumption — the sum of token_sys over '
              'the coworker\'s session lines. Derived, never incremented.')
@@ -2077,8 +2084,10 @@ class AICoworker(models.Model):
             ['coworker_id'],
             ['token_sys:sum'],
         )
+        # float, inte int: summan för en flitig medarbetare passerar
+        # int4-taket (se fältdeklarationen).
         per_coworker = {
-            coworker.id: int(total or 0)
+            coworker.id: float(total or 0)
             for coworker, total in groups if coworker
         }
         for r in self:
