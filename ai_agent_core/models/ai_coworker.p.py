@@ -847,6 +847,12 @@ class AICoworker(models.Model):
         'Dagsbudget slut', compute='_compute_budget_state', store=False,
         help='True när dagens förbrukning >= daily_cap_mtokens × 1M. '
              'Mjukt stopp — öppnas automatiskt vid midnatt.')
+    monthly_used_mtokens = fields.Float(
+        'Förbrukat denna månad (M systemtokens)',
+        compute='_compute_budget_state', store=False,
+        help='Σ token_sys på sessionens rader sedan månadens första dag. '
+             'Samma summa som monthly_cap_mtokens jämförs mot — använd den '
+             'här i texter, aldrig started_mtokens (som är all-time).')
     daily_budget_used_mtokens = fields.Float(
         'Dagsbudget förbrukat (M tokens)',
         compute='_compute_budget_state', store=False,
@@ -932,6 +938,7 @@ class AICoworker(models.Model):
             r.budget_exhausted = bool(month_cap) and month_total >= month_cap
             r.daily_budget_warning = bool(day_cap) and day_total >= day_cap * 0.8
             r.daily_budget_exhausted = bool(day_cap) and day_total >= day_cap
+            r.monthly_used_mtokens = month_total / 1_000_000.0
             r.daily_budget_used_mtokens = day_total / 1_000_000.0
 
     def check_cap(self):
@@ -961,6 +968,44 @@ class AICoworker(models.Model):
         if warning or exhausted:
             self._notify_daily_budget_once()
         return warning, exhausted
+
+    def budget_block_message(self):
+        """EN källa för budgettexten i alla kanaler. Returns (code, message).
+
+        Kanalerna (web-UI/SSE i ``stream.py``, ``/ai/v1/chat/completions`` och
+        ``openai_api.py``) hade tidigare var sin formulering, och två av dem
+        glömde dagsbudgeten — Pi-route:n saknade kontrollen helt fram till
+        2026-10-27. Texten får därför bara finnas här.
+
+        Dagsbudgeten har prioritet: den öppnar sig själv vid midnatt, medan
+        månadstaket kräver en höjning. ``monthly_budget_soft`` varnar men
+        blockerar inte (dagsbudgeten blockerar ändå).
+
+        Returns ``(None, None)`` när inget tak är nått — inte tomma strängar,
+        så att anroparen kan testa koden med ``if code:``.
+        """
+        self.ensure_one()
+        if self.daily_budget_exhausted:
+            return 'daily_budget_exhausted', _(
+                'Daily budget exhausted for "%(name)s": %(used).2fM of '
+                '%(cap)uM system tokens today. The limit reopens by itself '
+                'at midnight — raise the daily cap if it must run today.'
+            ) % {
+                'name': self.name,
+                'used': self.daily_budget_used_mtokens,
+                'cap': self.daily_cap_mtokens,
+            }
+        if self.budget_exhausted and not self.monthly_budget_soft:
+            return 'budget_exhausted', _(
+                'Monthly cap reached for "%(name)s": %(used)uM of %(cap)uM '
+                'system tokens. The coworker is paused until the cap is '
+                'raised or a new month starts.'
+            ) % {
+                'name': self.name,
+                'used': self.monthly_used_mtokens,
+                'cap': self.monthly_cap_mtokens,
+            }
+        return None, None
 
     def _notify_daily_budget_once(self):
         """Skicka dagsbudget-notis en gång per dygn.
@@ -1024,7 +1069,7 @@ class AICoworker(models.Model):
                 'mail.mail_activity_data_todo',
                 summary='Budget slut: höj månadstaket för %s' % self.name,
                 note=(
-                    f'Förbrukat {self.started_mtokens}M av '
+                    f'Förbrukat {self.monthly_used_mtokens:.2f}M av '
                     f'{self.monthly_cap_mtokens}M systemtokens. '
                     f'Budgeten öppnas automatiskt vid månadsskifte eller '
                     f'när taket höjs.'
@@ -1130,7 +1175,7 @@ class AICoworker(models.Model):
         """Post cap notification to quest's discuss channel + Zabbix."""
         self.ensure_one()
         pct = int(used / cap * 100) if cap else 0
-        mtokens = self.started_mtokens
+        mtokens = '%.2f' % self.monthly_used_mtokens
 
         if level == 'daily_warning':
             msg = (
