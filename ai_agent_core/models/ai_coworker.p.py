@@ -3439,12 +3439,6 @@ class AICoworker(models.Model):
         _adopt('agent_invoice_partner', _KNOWLEDGE_TOOLS)
         _adopt('agent_invoice_analyser', _KNOWLEDGE_TOOLS)
         _adopt('agent_partner_enrichment', _KNOWLEDGE_TOOLS)
-        # `pi_unified_recall` — ett anrop, tre källor (OKF + graphify +
-        # filsystem), rankad sammanslagning. Verktyget var byggt men
-        # oanvänt: ingen agent hade det. Det är den kortaste vägen till
-        # "använd OKF och grafen" — agenten behöver inte välja källa.
-        _adopt('agent_default_core', ['pi_unified_recall'])
-        _adopt('agent_odoo_business', ['pi_unified_recall'])
 
     def _ensure_all_init_types(self):
         """Skapa en komplett init_type-rad-uppsättning (en per INIT_TYPES-typ)
