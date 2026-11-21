@@ -1,0 +1,7 @@
+# Declared removals — a p-file rewrite may drop these without failing
+# pfile-method-guard. One line per name:
+#
+#     removed <p-file>::<name>   <reason>
+#
+# The file is read from the working tree, so the declaration lands in the
+# same diff as the code that does the removal and is reviewable with it.

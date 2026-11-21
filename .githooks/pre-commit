@@ -56,4 +56,16 @@ printf '%s\n' "$files" | while IFS= read -r f; do
     fi
     echo "pfiles: $f -> $o (VERSION=$V)"
 done
+# ── Metodvakt ───────────────────────────────────────────────────────────
+# En omskrivning av en p-fil får inte tyst tappa metoder eller fält.
+# ai_coworker.p.py tappade 48, sedan 35 metoder och monthly_used_mtokens
+# på en vecka — varje gång kompilerade filen och pfiles-check var grönt.
+# Vakten jämför def- och fields-namn mot HEAD; avsiktliga borttagningar
+# deklareras i .pfile-method-guard.
+if [ -x .githooks/pfile-method-guard.py ] && command -v python3 >/dev/null 2>&1; then
+    if ! python3 .githooks/pfile-method-guard.py --repo . --base HEAD --quiet; then
+        echo "pfiles: commit avbruten — deklarera borttagningen i .pfile-method-guard" >&2
+        exit 1
+    fi
+fi
 exit 0
