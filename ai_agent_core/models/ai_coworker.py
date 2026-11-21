@@ -912,7 +912,12 @@ class AICoworker(models.Model):
     # sak: fältet kunde driva iväg från `session_line_count` när en körning
     # passerade flera skrivvägar. Nu räknas det ur `token_sys` på raderna, så
     # det inte kan glida isär.
-    total_sys_tokens = fields.Integer(
+    # FÄLLAN (mätt 2026-11-21): fältet var Integer (int4, tak 2 147 483 647).
+    # "Allmän assistent" har passerat 3,3 miljarder systemtokens, så varje
+    # recompute skrev ett värde som inte fick plats — "integer out of range"
+    # aborterade hela transaktionen och gav 500 även i kanaler som inte rör
+    # budgeten. Float räcker: värdet är en summa, inte ett exakt antal.
+    total_sys_tokens = fields.Float(
         'Totalt systemtokens', compute='_compute_total_sys_tokens', store=True,
         help='All-time systemtoken consumption — the sum of token_sys over '
              'the coworker\'s session lines. Derived, never incremented.')
@@ -11137,7 +11142,7 @@ class AICoworkerMonthlySummary(models.Model):
     display_name = fields.Char(compute='_compute_display_name', store=True)
 
     # Systemtoken consumption
-    total_sys_tokens = fields.Integer('Systemtokens')
+    total_sys_tokens = fields.Float('Systemtokens')
     started_mtokens = fields.Integer('Started M Tokens',
         compute='_compute_started_mtokens', store=True)
     total_input_tokens = fields.Integer('Input Tokens')

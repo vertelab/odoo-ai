@@ -28,7 +28,7 @@ class AIKaizenReport(models.Model):
 
     # Metrics
     session_count = fields.Integer('Sessions', default=0)
-    total_sys_tokens = fields.Integer('Systemtokens', default=0)
+    total_sys_tokens = fields.Float('Systemtokens', default=0)
     total_input_tokens = fields.Integer('Input Tokens', default=0)
     total_output_tokens = fields.Integer('Output Tokens', default=0)
     error_count = fields.Integer('Errors', default=0)
