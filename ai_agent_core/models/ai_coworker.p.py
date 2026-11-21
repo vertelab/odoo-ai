@@ -3419,6 +3419,32 @@ class AICoworker(models.Model):
             'describe_model', 'odoo_search', 'odoo_create',
             'odoo_call_method', 'odoo_write',
         ])
+        # OKF + graf på ALLA agenter som rör data (2026-11-21).
+        #
+        # Principen: "så fort vi har OKF måste vi använda dem". 29 248
+        # personliga koncept och 63 589 company-koncept är bara användbara
+        # om agenten kan SÖKA dem — annars är de ett arkiv ingen öppnar.
+        #
+        # `okf_search`  — sök kunskap (koncept, hybrid vektor + fulltext)
+        # `graph_query` — följ relationer (vem hänger ihop med vem)
+        #
+        # Båda är READ-ONLY. Att lägga dem på alla är en tillgång, inte en
+        # risk: de kan inte skriva, och svaret är alltid filtrerat på
+        # användarens rättigheter (_resolve_visible_sources).
+        _KNOWLEDGE_TOOLS = ['okf_search', 'graph_query']
+        _adopt('agent_odoo_business', _KNOWLEDGE_TOOLS)
+        _adopt('agent_research', _KNOWLEDGE_TOOLS)
+        _adopt('agent_news_watcher', _KNOWLEDGE_TOOLS)
+        _adopt('agent_office_dokument', _KNOWLEDGE_TOOLS)
+        _adopt('agent_invoice_partner', _KNOWLEDGE_TOOLS)
+        _adopt('agent_invoice_analyser', _KNOWLEDGE_TOOLS)
+        _adopt('agent_partner_enrichment', _KNOWLEDGE_TOOLS)
+        # `pi_unified_recall` — ett anrop, tre källor (OKF + graphify +
+        # filsystem), rankad sammanslagning. Verktyget var byggt men
+        # oanvänt: ingen agent hade det. Det är den kortaste vägen till
+        # "använd OKF och grafen" — agenten behöver inte välja källa.
+        _adopt('agent_default_core', ['pi_unified_recall'])
+        _adopt('agent_odoo_business', ['pi_unified_recall'])
 
     def _ensure_all_init_types(self):
         """Skapa en komplett init_type-rad-uppsättning (en per INIT_TYPES-typ)
