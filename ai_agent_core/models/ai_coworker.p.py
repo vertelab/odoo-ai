@@ -3395,8 +3395,14 @@ class AICoworker(models.Model):
         # Ledar-agenten är rätt hemvist: kostnadskontext är en
         # sessionsövergripande uppgift, inte en Odoo-affärsmodellfråga
         # (Odoo-specialist) eller en research-uppgift.
+        # `graph_query` (del4-kontexttesterna 2026-11-21): grafen är byggd
+        # — 12 141 MailMessage, 5 248 OdooPartner, 4 333 SENT_BY — men
+        # verktyget låg bara på Mail-triage. Allmän assistent kunde därför
+        # inte svara på "vem mailade om det här projektet?". Ledar-agenten
+        # är rätt hemvist: graf-frågor är en sessionsövergripande förmåga,
+        # inte en mail-specifik.
         _adopt('agent_default_core', [
-            'cost_context_get', 'cost_context_set',
+            'cost_context_get', 'cost_context_set', 'graph_query',
         ])
         _adopt('agent_research', ['odoo_web_search', 'odoo_fetch_url'])
         # Nyhetsbevakaren: `personal_memory` tillkom efter att agenten
