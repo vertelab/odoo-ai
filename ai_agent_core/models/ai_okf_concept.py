@@ -2923,7 +2923,11 @@ class AIOkfConcept(models.Model):
         discuss_msgs = messages.filtered(
             lambda m: m.model == 'discuss.channel')
         if not discuss_msgs:
-            return message_ids
+            # Inga Discuss-meddelanden kvar — men ett ID som inte finns
+            # alls är en overifierbar källa och ska uteslutas, inte
+            # släppas igenom. Bara de som faktiskt existerar och inte är
+            # Discuss behålls.
+            return set(messages.ids)
 
         channel_ids = set(discuss_msgs.mapped('res_id'))
         Channel = self.env['discuss.channel'].sudo()
