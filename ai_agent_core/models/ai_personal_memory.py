@@ -959,9 +959,19 @@ class AIPersonalMemory(models.Model):
             for m in messages[-10:]
         )
 
-        prompt = f"""Extract ALL new memorable facts from this conversation.
+        prompt = f"""Extract new DURABLE facts from this conversation.
 ADD only — never update or delete existing memories.
 Each fact MUST be a self-contained, context-rich statement in Swedish.
+
+DO NOT SAVE:
+- trivial or self-evident things
+- facts that are easy to look up again
+- raw data dumps
+- task progress ('how far we got') — use session search instead
+- logs of completed work ('X was created', 'Y was completed')
+- temporary TODO state
+
+ALWAYS SAVE: a preference, a correction or a goal.
 
 Existing memories (DO NOT duplicate these):
 {existing_str or '(none)'}
