@@ -33,7 +33,7 @@ class TestChannelMembership(TransactionCase):
         cls.channel = cls.env['discuss.channel'].create({
             'name': 'Testkanal discuss',
             'channel_type': 'channel',
-            'channel_partner_ids': [(6, 0, [cls.member.partner_id.id])],
+            'channel_partner_ids': [(4, cls.member.partner_id.id)],
         })
         cls.message = cls.env['mail.message'].create({
             'model': 'discuss.channel',
@@ -78,7 +78,7 @@ class TestChannelMembership(TransactionCase):
         channel = self.env['discuss.channel'].create({
             'name': 'Tillfallig kanal',
             'channel_type': 'channel',
-            'channel_partner_ids': [(6, 0, [self.member.partner_id.id])],
+            'channel_partner_ids': [(4, self.member.partner_id.id)],
         })
         msg = self.env['mail.message'].create({
             'model': 'discuss.channel',
