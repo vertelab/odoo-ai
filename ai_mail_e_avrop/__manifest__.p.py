@@ -21,7 +21,14 @@
 
 {
     'name': 'AI: Mailbox',
+    # Version = <Odoo series> + module version. Bump the module version in ALL branches.
+    # #if VERSION == "20.0"
+    'version': '20.0.1.0.1',
+    # #elif VERSION == "18.0"
     'version': '18.0.1.0.1',
+    # #else
+    'version': '20.0.1.0.1',
+    # #endif
     # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
     'summary': 'Mailbox for AI.',
     # Categories can be used to filter modules in modules listing
