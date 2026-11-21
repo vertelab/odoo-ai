@@ -1014,28 +1014,62 @@ class AICoworker(models.Model):
     def _compute_budget_state(self):
         """Deterministisk budgetspärr (budget-hard-cap D1).
 
-        Beräknar Σ token_sys direkt från session_ids (inte via det related
-        fältet session_line_ids som inte triggar compute korrekt). Ny månad,
-        nytt dygn eller höjd budget öppnar automatiskt — inget cron-beroende.
+        Beräknar Σ token_sys i DATABASEN, inte genom att ladda raderna. Ny
+        månad, nytt dygn eller höjd budget öppnar automatiskt — inget
+        cron-beroende.
 
         Månadstaket är ett HÅRT stopp (run() returnerar utan LLM-anrop).
         Dagstaket är ett MJUKT stopp — samma effekt per körning, men det
         öppnas av sig självt vid midnatt utan åtgärd.
+
+        FÄLLAN (mätt 2026-11-21): den tidigare implementationen itererade
+        ``r.session_ids.session_line_ids`` och läste ``create_date`` per rad.
+        För "Allmän assistent" (373 000 rader) betydde det att varje
+        läsning av ett budgetfält laddade hela sessionshistoriken i
+        recordset-cachen — MemoryError och 500 i varje kanal. Aggregeringen
+        hör hemma i SQL: här laddas aldrig en enda rad.
         """
-        from datetime import date as _date
-        today = _date.today()
-        month_start = _date(today.year, today.month, 1)
+        from datetime import datetime, time
+        import pytz
+
+        # Datumgränser i ANVÄNDARENS tidszon. create_date lagras som
+        # "naiv UTC" (timestamp without time zone), så gränserna måste
+        # konverteras till naiv UTC innan de jämförs — annars är "idag" fel
+        # i en till två timmar kring midnatt.
+        tz_name = (self.env.context.get('tz')
+                   or self.env.user.tz or 'UTC')
+        try:
+            tz = pytz.timezone(tz_name)
+        except pytz.UnknownTimeZoneError:
+            tz = pytz.UTC
+        today = datetime.now(tz).date()
+        month_start = today.replace(day=1)
+
+        def naive_utc(d):
+            # Tidszonsmedveten midnatt -> naiv UTC (samma form som kolumnen).
+            return tz.localize(datetime.combine(d, time.min)) \
+                .astimezone(pytz.UTC).replace(tzinfo=None)
+
+        month_start_utc = naive_utc(month_start)
+        day_start_utc = naive_utc(today)
+
         for r in self:
-            month_total = 0
-            day_total = 0
-            for line in r.session_ids.session_line_ids:
-                if not line.create_date:
-                    continue
-                line_day = line.create_date.date()
-                if line_day >= month_start:
-                    month_total += line.token_sys or 0
-                if line_day == today:
-                    day_total += line.token_sys or 0
+            r.env.cr.execute(
+                """
+                SELECT
+                    COALESCE(SUM(l.token_sys), 0),
+                    COALESCE(SUM(l.token_sys) FILTER (WHERE l.create_date >= %s), 0)
+                  FROM ai_coworker_session_line l
+                  JOIN ai_coworker_session s ON s.id = l.session_id
+                 WHERE s.coworker_id = %s
+                   AND l.create_date >= %s
+                """,
+                (day_start_utc, r.id, month_start_utc),
+            )
+            # NULL i token_sys räknas som 0 — SUM hoppar över NULL, det är
+            # samma sak som ``line.token_sys or 0`` i den gamla loopen.
+            month_total, day_total = (int(v or 0) for v in r.env.cr.fetchone())
+
             month_cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
             day_cap = r.daily_cap_mtokens * 1_000_000 if r.daily_cap_mtokens else 0
             r.budget_warning = bool(month_cap) and month_total >= month_cap * 0.8
@@ -2062,21 +2096,42 @@ class AICoworker(models.Model):
 
     @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date')
     def _compute_session_line_count(self):
-        """Sum of systemtokens for the current calendar month."""
-        from datetime import date
-        today = date.today()
-        month_start = date(today.year, today.month, 1)
+        """Sum of systemtokens for the current calendar month.
+
+        Aggregeringen sker i SQL (samma skäl som i ``_compute_budget_state``):
+        en medarbetare kan ha hundratusentals rader, och att ladda dem för
+        att summera ett tal gjorde varje form-öppning till en MemoryError.
+        """
+        from datetime import datetime, time
+        import pytz
+
+        tz_name = (self.env.context.get('tz')
+                   or self.env.user.tz or 'UTC')
+        try:
+            tz = pytz.timezone(tz_name)
+        except pytz.UnknownTimeZoneError:
+            tz = pytz.UTC
+        today = datetime.now(tz).date()
+        month_start_utc = tz.localize(datetime.combine(
+            today.replace(day=1), time.min)) \
+            .astimezone(pytz.UTC).replace(tzinfo=None)
+
         for r in self:
-            total = 0
-            for line in r.session_line_ids:
-                # informative=True = spårbarhet (per-agent), inte budget
-                # (utfall-och-tokenmatning D5/5.1). Utan detta dubbelräknas
-                # supervisor/konsensus-rader.
-                if line.informative:
-                    continue
-                if line.create_date and line.create_date.date() >= month_start:
-                    total += line.token_sys or 0
-            r.session_line_count = total
+            r.env.cr.execute(
+                """
+                SELECT COALESCE(SUM(l.token_sys), 0)
+                  FROM ai_coworker_session_line l
+                  JOIN ai_coworker_session s ON s.id = l.session_id
+                 WHERE s.coworker_id = %s
+                   AND l.create_date >= %s
+                   AND COALESCE(l.informative, FALSE) = FALSE
+                """,
+                (r.id, month_start_utc),
+            )
+            # informative = spårbarhet (per-agent), inte budget
+            # (utfall-och-tokenmatning D5/5.1). Utan filtret dubbelräknas
+            # supervisor/konsensus-rader.
+            r.session_line_count = int(r.env.cr.fetchone()[0] or 0)
 
     @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date', 'monthly_cap_mtokens')
     def _compute_burn_forecast(self):
@@ -2085,14 +2140,22 @@ class AICoworker(models.Model):
         today = date.today()
         week_ago = today - timedelta(days=7)
         for r in self:
-            # Aggregate token_sys per day over the last 7 days
-            daily = {}
-            for line in r.session_line_ids:
-                if line.informative:
-                    continue
-                if line.create_date and line.create_date.date() >= week_ago:
-                    d = line.create_date.date()
-                    daily[d] = daily.get(d, 0) + (line.token_sys or 0)
+            # Aggregate token_sys per day over the last 7 days — i SQL, av
+            # samma skäl som _compute_budget_state (raderna får aldrig laddas).
+            r.env.cr.execute(
+                """
+                SELECT date_trunc('day', l.create_date)::date AS day,
+                       COALESCE(SUM(l.token_sys), 0)
+                  FROM ai_coworker_session_line l
+                  JOIN ai_coworker_session s ON s.id = l.session_id
+                 WHERE s.coworker_id = %s
+                   AND l.create_date >= %s
+                   AND COALESCE(l.informative, FALSE) = FALSE
+                 GROUP BY 1
+                """,
+                (r.id, week_ago),
+            )
+            daily = {day: int(total or 0) for day, total in r.env.cr.fetchall()}
             days_with_data = len(daily)
             burn = (sum(daily.values()) / days_with_data / 1_000_000.0) if days_with_data else 0.0
             r.burn_rate_mtokens_day = round(burn, 4)
