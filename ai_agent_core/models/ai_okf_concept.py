@@ -2880,6 +2880,24 @@ class AIOkfConcept(models.Model):
             final_visible = extra_filtered if resolver and (
                 follower_domain or owner_domain) else visible_set
 
+            # 4. Kanalmedlemskap (discuss-channel-rights).
+            #
+            # Ett Discuss-meddelande kopplas till sin kanal via
+            # `model='discuss.channel'` + `res_id=<channel.id>` — det finns
+            # ingen `channel_id` på mail.message i Odoo 18. En resolver-
+            # domän kan därför inte uttrycka medlemskapet (den prövar
+            # fält på SAMMA modell). Vi slår upp kanalen och prövar
+            # medlemskapet via `channel_partner_ids`, som är sökbar
+            # (`_search_channel_partner_ids` -> channel_member_ids.partner_id).
+            #
+            # Regeln är: ett koncept vars källa är ett Discuss-meddelande
+            # är läsbart för kanalens medlemmar — och bara dem. Ett DM
+            # (channel_type='chat') har två medlemmar; rättigheten är då
+            # trivial men innehållet personligt (se design D-scope).
+            if model_name == 'mail.message':
+                final_visible = self._filter_by_channel_membership(
+                    final_visible, uid)
+
             for rid, cid in pairs:
                 result[cid]['%s,%s' % (model_name, rid)] = rid in final_visible
             _logger.info('OKF resolve model=%s visible_set=%s final=%s',
@@ -2887,6 +2905,43 @@ class AIOkfConcept(models.Model):
                          sorted(final_visible))
 
         return result
+
+    @api.model
+    def _filter_by_channel_membership(self, message_ids, uid):
+        """Behåll bara meddelanden vars kanal användaren är medlem i.
+
+        Meddelanden som inte hör till en Discuss-kanal (t.ex. chatter på
+        en order) påverkas inte — de har redan prövats av ir.rule.
+
+        Ett meddelande vars kanal inte kan slås upp (borttagen kanal)
+        utesluts: en källa vi inte kan verifiera är inte läsbar.
+        """
+        if not message_ids:
+            return message_ids
+        Message = self.env['mail.message'].sudo()
+        messages = Message.browse(list(message_ids)).exists()
+        discuss_msgs = messages.filtered(
+            lambda m: m.model == 'discuss.channel')
+        if not discuss_msgs:
+            # Inga Discuss-meddelanden kvar — men ett ID som inte finns
+            # alls är en overifierbar källa och ska uteslutas, inte
+            # släppas igenom. Bara de som faktiskt existerar och inte är
+            # Discuss behålls.
+            return set(messages.ids)
+
+        channel_ids = set(discuss_msgs.mapped('res_id'))
+        Channel = self.env['discuss.channel'].sudo()
+        member_channels = set(Channel.search([
+            ('id', 'in', list(channel_ids)),
+            ('channel_partner_ids', 'in',
+             [self.env['res.users'].browse(uid).partner_id.id]),
+        ]).ids)
+
+        visible = set(message_ids)
+        for msg in discuss_msgs:
+            if msg.res_id not in member_channels:
+                visible.discard(msg.id)
+        return visible
 
     def _get_visible_lines(self, visible_map, conservative=True):
         """Returnera synliga summary-rader per concept (task 4.3).
