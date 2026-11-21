@@ -4,11 +4,11 @@
     'name': 'AI: Agent Core',
     # Version = <Odoo series> + module version. Bump the module version in ALL branches.
     # #if VERSION == "20.0"
-    'version': '20.0.2.0.97',
+    'version': '20.0.2.0.98',
     # #elif VERSION == "18.0"
-    'version': '18.0.2.0.97',
+    'version': '18.0.2.0.98',
     # #else
-    'version': '20.0.2.0.97',
+    'version': '20.0.2.0.98',
     # #endif
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',

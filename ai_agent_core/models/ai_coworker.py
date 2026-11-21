@@ -959,6 +959,12 @@ class AICoworker(models.Model):
         'Daily Budget Used (M tokens)',
         compute='_compute_budget_state', store=False,
         help='Sum of system tokens for the current calendar day, in millions.')
+    monthly_used_mtokens = fields.Float(
+        'Förbrukat denna månad (M systemtokens)',
+        compute='_compute_budget_state', store=False,
+        help='Σ token_sys på sessionens rader sedan månadens första dag. '
+             'Samma summa som monthly_cap_mtokens jämförs mot — använd den '
+             'här i texter, aldrig started_mtokens (som är all-time).')
     cap_notified_month = fields.Char(
         'Budget Notified Month (YYYY-MM)',
         help='Month when the budget notice/activity was last sent — once per '
