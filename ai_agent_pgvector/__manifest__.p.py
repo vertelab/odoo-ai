@@ -21,7 +21,14 @@
 
 {
     'name': 'ai_agent: pg_vector-connector',
-    'version': '1.0.3',
+    # Version = <Odoo series> + module version. Bump the module version in ALL branches.
+    # #if VERSION == "20.0"
+    'version': '20.0.1.0.3',
+    # #elif VERSION == "18.0"
+    'version': '18.0.1.0.3',
+    # #else
+    'version': '20.0.1.0.3',
+    # #endif
     'summary': 'Ao Orchestration and memory using pg_vector',
     # Categories can be used to filter modules in modules listing
     # Check https://github.com/odoo/odoo/blob/14.0/odoo/addons/base/data/ir_module_category_data.xml

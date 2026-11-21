@@ -2,7 +2,14 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '2.0.92',
+    # Version = <Odoo series> + module version. Bump the module version in ALL branches.
+    # #if VERSION == "20.0"
+    'version': '20.0.2.0.93',
+    # #elif VERSION == "18.0"
+    'version': '18.0.2.0.93',
+    # #else
+    'version': '20.0.2.0.93',
+    # #endif
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """

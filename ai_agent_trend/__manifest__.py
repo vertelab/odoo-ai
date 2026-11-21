@@ -1,6 +1,7 @@
 {
     'name': 'odoo-ai: Agent Trend Analysis',
-    'version': '0.3',
+    # Version = <Odoo series> + module version. Bump the module version in ALL branches.
+    'version': '18.0.0.3',
     'summary': 'Agent for analysing trends and create material for blogs and LinkedIn-articles',
     'category': 'Productivity / Discuss',
     'description': """

@@ -23,7 +23,14 @@
 #
 {
     'name': "odoo-ai: AI Agent",
-    'version': "1.0",
+    # Version = <Odoo series> + module version. Bump the module version in ALL branches.
+    # #if VERSION == "20.0"
+    'version': "20.0.1.0",
+    # #elif VERSION == "18.0"
+    'version': "18.0.1.0",
+    # #else
+    'version': "20.0.1.0",
+    # #endif
     'summary': "AI Agent orchestration",
     'category': "AI Orchestration",
     'description': """
