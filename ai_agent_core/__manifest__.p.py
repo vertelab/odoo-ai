@@ -6,7 +6,7 @@
     # #if VERSION == "20.0"
     'version': '20.0.2.0.98',
     # #elif VERSION == "18.0"
-    'version': '18.0.2.0.98',
+    'version': '18.0.2.0.105',
     # #else
     'version': '20.0.2.0.98',
     # #endif

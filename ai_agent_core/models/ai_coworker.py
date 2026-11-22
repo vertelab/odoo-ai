@@ -912,17 +912,23 @@ class AICoworker(models.Model):
     # sak: fältet kunde driva iväg från `session_line_count` när en körning
     # passerade flera skrivvägar. Nu räknas det ur `token_sys` på raderna, så
     # det inte kan glida isär.
-    # FÄLLAN (mätt 2026-11-21): fältet var Integer (int4, tak 2 147 483 647).
-    # "Allmän assistent" har passerat 3,3 miljarder systemtokens, så varje
-    # recompute skrev ett värde som inte fick plats — "integer out of range"
-    # aborterade hela transaktionen och gav 500 även i kanaler som inte rör
-    # budgeten. Float räcker: värdet är en summa, inte ett exakt antal.
+    # FÄLLAN (mätt 2026-11-21, T/51421): fältet var Integer (int4, tak
+    # 2 147 483 647). "Allmän assistent" passerade 3,3 miljarder
+    # systemtokens, så varje recompute skrev ett värde som inte fick plats —
+    # "integer out of range" aborterade hela transaktionen och gav 500 även
+    # i kanaler som inte rör budgeten. Float räcker: värdet är en summa, inte
+    # ett exakt antal.
     total_sys_tokens = fields.Float(
         'Totalt systemtokens', compute='_compute_total_sys_tokens', store=True,
         help='All-time systemtoken consumption — the sum of token_sys over '
              'the coworker\'s session lines. Derived, never incremented.')
-    total_input_tokens = fields.Integer('Totalt input tokens', default=0)
-    total_output_tokens = fields.Integer('Totalt output tokens', default=0)
+    # Float av samma skäl som total_sys_tokens ovan: en coworker som kör länge
+    # passerar int4-taket (2 147 483 647) och då aborterar varje skrivning
+    # hela transaktionen. Mätt 2026-11-21: högsta värdet var 70 M, men
+    # "Allmän assistent" hade redan 3,4 miljarder systemtokens — samma fälla,
+    # bara inte slagen till än. Se T/51421.
+    total_input_tokens = fields.Float('Totalt input tokens', default=0)
+    total_output_tokens = fields.Float('Totalt output tokens', default=0)
 
     # Last month (from monthly_summary, for XMLRPC billing)
     last_month_sys_tokens = fields.Integer(
@@ -8881,15 +8887,48 @@ class AICoworker(models.Model):
                     pass  # best-effort: tyst fallback — se etiketteringsregeln
 
             # Update session and quest totals
-            session.write({
-                'token_input': session.token_input + input_t,
-                'token_output': session.token_output + output_t,
-                'status': 'done',
-            })
-
-            self.total_input_tokens += input_t
-            self.total_output_tokens += output_t
-            self.total_sys_tokens += int((input_t + output_t) * sys_mult)
+            #
+            # KONKURRENSSKYDD (2026-11-21, T/51421): flera samtidiga körningar
+            # mot SAMMA coworker skriver samma ai_coworker-rad (tokenräknarna)
+            # och samma ai_coworker_session-rad. Odoo kör SERIALIZABLE, så den
+            # ena transaktionen vinner och den andra kastas ut med "could not
+            # serialize access due to concurrent update".
+            #
+            # Mätt i drift: 405 serialiseringsfel på UPDATE ai_coworker och 119
+            # på UPDATE ai_coworker_session under en dag. Felet aborterade hela
+            # transaktionen — kunden fick 500 och AI-svaret gick förlorat, trots
+            # att LLM-anropet redan var betalt.
+            #
+            # Mönstret (savepoint + retry) är samma som
+            # _ensure_orchestration_skill() ovan och
+            # stream._persist_session_with_retry(). Savepointen gör att bara
+            # DEN HÄR skrivningen rullas tillbaka vid kollision — resten av
+            # körningens arbete består.
+            import psycopg2
+            for _attempt in range(3):
+                try:
+                    with self.env.cr.savepoint():
+                        session.write({
+                            'token_input': session.token_input + input_t,
+                            'token_output': session.token_output + output_t,
+                            'status': 'done',
+                        })
+                        self.total_input_tokens += input_t
+                        self.total_output_tokens += output_t
+                        self.total_sys_tokens += int(
+                            (input_t + output_t) * sys_mult)
+                    break
+                except psycopg2.errors.TransactionRollbackError:
+                    if _attempt >= 2:
+                        # Sista försöket föll: svaret finns redan hos klienten
+                        # och LLM-anropet är betalt — logga och fortsätt i
+                        # stället för att kasta bort hela turen.
+                        _logger.warning(
+                            'Tokenräkning för %s kunde inte skrivas efter 3 '
+                            'försök (serialisering) — svaret levereras ändå',
+                            self.name)
+                        break
+                    self.env.cr.rollback()
 
             _logger.info('Quest run completed: %s (%d in / %d out tokens)',
                         self.name, input_t, output_t)
@@ -9137,26 +9176,44 @@ class AICoworker(models.Model):
                 })
 
                 # Update session and quest totals
-                session.token_input += input_t
-                session.token_output += output_t
-                # Utfallet härleds ur körningen (utfall-och-tokenmatning 2.4):
-                # en avbruten powerbox-körning bär finish_reason='cancelled',
-                # inte ett tyst 'done' — men status är fortfarande 'done'
-                # (avslutad, inte kraschad). Bara error/timeout blir 'error'.
-                _pb_finish = (getattr(response, 'finish_reason', '') or 'stop')
-                if _pb_finish in ('error', 'timeout'):
-                    session.status = 'error'
-                else:
-                    session.status = 'done'
-                if _pb_finish in dict(
-                        session._fields['finish_reason'].selection):
-                    session.finish_reason = _pb_finish
-                else:
-                    session.finish_reason = 'stop'
+                #
+                # KONKURRENSSKYDD (2026-11-21, T/51421): samma fälla som i
+                # run() ovan — se kommentaren där. Powerbox-vägen skriver samma
+                # ai_coworker-rad och kolliderar på samma sätt.
+                import psycopg2
+                for _attempt in range(3):
+                    try:
+                        with self.env.cr.savepoint():
+                            session.token_input += input_t
+                            session.token_output += output_t
+                            # Utfallet härleds ur körningen (utfall-och-tokenmatning 2.4):
+                            # en avbruten powerbox-körning bär finish_reason='cancelled',
+                            # inte ett tyst 'done' — men status är fortfarande 'done'
+                            # (avslutad, inte kraschad). Bara error/timeout blir 'error'.
+                            _pb_finish = (getattr(response, 'finish_reason', '') or 'stop')
+                            if _pb_finish in ('error', 'timeout'):
+                                session.status = 'error'
+                            else:
+                                session.status = 'done'
+                            if _pb_finish in dict(
+                                    session._fields['finish_reason'].selection):
+                                session.finish_reason = _pb_finish
+                            else:
+                                session.finish_reason = 'stop'
 
-                self.total_input_tokens += input_t
-                self.total_output_tokens += output_t
-                self.total_sys_tokens += int((input_t + output_t) * sys_mult)
+                            self.total_input_tokens += input_t
+                            self.total_output_tokens += output_t
+                            self.total_sys_tokens += int(
+                                (input_t + output_t) * sys_mult)
+                        break
+                    except psycopg2.errors.TransactionRollbackError:
+                        if _attempt >= 2:
+                            _logger.warning(
+                                'Tokenräkning (powerbox) för %s kunde inte '
+                                'skrivas efter 3 försök (serialisering) — '
+                                'svaret levereras ändå', self.name)
+                            break
+                        self.env.cr.rollback()
 
                 import re
                 import markdown
@@ -11168,11 +11225,12 @@ class AICoworkerMonthlySummary(models.Model):
     display_name = fields.Char(compute='_compute_display_name', store=True)
 
     # Systemtoken consumption
+    # Float — se fältkommentaren vid total_sys_tokens ovan (T/51421).
     total_sys_tokens = fields.Float('Systemtokens')
     started_mtokens = fields.Integer('Started M Tokens',
         compute='_compute_started_mtokens', store=True)
-    total_input_tokens = fields.Integer('Input Tokens')
-    total_output_tokens = fields.Integer('Output Tokens')
+    total_input_tokens = fields.Float('Input Tokens')
+    total_output_tokens = fields.Float('Output Tokens')
     session_count = fields.Integer('Sessions')
 
     # Model breakdown (JSON)
