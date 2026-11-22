@@ -22,7 +22,7 @@
 {
     'name': 'odoo-ai: Agent Orchestration HR',
     # Version = <Odoo series> + module version. Bump the module version in ALL branches.
-    'version': '18.0.0.3',
+    'version': '0.3',
     'summary': 'Agent Orchestration HR',
     'category': 'Productivity / Discuss',
     'description': """
