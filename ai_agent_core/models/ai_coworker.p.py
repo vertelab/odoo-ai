@@ -10,19 +10,36 @@ _logger = logging.getLogger(__name__)
 
 
 def _quest_is_accessible(quest, user):
-    """Check if a user can access a quest via the web chat."""
+    """Check if a user can access a quest via the web chat.
+
+    Två vägar till åtkomst (A8):
+      * `group_ids` — användaren delar minst en av coworkerns grupper.
+      * `user_ids` — användaren är explicit uppräknad på coworkern.
+
+    Tidigare prövades BARA `group_ids`. En coworker som delades med en
+    enskild användare via `user_ids` (och saknade grupp) blev därför
+    otillgänglig för just den användaren — medan en coworker UTAN både
+    grupper och användare var öppen för alla. Båda felen kom från samma
+    halva implementation.
+
+    Semantik: tomma båda fälten = öppen för alla inloggade (oförändrat).
+    """
     if user.has_group('base.group_system'):
         return True
-    if quest.group_ids:
-        # #if VERSION >= "19.0"
-        user_grp = set(user.group_ids.ids)
-        # #else
-        user_grp = set(user.groups_id.ids)
-        # #endif
-        quest_grp = set(quest.group_ids.ids)
-        if not (user_grp & quest_grp):
-            return False
-    return True
+    quest_groups = set(quest.group_ids.ids) if quest.group_ids else set()
+    quest_users = set(quest.user_ids.ids) if quest.user_ids else set()
+    if not quest_groups and not quest_users:
+        return True
+    if user.id in quest_users:
+        return True
+    # #if VERSION >= "19.0"
+    user_grp = set(user.group_ids.ids)
+    # #else
+    user_grp = set(user.groups_id.ids)
+    # #endif
+    if quest_groups and (user_grp & quest_groups):
+        return True
+    return False
 
 
 INIT_TYPES = [

@@ -235,7 +235,7 @@ class AICompanyMemory(models.Model):
             user_id = self.env.user.id
 
         user = self.env['res.users'].browse(user_id)
-        user_group_ids = set(user.groups_id.ids)
+        user_group_ids = set(user.group_ids.ids)
 
         # Alla kategorier
         all_cats = self.env['ai.company.memory.category'].search([])

@@ -235,7 +235,11 @@ class AICompanyMemory(models.Model):
             user_id = self.env.user.id
 
         user = self.env['res.users'].browse(user_id)
+        # #if VERSION >= "19.0"
+        user_group_ids = set(user.group_ids.ids)
+        # #else
         user_group_ids = set(user.groups_id.ids)
+        # #endif
 
         # Alla kategorier
         all_cats = self.env['ai.company.memory.category'].search([])

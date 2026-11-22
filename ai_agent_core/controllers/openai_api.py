@@ -570,8 +570,9 @@ class AIOpenAPIController(http.Controller):
                                 gen_env['ai.agent'].sudo().browse(
                                     gen_force_agent_id).exists()
                                 if gen_force_agent_id else None)
+                            gen_access_groups = gen_env.user.group_ids.ids
                             tool_ids = quest._session_tool_ids(
-                                access_groups=gen_env.user.groups_id.ids,
+                                access_groups=gen_access_groups,
                                 force_agent=gen_agent)
                             if tool_ids:
                                 tool_recs = gen_env['ai.tool'].sudo().browse(tool_ids)

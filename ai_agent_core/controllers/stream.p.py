@@ -890,12 +890,17 @@ class AIStreamController(http.Controller):
         # explicit-agent-tools: ENDAST settings-default + explicita verktyg
         # (agent.tool_ids + coworker.tool_ids) — inga interna builtins per
         # default. Fångas som plain values (generatorn körs efter teardown).
+        # #if VERSION >= "19.0"
+        gen_access_groups = request.env.user.group_ids.ids
+        # #else
+        gen_access_groups = request.env.user.groups_id.ids
+        # #endif
         gen_tool_ids = list(
             quest._session_tool_ids(
-                access_groups=request.env.user.groups_id.ids)
+                access_groups=gen_access_groups)
         ) if quest and quest.exists() else []
         # Användarens grupper för PermissionEngine (defense-in-depth)
-        gen_user_group_ids = tuple(request.env.user.groups_id.ids)
+        gen_user_group_ids = tuple(gen_access_groups)
         # NATS executor config (tool-executor-nats)
         nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.api_secret', '')
@@ -1761,7 +1766,11 @@ class AIStreamController(http.Controller):
             # gruppbunden skill får inte läcka den till en användare utan
             # gruppen — rutten är publik och gjorde ingen prövning alls.
             if skill.group_ids:
+                # #if VERSION >= "19.0"
+                user_groups = set(request.env.user.group_ids.ids)
+                # #else
                 user_groups = set(request.env.user.groups_id.ids)
+                # #endif
                 if not (user_groups & set(skill.group_ids.ids)):
                     _logger.warning(
                         'skill_get denied: uid %s lacks the group for skill %s',
@@ -6253,8 +6262,13 @@ class AIOpenAIAPI(http.Controller):
                 ToolRegistry, ai_tool_records_to_tools)
             # Samma verktygsurval som _run_coworker_chat tidigare hämtade:
             # settings-default + explicita verktyg, access-filtrerat.
+            # #if VERSION >= "19.0"
+            access_groups = request.env.user.group_ids.ids
+            # #else
+            access_groups = request.env.user.groups_id.ids
+            # #endif
             tool_ids = quest._session_tool_ids(
-                access_groups=request.env.user.groups_id.ids)
+                access_groups=access_groups)
             tool_env = request.env(context=dict(
                 request.env.context,
                 _ai_context_model='ai.coworker.session',
@@ -6501,8 +6515,13 @@ class AIOpenAIAPI(http.Controller):
                 _ai_context_id=sess.id,
                 ai_lineage_session_id=sess.id,
             ))
+            # #if VERSION >= "19.0"
+            access_groups = request.env.user.group_ids.ids
+            # #else
+            access_groups = request.env.user.groups_id.ids
+            # #endif
             tool_ids = quest._session_tool_ids(
-                access_groups=request.env.user.groups_id.ids)
+                access_groups=access_groups)
             reg = ToolRegistry()
             if tool_ids:
                 recs = tool_env['ai.tool'].browse(tool_ids).filtered(
@@ -6529,9 +6548,14 @@ class AIOpenAIAPI(http.Controller):
             # svar på en yta som saknar godkännandekanal.
             from odoo.addons.ai_agent_core.core.permission import (
                 PermissionEngine, PermissionMode)
+            # #if VERSION >= "19.0"
+            user_group_ids = request.env.user.group_ids.ids
+            # #else
+            user_group_ids = request.env.user.groups_id.ids
+            # #endif
             _permissions = PermissionEngine(
                 mode=PermissionMode.INTERACTIVE,
-                user_group_ids=set(request.env.user.groups_id.ids),
+                user_group_ids=set(user_group_ids),
             )
             # ── Coworkerns stående regler (2026-11-04) ──
             # Grinden byggdes här UTAN att coworkerns regler lästes in, så
