@@ -49,6 +49,8 @@
     ],
     # #if VERSION >= "20.0"
     'data': ["security/ir.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
+    # #elif VERSION >= "19.0"
+    'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
     # #else
     'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
     # #endif

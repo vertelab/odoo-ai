@@ -4015,6 +4015,7 @@ def _tool_okf_search(env, query='', scope='company', limit=10, period=''):
             # Explicit period går före allt annat (okf-temporal-recall D6).
             # Utelämnad `period` är det NORMALLA — defaulten kommer
             # underifrån, per artefakttyp.
+            # #if VERSION <= "19.0"
             from . import okf_temporal
             res = okf_temporal.resolve(period)
             if res['date_from'] is not None:
@@ -4023,6 +4024,15 @@ def _tool_okf_search(env, query='', scope='company', limit=10, period=''):
                 _logger.info(
                     'okf_search: period %r could not be interpreted — '
                     'falling back to the artefact-type default', period)
+            # #else
+            # 20.0-porten saknar core/okf_temporal.py. Att kasta bort
+            # `period` tyst vore en tyst beteendeförändring — en explicit
+            # period ska säga att den inte kan tolkas, inte ignoreras.
+            return json.dumps({
+                "error": "period is not supported on this edition",
+                "hint": "Omit `period` and let the artefact-type default apply.",
+            })
+            # #endif
         if scope in ('company', 'personal', 'coworker'):
             kw['scope'] = scope
             # Ägaruppslag per scope — annars kastar _okf_search (med flit).

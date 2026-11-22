@@ -22,6 +22,8 @@ Gamification AI Bridge
         'data/badge_rules.xml',
         # #if VERSION >= "20.0"
         'security/ir.access.csv',
+        # #elif VERSION >= "19.0"
+        'security/ir.model.access.csv',
         # #else
         'security/ir.model.access.csv',
         # #endif
