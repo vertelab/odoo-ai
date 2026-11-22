@@ -21,6 +21,7 @@
 
 {
     'name': 'ai_agent: pg_vector-connector',
+    # Version = <Odoo series> + module version. Bump the module version in ALL branches.
     'version': '1.0.3',
     'summary': 'Ao Orchestration and memory using pg_vector',
     # Categories can be used to filter modules in modules listing
