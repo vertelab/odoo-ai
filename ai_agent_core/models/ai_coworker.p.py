@@ -8451,15 +8451,38 @@ class AICoworker(models.Model):
                 _chosen = _always + _matched if _matched else list(skill_recs)
                 # Räkna användning — billig direkt-UPDATE så att write_date
                 # inte churnar på varje körning (use_count är ren statistik).
-                try:
-                    _ids = tuple(s.id for s in _chosen)
-                    if _ids:
-                        self.env.cr.execute(
-                            'UPDATE ai_skill SET use_count = '
-                            'COALESCE(use_count, 0) + 1 WHERE id IN %s',
-                            (_ids,))
-                except Exception:
-                    _logger.warning('use_count increment failed', exc_info=True)
+                #
+                # SAVEPOINT (2026-11-24): samma skill-id:n bumpas av varje
+                # worker parallellt. Utan savepoint aborterade en förlorad
+                # låskollision ("could not serialize access due to concurrent
+                # update" / "lock timeout") HELA transaktionen — och då föll
+                # varje efterföljande query med "current transaction is
+                # aborted", inklusive sessionens persist och verktygssvaret.
+                # 133 sådana fel i loggen 2026-11-24.
+                #
+                # Savepointen rullar tillbaka ENDAST detta inkrement. Ren
+                # statistik får aldrig kosta ett helt AI-svar. Mönstret är
+                # detsamma som token-ackumuleringen längre ned i filen.
+                import psycopg2 as _psycopg2
+                _ids = tuple(s.id for s in _chosen)
+                if _ids:
+                    for _attempt in range(3):
+                        try:
+                            with self.env.cr.savepoint():
+                                self.env.cr.execute(
+                                    'UPDATE ai_skill SET use_count = '
+                                    'COALESCE(use_count, 0) + 1 '
+                                    'WHERE id IN %s',
+                                    (_ids,))
+                            break
+                        except (_psycopg2.errors.TransactionRollbackError,
+                                _psycopg2.errors.LockNotAvailable,
+                                _psycopg2.OperationalError):
+                            if _attempt >= 2:
+                                _logger.warning(
+                                    'use_count increment failed after 3 '
+                                    'attempts (skills %s) — statistic only, '
+                                    'continuing', _ids)
                 _logger.info('skill-select (run): %d/%d skills (%s)',
                              len(_chosen), len(skill_recs),
                              ','.join(s.name or '?' for s in _chosen)[:200])

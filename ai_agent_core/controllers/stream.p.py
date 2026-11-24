@@ -1899,8 +1899,15 @@ class AIStreamController(http.Controller):
             request_id = str(response['request_id'])
             approved = response.get('approved') is True
             reason = str(response.get('reason') or '')
-            if not handler.answer_approval(request_id, approved, reason):
-                return {"error": "No pending approval with that request_id"}
+            # Avtrycket (hitl-hard-stop-pi-channel D3): klienten ekar
+            # tillbaka begärans `args_digest`. Stämmer det inte avvisas
+            # svaret och begäran ligger kvar — ett godkännande får inte
+            # flyttas till ett anrop med andra argument.
+            digest = response.get('args_digest')
+            if not handler.answer_approval(
+                    request_id, approved, reason, args_digest=digest):
+                return {"error": "No pending approval with that request_id "
+                                 "and args_digest"}
             return {"status": "ok", "request_id": request_id,
                     "approved": approved}
 
@@ -2833,7 +2840,8 @@ def _approval_handler_for(sess):
 def _register_approval(handler, tool_name, args, decision, tool=None):
     """Registrera en väntande begäran. Returnerar ApprovalRequest."""
     import uuid as _uuid
-    from odoo.addons.ai_agent_core.core.interrupt import ApprovalRequest
+    from odoo.addons.ai_agent_core.core.interrupt import (
+        ApprovalRequest, args_digest)
     req = ApprovalRequest(
         request_id=str(_uuid.uuid4()),
         tool_name=tool_name,
@@ -2842,6 +2850,10 @@ def _register_approval(handler, tool_name, args, decision, tool=None):
         # `Decision` bär ingen riskklass — härled den ur verktyget.
         risk_class=str(getattr(tool, 'risk_level', '') or ''),
         reason=str(getattr(decision, 'reason', '') or ''),
+        # Avtryck av argumenten (hitl-hard-stop-pi-channel D3): binder
+        # godkännandet till exakt det anrop människan såg, utan att värdena
+        # lagras. Beräknas på de REDAN normaliserade argumenten.
+        args_digest=args_digest(args),
     )
     handler.register_approval(req)
     return req
@@ -6625,12 +6637,12 @@ class AIOpenAIAPI(http.Controller):
                 # har svarat JA på exakt detta anrop i Pi:s dialog. Då finns
                 # godkännandet — det kom bara från en annan yta.
                 #
-                # HÅRDA STOPP undantas uttryckligen: de får ALDRIG köras på
-                # denna väg, ens med ett godkännande. Skälet är att Pi:s
-                # dialog visar en sammanfattning (modell/id/fält), inte hela
-                # anropet — för odoo_call_method/odoo_unlink kan det dölja
-                # vad som faktiskt körs. De kräver godkännande i en yta som
-                # visar hela anropet (Odoo-UI:t eller webhook-vägen).
+                # HÅRDA STOPP undantas från FLAGGAN: de får aldrig köras på
+                # ett förhandsbesked, eftersom flaggan sätts av anroparen
+                # innan någon människa har sett något. De går i stället genom
+                # SVARSKANALEN (hitl-hard-stop-pi-channel): där visas hela
+                # anropet för en människa och godkännandet binds till
+                # argumentens avtryck.
                 from odoo.addons.ai_agent_core.core.permission import (
                     _ODOO_EXEC_TOOLS, _ODOO_EXTERNAL_TOOLS)
                 _is_hard_stop = (
@@ -6668,12 +6680,14 @@ class AIOpenAIAPI(http.Controller):
                     # neka DIREKT — Pi får sitt nekande, frågar i sin egen
                     # dialog och kör om med `approved_by_user`.
                     #
-                    # Hårda stopp går aldrig hit: de nekas alltid på den här
-                    # ytan (Pi:s dialog visar bara en sammanfattning).
+                    # HÅRDA STOPP går genom kanalen på samma villkor
+                    # (hitl-hard-stop-pi-channel): klienten har då deklarerat
+                    # att den kan visa hela anropet och polla. Utan kanal
+                    # nekas de — men med en orsak som namnger den SAKNADE
+                    # kanalen, inte "förbjudet".
                     _handler = (_approval_handler_for(sess)
                                 if approval_channel else None)
-                    if (_needs_user_unmet and not _is_hard_stop
-                            and _handler is not None):
+                    if _needs_user_unmet and _handler is not None:
                         _req = _register_approval(
                             _handler, name, args, _decision, tool)
                         _answer = await _wait_for_approval(
@@ -6706,9 +6720,20 @@ class AIOpenAIAPI(http.Controller):
                             _decision.reason)
                         _log_denial(
                             sess, name, '', 'no approval channel connected')
+                        # hitl-hard-stop-pi-channel 3.2: ett hårt stopp som
+                        # nekas för att klienten inte pollar ska säga just
+                        # det — inte läsa som "förbjudet". Prefixet
+                        # `Permission denied: ` behålls så att Pi:s
+                        # `isApprovalDenial` fortfarande känner igen svaret.
+                        if _is_hard_stop:
+                            _denial_reason = (
+                                f'{name} requires human approval; '
+                                'no approval channel connected')
+                        else:
+                            _denial_reason = _decision.reason
                         return {'name': name,
                                 'result': ('Permission denied: '
-                                           + _decision.reason),
+                                           + _denial_reason),
                                 'is_error': True}
 
                 # Körtid mäts för spåret (session-observability). `_t0`
@@ -6773,7 +6798,15 @@ class AIOpenAIAPI(http.Controller):
             # #if VERSION <= "19.0"
             if sess.exists():
                 try:
-                    _trace_tool_calls(sess, tool_calls, results)
+                    # SAVEPOINT (2026-11-24): `_upsert_trace` gör search()
+                    # → create(). Två parallella requests kan båda se "ingen
+                    # rad finns" och den andra kraschar på UNIQUE
+                    # (session_id, tool_call_id). Utan savepoint dödade det
+                    # HELA transaktionen — och `sess.exists()` på nästa rad
+                    # gav HTTP 500. Savepointen rullar tillbaka bara
+                    # spårraden; verktygssvaret består.
+                    with self.env.cr.savepoint():
+                        _trace_tool_calls(sess, tool_calls, results)
                 except Exception as _trace_err:
                     _logger.warning(
                         'tools/run: could not write the tool trace '
